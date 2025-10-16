@@ -301,13 +301,14 @@ app.get('/api/users/:userId/stats', async (req, res) => {
     );
     
     // Get comparison with other users
-    const avgStats = await pool.query(
-      `SELECT 
-        AVG(amount) as avg_bet_amount,
-        COUNT(*) / COUNT(DISTINCT user_id) as avg_bets_per_user
-      FROM bets 
-      WHERE user_id != $1`,
-      [userId]
+    // Get comparison with other users
+  const avgStats = await pool.query(
+    `SELECT 
+      AVG(amount) as avg_bet_amount,
+      COUNT(*) / NULLIF(COUNT(DISTINCT user_id), 0) as avg_bets_per_user
+     FROM bets 
+     WHERE user_id != $1`,
+     [userId]
     );
     
     // Get user's favorite categories
