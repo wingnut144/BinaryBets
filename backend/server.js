@@ -94,55 +94,6 @@ app.get('/api/users/:userId/balance', async (req, res) => {
   }
 });
 
-// ============ MARKET ROUTES ============
-
-// Get all markets
-app.get('/api/markets', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM markets WHERE status = $1 ORDER BY id', ['active']);
-    res.json(result.rows.map(m => ({
-      id: m.id,
-      question: m.question,
-      category: m.category,
-      yesOdds: parseFloat(m.yes_odds),
-      noOdds: parseFloat(m.no_odds),
-      deadline: m.deadline,
-      status: m.status
-    })));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Create market (admin only)
-app.post('/api/markets', async (req, res) => {
-  try {
-    const { question, category, yesOdds, noOdds, deadline } = req.body;
-    
-    const result = await pool.query(
-      'INSERT INTO markets (question, category, yes_odds, no_odds, deadline) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [question, category, yesOdds, noOdds, deadline]
-    );
-    
-    const market = result.rows[0];
-    res.json({
-      id: market.id,
-      question: market.question,
-      category: market.category,
-      yesOdds: parseFloat(market.yes_odds),
-      noOdds: parseFloat(market.no_odds),
-      deadline: market.deadline,
-      status: market.status
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// ============ BET ROUTES ============
-
 // Get user's bets
 app.get('/api/users/:userId/bets', async (req, res) => {
   try {
@@ -159,6 +110,7 @@ app.get('/api/users/:userId/bets', async (req, res) => {
     res.json(result.rows.map(b => ({
       id: b.id,
       market: b.market_question,
+      marketId: b.market_id,
       choice: b.choice,
       amount: parseFloat(b.amount),
       odds: parseFloat(b.odds),
@@ -171,6 +123,226 @@ app.get('/api/users/:userId/bets', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+// Get user bet statistics (NEW)
+app.get('/api/users/:userId/stats', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // Get user's total bets and amount wagered
+    const userStats = await pool.query(
+      `SELECT 
+        COUNT(*) as total_bets,
+        SUM(amount) as total_wagered,
+        SUM(CASE WHEN status = 'won' THEN potential_win ELSE 0 END) as total_won,
+        SUM(CASE WHEN status = 'won' THEN 1 ELSE 0 END) as bets_won
+      FROM bets 
+      WHERE user_id = $1`,
+      [userId]
+    );
+    
+    // Get comparison with other users
+    const avgStats = await pool.query(
+      `SELECT 
+        AVG(amount) as avg_bet_amount,
+        COUNT(*) / NULLIF(COUNT(DISTINCT user_id), 0) as avg_bets_per_user
+      FROM bets 
+      WHERE user_id != $1`,
+      [userId]
+    );
+    
+    // Get user's favorite categories
+    const categoryStats = await pool.query(
+      `SELECT 
+        c.name as category,
+        COUNT(*) as bet_count
+      FROM bets b
+      JOIN markets m ON b.market_id = m.id
+      LEFT JOIN categories c ON m.category_id = c.id
+      WHERE b.user_id = $1
+      GROUP BY c.name
+      ORDER BY bet_count DESC
+      LIMIT 3`,
+      [userId]
+    );
+    
+    const totalBets = parseInt(userStats.rows[0].total_bets) || 0;
+    const betsWon = parseInt(userStats.rows[0].bets_won) || 0;
+    
+    res.json({
+      totalBets,
+      totalWagered: parseFloat(userStats.rows[0].total_wagered) || 0,
+      totalWon: parseFloat(userStats.rows[0].total_won) || 0,
+      betsWon,
+      winRate: totalBets > 0 ? ((betsWon / totalBets) * 100).toFixed(1) : 0,
+      avgBetAmount: parseFloat(avgStats.rows[0]?.avg_bet_amount) || 0,
+      avgBetsPerUser: parseFloat(avgStats.rows[0]?.avg_bets_per_user) || 0,
+      favoriteCategories: categoryStats.rows
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============ MARKET ROUTES ============
+
+// Get all markets (with optional category filter) (MODIFIED)
+app.get('/api/markets', async (req, res) => {
+  try {
+    const { category_id } = req.query;
+    
+    let query = `
+      SELECT m.*, c.name as category_name 
+      FROM markets m 
+      LEFT JOIN categories c ON m.category_id = c.id 
+      WHERE m.status = $1
+    `;
+    const params = ['active'];
+    
+    if (category_id) {
+      query += ' AND m.category_id = $2';
+      params.push(category_id);
+    }
+    
+    query += ' ORDER BY m.id';
+    
+    const result = await pool.query(query, params);
+    res.json(result.rows.map(m => ({
+      id: m.id,
+      question: m.question,
+      category: m.category_name || 'Other',
+      categoryId: m.category_id,
+      yesOdds: parseFloat(m.yes_odds),
+      noOdds: parseFloat(m.no_odds),
+      deadline: m.deadline,
+      status: m.status
+    })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get market statistics (NEW)
+app.get('/api/markets/:marketId/stats', async (req, res) => {
+  try {
+    const { marketId } = req.params;
+    
+    const result = await pool.query(
+      `SELECT 
+        choice,
+        COUNT(*) as bet_count,
+        SUM(amount) as total_amount,
+        AVG(amount) as avg_amount
+      FROM bets 
+      WHERE market_id = $1 AND status = 'pending'
+      GROUP BY choice`,
+      [marketId]
+    );
+    
+    const stats = {
+      yes: { count: 0, total: 0, avg: 0 },
+      no: { count: 0, total: 0, avg: 0 }
+    };
+    
+    result.rows.forEach(row => {
+      stats[row.choice] = {
+        count: parseInt(row.bet_count),
+        total: parseFloat(row.total_amount),
+        avg: parseFloat(row.avg_amount)
+      };
+    });
+    
+    const totalBets = stats.yes.count + stats.no.count;
+    stats.yesPercentage = totalBets > 0 ? (stats.yes.count / totalBets * 100).toFixed(1) : 0;
+    stats.noPercentage = totalBets > 0 ? (stats.no.count / totalBets * 100).toFixed(1) : 0;
+    
+    res.json(stats);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create market (admin only) (MODIFIED)
+app.post('/api/markets', async (req, res) => {
+  try {
+    const { question, categoryId, yesOdds, noOdds, deadline } = req.body;
+    
+    const result = await pool.query(
+      'INSERT INTO markets (question, category_id, yes_odds, no_odds, deadline) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [question, categoryId, yesOdds, noOdds, deadline]
+    );
+    
+    const market = result.rows[0];
+    
+    // Get category name
+    const categoryResult = await pool.query('SELECT name FROM categories WHERE id = $1', [market.category_id]);
+    
+    res.json({
+      id: market.id,
+      question: market.question,
+      category: categoryResult.rows[0]?.name || 'Other',
+      categoryId: market.category_id,
+      yesOdds: parseFloat(market.yes_odds),
+      noOdds: parseFloat(market.no_odds),
+      deadline: market.deadline,
+      status: market.status
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============ CATEGORY ROUTES (NEW - Admin Only) ============
+
+// Get all categories
+app.get('/api/categories', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM categories ORDER BY name');
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create category (admin only)
+app.post('/api/categories', async (req, res) => {
+  try {
+    const { name } = req.body;
+    
+    const result = await pool.query(
+      'INSERT INTO categories (name) VALUES ($1) RETURNING *',
+      [name]
+    );
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    if (err.code === '23505') { // Unique violation
+      res.status(400).json({ error: 'Category already exists' });
+    } else {
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+});
+
+// Delete category (admin only)
+app.delete('/api/categories/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM categories WHERE id = $1', [id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============ BET ROUTES ============
 
 // Place a bet
 app.post('/api/bets', async (req, res) => {
