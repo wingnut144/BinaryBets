@@ -19,7 +19,7 @@ services:
     build:
       context: https://github.com/wingnut144/BinaryBets.git#main:backend
       args:
-        GITHUB_REPO: https://github.com/YOUR_USERNAME/binary-bets.git
+        GITHUB_REPO: https://github.com/wingnut144/BinaryBets.git
         GITHUB_BRANCH: main
     ports:
       - "5000:5000"
