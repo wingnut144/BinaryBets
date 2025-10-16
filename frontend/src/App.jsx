@@ -254,44 +254,52 @@ const App = () => {
   };
 
   const confirmBet = async () => {
-    const amount = parseFloat(betAmount);
-    if (amount <= 0 || amount > balance) {
-      alert('Invalid bet amount');
+  const amount = parseFloat(betAmount);
+  if (amount <= 0 || amount > balance) {
+    alert('Invalid bet amount');
+    return;
+  }
+
+  const odds = activeBet.choice === 'yes' ? activeBet.market.yesOdds : activeBet.market.noOdds;
+  const potentialWin = amount * odds;
+
+  try {
+    const response = await fetch(`${API_URL}/api/bets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: user.id,
+        marketId: activeBet.market.id,
+        choice: activeBet.choice,
+        amount,
+        odds,
+        potentialWin
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      alert(error.error || 'Failed to place bet');
       return;
     }
 
-    const odds = activeBet.choice === 'yes' ? activeBet.market.yesOdds : activeBet.market.noOdds;
-    const potentialWin = amount * odds;
-
-    try {
-      const response = await fetch(`${API_URL}/api/bets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          marketId: activeBet.market.id,
-          choice: activeBet.choice,
-          amount,
-          odds,
-          potentialWin
-        })
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        alert(error.error || 'Failed to place bet');
-        return;
-      }
-
-      await fetchUserBets();
-      await fetchUserBalance();
-      setActiveBet(null);
-      setBetAmount('');
-    } catch (err) {
-      console.error('Bet error:', err);
-      alert('Failed to place bet');
-    }
-  };
+    // Store market ID before clearing activeBet
+    const marketId = activeBet.market.id;
+    
+    await fetchUserBets();
+    await fetchUserBalance();
+    await fetchUserStats(); // Update user stats too
+    
+    // Refresh stats for the market that was just bet on
+    await fetchMarketStats(marketId);
+    
+    setActiveBet(null);
+    setBetAmount('');
+  } catch (err) {
+    console.error('Bet error:', err);
+    alert('Failed to place bet');
+  }
+};
 
   const getRankIcon = (rank) => {
     switch(rank) {
