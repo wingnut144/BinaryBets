@@ -1,3 +1,5 @@
+x-github: &gh "wingnut144"
+
 services:
   postgres:
     image: postgres:15
@@ -20,8 +22,7 @@ services:
     working_dir: /app
     command: >
       sh -c "apk add --no-cache git &&
-             rm -rf /tmp/repo &&
-             git clone --depth 1 https://github.com/wingnut144/BinaryBets.git /tmp/repo &&
+             git clone --depth 1 https://github.com/*gh/binary-bets.git /tmp/repo &&
              cp -r /tmp/repo/backend/* /app/ &&
              npm install &&
              npm start"
@@ -39,8 +40,7 @@ services:
     working_dir: /app
     command: >
       sh -c "apk add --no-cache git &&
-             rm -rf /tmp/repo &&
-             git clone --depth 1 https://github.com/wingnut144/BinaryBets.git /tmp/repo &&
+             git clone --depth 1 https://github.com/*gh/binary-bets.git /tmp/repo &&
              cp -r /tmp/repo/frontend/* /app/ &&
              npm install &&
              npm run build &&
@@ -57,14 +57,10 @@ services:
         condition: service_healthy
     environment:
       PGPASSWORD: binarypass
-    entrypoint: []
     command: >
-      sh -c "apt-get update && apt-get install -y curl &&
-             echo 'Downloading init.sql from GitHub...' &&
-             curl -sSL https://raw.githubusercontent.com/wingnut144/BinaryBets/main/init.sql -o /tmp/init.sql &&
-             echo 'Running database initialization...' &&
-             psql -h postgres -U binaryuser -d binarybets -f /tmp/init.sql &&
-             echo 'Database initialization complete!'"
+      sh -c "apk add --no-cache curl bash &&
+             curl -sSL https://raw.githubusercontent.com/*gh/binary-bets/main/init.sql |
+             psql -h postgres -U binaryuser -d binarybets"
 
 volumes:
   postgres_data:
