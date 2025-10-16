@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LogIn, LogOut, TrendingUp, User, Wallet, Trophy, Medal, Award, Plus, Shield } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = `http://${window.location.hostname}:5000`;
 
 const App = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
