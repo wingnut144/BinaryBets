@@ -9,7 +9,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U binaryuser"]
       interval: 5s
@@ -17,7 +16,11 @@ services:
       retries: 5
 
   backend:
-    build: ./backend
+    build:
+      context: https://github.com/wingnut144/BinaryBets.git#main:backend
+      args:
+        GITHUB_REPO: https://github.com/YOUR_USERNAME/binary-bets.git
+        GITHUB_BRANCH: main
     ports:
       - "5000:5000"
     environment:
@@ -28,13 +31,28 @@ services:
         condition: service_healthy
 
   frontend:
-    build: ./frontend
+    build:
+      context: https://github.com/wingnut144/BinaryBets.git#main:frontend
+      args:
+        GITHUB_REPO: https://github.com/wingnut144/BinaryBets.git
+        GITHUB_BRANCH: main
     ports:
       - "3000:3000"
     environment:
       VITE_API_URL: http://localhost:5000
     depends_on:
       - backend
+
+  db-init:
+    image: postgres:15
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: binarypass
+    volumes:
+      - ./init-from-github.sh:/init-from-github.sh
+    entrypoint: ["/bin/bash", "/init-from-github.sh"]
 
 volumes:
   postgres_data:
