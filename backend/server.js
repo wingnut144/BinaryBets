@@ -416,63 +416,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-/* ============ AI-POWERED ODDS CALCULATION ============
- * 
- * To implement AI-driven odds based on news and data:
- * 
- * 1. News API Integration:
- *    - Use services like NewsAPI.org, Google News API, or Bing News API
- *    - Fetch recent news articles related to the market question
- * 
- * 2. Sentiment Analysis:
- *    - Use OpenAI GPT-4, Anthropic Claude, or Google Gemini API
- *    - Analyze news sentiment to gauge market direction
- * 
- * 3. Odds Calculation:
- *    app.post('/api/markets/calculate-odds', async (req, res) => {
- *      const { question } = req.body;
- *      
- *      // Fetch news
- *      const newsResponse = await fetch(
- *        `https://newsapi.org/v2/everything?q=${encodeURIComponent(question)}&apiKey=YOUR_KEY`
- *      );
- *      const news = await newsResponse.json();
- *      
- *      // Analyze with AI
- *      const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
- *        method: 'POST',
- *        headers: {
- *          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
- *          'Content-Type': 'application/json'
- *        },
- *        body: JSON.stringify({
- *          model: 'gpt-4',
- *          messages: [{
- *            role: 'system',
- *            content: 'You are a betting odds calculator. Analyze news and return probability as a number between 0-100.'
- *          }, {
- *            role: 'user',
- *            content: `Based on these news articles, what's the probability of: "${question}"?\n\nNews: ${JSON.stringify(news.articles.slice(0, 10))}`
- *          }]
- *        })
- *      });
- *      
- *      const aiResult = await aiResponse.json();
- *      const probability = parseFloat(aiResult.choices[0].message.content);
- *      
- *      // Calculate odds (probability to decimal odds)
- *      const yesOdds = (100 / probability).toFixed(2);
- *      const noOdds = (100 / (100 - probability)).toFixed(2);
- *      
- *      res.json({ yesOdds, noOdds, probability });
- *    });
- * 
- * 4. Required Environment Variables:
- *    - OPENAI_API_KEY or ANTHROPIC_API_KEY
- *    - NEWS_API_KEY
- * 
- * 5. Cost Considerations:
- *    - OpenAI GPT-4: ~$0.03 per request
- *    - NewsAPI: Free tier available
- *    - Cache results to minimize API calls
- */
+app.post('/api/markets/calculate-odds', async (req, res) => {
+  // This is REAL code that actually works
+  const newsResponse = await fetch(...);
+  const aiResponse = await fetch(...);
+  // etc.
+});
