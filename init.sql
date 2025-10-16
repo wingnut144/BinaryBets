@@ -11,11 +11,18 @@ CREATE TABLE users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Betting markets table
+-- Categories table (NEW)
+CREATE TABLE categories (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Betting markets table (MODIFIED - now uses category_id)
 CREATE TABLE markets (
     id SERIAL PRIMARY KEY,
     question TEXT NOT NULL,
-    category VARCHAR(100) NOT NULL,
+    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     yes_odds DECIMAL(5, 2) NOT NULL,
     no_odds DECIMAL(5, 2) NOT NULL,
     deadline VARCHAR(100) NOT NULL,
@@ -36,6 +43,19 @@ CREATE TABLE bets (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Insert default categories (NEW)
+INSERT INTO categories (name) VALUES
+('Finance'),
+('Weather'),
+('Entertainment'),
+('Crypto'),
+('Sports'),
+('Economics'),
+('Politics'),
+('Technology'),
+('Science'),
+('Other');
+
 -- Insert default admin user (password: admin123)
 INSERT INTO users (name, email, password, is_admin, balance) 
 VALUES ('Administrator', 'admin@binarybets.com', 'admin123', TRUE, 50000.00);
@@ -51,16 +71,18 @@ INSERT INTO users (name, email, password, balance, total_winnings, bets_won) VAL
 ('Casey Anderson', 'casey@example.com', 'password123', 35600.00, 25600.00, 15),
 ('Riley Johnson', 'riley@example.com', 'password123', 32100.00, 22100.00, 13);
 
--- Insert default betting markets
-INSERT INTO markets (question, category, yes_odds, no_odds, deadline) VALUES
-('Will the S&P 500 close above 6000 by end of 2025?', 'Finance', 1.85, 2.10, 'Dec 31, 2025'),
-('Will it snow in New York City this December?', 'Weather', 1.50, 2.75, 'Dec 31, 2025'),
-('Will a new Star Wars movie be announced in 2025?', 'Entertainment', 2.20, 1.70, 'Dec 31, 2025'),
-('Will Bitcoin reach $150,000 by end of Q1 2026?', 'Crypto', 3.50, 1.35, 'Mar 31, 2026'),
-('Will the Lakers make the NBA playoffs this season?', 'Sports', 1.65, 2.40, 'Apr 15, 2026'),
-('Will unemployment rate in US be below 4% in December 2025?', 'Economics', 1.90, 2.00, 'Dec 31, 2025');
+-- Insert default betting markets (MODIFIED - now uses category_id)
+INSERT INTO markets (question, category_id, yes_odds, no_odds, deadline) VALUES
+('Will the S&P 500 close above 6000 by end of 2025?', 1, 1.85, 2.10, 'Dec 31, 2025'),
+('Will it snow in New York City this December?', 2, 1.50, 2.75, 'Dec 31, 2025'),
+('Will a new Star Wars movie be announced in 2025?', 3, 2.20, 1.70, 'Dec 31, 2025'),
+('Will Bitcoin reach $150,000 by end of Q1 2026?', 4, 3.50, 1.35, 'Mar 31, 2026'),
+('Will the Lakers make the NBA playoffs this season?', 5, 1.65, 2.40, 'Apr 15, 2026'),
+('Will unemployment rate in US be below 4% in December 2025?', 6, 1.90, 2.00, 'Dec 31, 2025');
 
 -- Create indexes for performance
 CREATE INDEX idx_bets_user_id ON bets(user_id);
 CREATE INDEX idx_bets_market_id ON bets(market_id);
 CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_markets_category_id ON markets(category_id);
+CREATE INDEX idx_markets_status ON markets(status);
