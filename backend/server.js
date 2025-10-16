@@ -415,10 +415,3 @@ app.get('/api/leaderboard', async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-app.post('/api/markets/calculate-odds', async (req, res) => {
-  // This is REAL code that actually works
-  const newsResponse = await fetch(...);
-  const aiResponse = await fetch(...);
-  // etc.
-});
