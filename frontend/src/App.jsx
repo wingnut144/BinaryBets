@@ -321,7 +321,11 @@ const App = () => {
     const avatars = ['👩', '👨', '🧑', '👤', '🙋', '👨‍💼', '👩‍💼', '🧑‍💻'];
     return avatars[index % avatars.length];
   };
-   return (
+
+  // Component continues in Part 2...
+  // This continues from Part 1...
+  
+  return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       {/* Header */}
       <header className="bg-black bg-opacity-50 border-b border-purple-500 backdrop-blur-sm">
