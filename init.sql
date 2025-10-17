@@ -28,7 +28,18 @@ CREATE TABLE markets (
     no_odds DECIMAL(5, 2) NOT NULL,
     deadline TIMESTAMP NOT NULL,
     status VARCHAR(20) DEFAULT 'active',
+    market_type VARCHAR(20) DEFAULT 'binary'  -- 'binary' or 'multi-choice'
+    resolved BOOLEAN DEFAULT FALSE
+    winning_option_id INTEGER
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE market_options (
+  id SERIAL PRIMARY KEY,
+  market_id INTEGER REFERENCES markets(id),
+  option_text TEXT NOT NULL,
+  odds DECIMAL(5, 2) NOT NULL,
+  option_order INTEGER NOT NULL
 );
 
 -- Bets table (MODIFIED - added cancelled_at)
@@ -36,7 +47,8 @@ CREATE TABLE bets (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     market_id INTEGER REFERENCES markets(id) ON DELETE CASCADE,
-    choice VARCHAR(10) NOT NULL,
+    market_option_id INTEGER REFERENCES market_options(id),  
+    choice VARCHAR(10),
     amount DECIMAL(10, 2) NOT NULL,
     odds DECIMAL(5, 2) NOT NULL,
     potential_win DECIMAL(10, 2) NOT NULL,
