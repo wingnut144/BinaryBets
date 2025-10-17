@@ -199,27 +199,61 @@ app.get('/api/markets', async (req, res) => {
     const result = await pool.query(`
       SELECT 
         m.*,
-        c.name as category_name,
-        COUNT(DISTINCT b.id) as total_bets,
-        COUNT(DISTINCT CASE WHEN b.choice = 'yes' THEN b.id END) as yes_bets,
-        COUNT(DISTINCT CASE WHEN b.choice = 'no' THEN b.id END) as no_bets,
-        COALESCE(SUM(CASE WHEN b.choice = 'yes' THEN b.amount ELSE 0 END), 0) as yes_amount,
-        COALESCE(SUM(CASE WHEN b.choice = 'no' THEN b.amount ELSE 0 END), 0) as no_amount
+        c.name as category_name
       FROM markets m
       LEFT JOIN categories c ON m.category_id = c.id
-      LEFT JOIN bets b ON m.id = b.market_id AND b.status = 'pending'
-      WHERE m.deadline > NOW()
-      GROUP BY m.id, c.name
+      WHERE m.deadline > NOW() AND m.resolved = FALSE
       ORDER BY m.created_at DESC
     `);
-    res.json(result.rows);
+    
+    // For each market, get options if it's multi-choice, or stats if it's binary
+    const marketsWithDetails = await Promise.all(result.rows.map(async (market) => {
+      if (market.market_type === 'multi-choice') {
+        // Get options for multi-choice markets
+        const optionsResult = await pool.query(`
+          SELECT 
+            mo.*,
+            COUNT(DISTINCT b.id) as total_bets,
+            COALESCE(SUM(b.amount), 0) as total_amount
+          FROM market_options mo
+          LEFT JOIN bets b ON mo.id = b.market_option_id AND b.status = 'pending'
+          WHERE mo.market_id = $1
+          GROUP BY mo.id
+          ORDER BY mo.option_order
+        `, [market.id]);
+        
+        return {
+          ...market,
+          options: optionsResult.rows
+        };
+      } else {
+        // Get binary betting stats
+        const statsResult = await pool.query(`
+          SELECT 
+            COUNT(DISTINCT b.id) as total_bets,
+            COUNT(DISTINCT CASE WHEN b.choice = 'yes' THEN b.id END) as yes_bets,
+            COUNT(DISTINCT CASE WHEN b.choice = 'no' THEN b.id END) as no_bets,
+            COALESCE(SUM(CASE WHEN b.choice = 'yes' THEN b.amount ELSE 0 END), 0) as yes_amount,
+            COALESCE(SUM(CASE WHEN b.choice = 'no' THEN b.amount ELSE 0 END), 0) as no_amount
+          FROM bets b
+          WHERE b.market_id = $1 AND b.status = 'pending'
+        `, [market.id]);
+        
+        return {
+          ...market,
+          stats: statsResult.rows[0]
+        };
+      }
+    }));
+    
+    res.json(marketsWithDetails);
   } catch (err) {
     console.error('Markets fetch error:', err);
     res.status(500).json({ error: 'Failed to fetch markets' });
   }
 });
 
-// Get market statistics
+// Get market statistics (for binary markets)
 app.get('/api/markets/:marketId/stats', async (req, res) => {
   const { marketId } = req.params;
   
@@ -242,33 +276,67 @@ app.get('/api/markets/:marketId/stats', async (req, res) => {
   }
 });
 
-// Create market (admin only)
+// Create market (admin only) - supports both binary and multi-choice
 app.post('/api/markets', async (req, res) => {
-  const { question, yesOdds, noOdds, categoryId, deadline, userId } = req.body;
+  const { question, marketType, yesOdds, noOdds, categoryId, deadline, options, userId } = req.body;
+  
+  const client = await pool.connect();
   
   try {
+    await client.query('BEGIN');
+    
     // Check if user is admin
-    const userCheck = await pool.query('SELECT is_admin FROM users WHERE id = $1', [userId]);
+    const userCheck = await client.query('SELECT is_admin FROM users WHERE id = $1', [userId]);
     if (userCheck.rows.length === 0 || !userCheck.rows[0].is_admin) {
+      await client.query('ROLLBACK');
       return res.status(403).json({ error: 'Admin access required' });
     }
 
-    const result = await pool.query(
-      'INSERT INTO markets (question, yes_odds, no_odds, category_id, deadline) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [question, yesOdds, noOdds, categoryId, deadline]
-    );
-    res.json(result.rows[0]);
+    if (marketType === 'binary') {
+      // Create binary market
+      const result = await client.query(
+        'INSERT INTO markets (question, market_type, yes_odds, no_odds, category_id, deadline) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+        [question, 'binary', yesOdds, noOdds, categoryId, deadline]
+      );
+      await client.query('COMMIT');
+      res.json(result.rows[0]);
+    } else if (marketType === 'multi-choice') {
+      // Create multi-choice market
+      const marketResult = await client.query(
+        'INSERT INTO markets (question, market_type, category_id, deadline) VALUES ($1, $2, $3, $4) RETURNING *',
+        [question, 'multi-choice', categoryId, deadline]
+      );
+      
+      const marketId = marketResult.rows[0].id;
+      
+      // Insert options
+      for (let i = 0; i < options.length; i++) {
+        await client.query(
+          'INSERT INTO market_options (market_id, option_text, odds, option_order) VALUES ($1, $2, $3, $4)',
+          [marketId, options[i].text, options[i].odds, i + 1]
+        );
+      }
+      
+      await client.query('COMMIT');
+      res.json(marketResult.rows[0]);
+    } else {
+      await client.query('ROLLBACK');
+      res.status(400).json({ error: 'Invalid market type' });
+    }
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Market creation error:', err);
     res.status(500).json({ error: 'Failed to create market' });
+  } finally {
+    client.release();
   }
 });
 
 // ============ BET ENDPOINTS ============
 
-// Place a bet
+// Place a bet (supports both binary and multi-choice)
 app.post('/api/bets', async (req, res) => {
-  const { userId, marketId, choice, amount, odds, potentialWin } = req.body;
+  const { userId, marketId, choice, marketOptionId, amount, odds, potentialWin } = req.body;
   
   const client = await pool.connect();
   
@@ -299,7 +367,6 @@ app.post('/api/bets', async (req, res) => {
 
     let penaltyFee = 0;
     if (recentCancellation.rows.length > 0) {
-      // Calculate penalty: 10% of new bet amount or $5, whichever is less
       penaltyFee = Math.min(amount * 0.10, 5);
     }
 
@@ -320,10 +387,10 @@ app.post('/api/bets', async (req, res) => {
       [totalCost, userId]
     );
 
-    // Create bet
+    // Create bet (supports both binary and multi-choice)
     await client.query(
-      'INSERT INTO bets (user_id, market_id, choice, amount, odds, potential_win) VALUES ($1, $2, $3, $4, $5, $6)',
-      [userId, marketId, choice, amount, odds, potentialWin]
+      'INSERT INTO bets (user_id, market_id, choice, market_option_id, amount, odds, potential_win) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [userId, marketId, choice || null, marketOptionId || null, amount, odds, potentialWin]
     );
 
     await client.query('COMMIT');
@@ -402,10 +469,12 @@ app.get('/api/users/:userId/bets', async (req, res) => {
         b.*,
         m.question as market,
         m.deadline,
-        c.name as category
+        c.name as category,
+        mo.option_text as option_name
       FROM bets b
       JOIN markets m ON b.market_id = m.id
       LEFT JOIN categories c ON m.category_id = c.id
+      LEFT JOIN market_options mo ON b.market_option_id = mo.id
       WHERE b.user_id = $1
       ORDER BY b.created_at DESC
     `, [userId]);
@@ -496,6 +565,244 @@ app.get('/api/leaderboard', async (req, res) => {
   } catch (err) {
     console.error('Leaderboard fetch error:', err);
     res.status(500).json({ error: 'Failed to fetch leaderboard' });
+  }
+});
+
+// ============ MARKET RESOLUTION ENDPOINTS ============
+
+// Get expired markets that need resolution (admin only)
+app.get('/api/markets/expired', async (req, res) => {
+  const { userId } = req.query;
+  
+  try {
+    // Check if user is admin
+    const userCheck = await pool.query('SELECT is_admin FROM users WHERE id = $1', [userId]);
+    if (userCheck.rows.length === 0 || !userCheck.rows[0].is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const result = await pool.query(`
+      SELECT 
+        m.*,
+        c.name as category_name,
+        COUNT(DISTINCT b.id) as total_bets
+      FROM markets m
+      LEFT JOIN categories c ON m.category_id = c.id
+      LEFT JOIN bets b ON m.id = b.market_id AND b.status = 'pending'
+      WHERE m.deadline <= NOW() AND m.resolved = FALSE
+      GROUP BY m.id, c.name
+      ORDER BY m.deadline DESC
+    `);
+    
+    // Get options for multi-choice markets
+    const marketsWithOptions = await Promise.all(result.rows.map(async (market) => {
+      if (market.market_type === 'multi-choice') {
+        const optionsResult = await pool.query(
+          'SELECT * FROM market_options WHERE market_id = $1 ORDER BY option_order',
+          [market.id]
+        );
+        return { ...market, options: optionsResult.rows };
+      }
+      return market;
+    }));
+    
+    res.json(marketsWithOptions);
+  } catch (err) {
+    console.error('Expired markets fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch expired markets' });
+  }
+});
+
+// Resolve a market manually (admin only)
+app.post('/api/markets/:marketId/resolve', async (req, res) => {
+  const { marketId } = req.params;
+  const { userId, outcome, winningOptionId } = req.body;
+  
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    // Check if user is admin
+    const userCheck = await client.query('SELECT is_admin FROM users WHERE id = $1', [userId]);
+    if (userCheck.rows.length === 0 || !userCheck.rows[0].is_admin) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Get market details
+    const marketResult = await client.query(
+      'SELECT * FROM markets WHERE id = $1',
+      [marketId]
+    );
+    
+    if (marketResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Market not found' });
+    }
+    
+    const market = marketResult.rows[0];
+
+    if (market.market_type === 'binary') {
+      // Resolve binary market
+      const betsResult = await client.query(
+        'SELECT * FROM bets WHERE market_id = $1 AND status = $2',
+        [marketId, 'pending']
+      );
+      
+      // Update bet status and pay out winners
+      for (const bet of betsResult.rows) {
+        if (bet.choice === outcome) {
+          // Winner - update bet and pay out
+          await client.query(
+            'UPDATE bets SET status = $1 WHERE id = $2',
+            ['won', bet.id]
+          );
+          
+          await client.query(
+            'UPDATE users SET balance = balance + $1, total_winnings = total_winnings + $2, bets_won = bets_won + 1 WHERE id = $3',
+            [bet.potential_win, bet.potential_win - bet.amount, bet.user_id]
+          );
+        } else {
+          // Loser
+          await client.query(
+            'UPDATE bets SET status = $1 WHERE id = $2',
+            ['lost', bet.id]
+          );
+        }
+      }
+      
+      // Mark market as resolved
+      await client.query(
+        'UPDATE markets SET resolved = TRUE WHERE id = $1',
+        [marketId]
+      );
+      
+    } else if (market.market_type === 'multi-choice') {
+      // Resolve multi-choice market
+      const betsResult = await client.query(
+        'SELECT * FROM bets WHERE market_id = $1 AND status = $2',
+        [marketId, 'pending']
+      );
+      
+      // Update bet status and pay out winners
+      for (const bet of betsResult.rows) {
+        if (bet.market_option_id === winningOptionId) {
+          // Winner
+          await client.query(
+            'UPDATE bets SET status = $1 WHERE id = $2',
+            ['won', bet.id]
+          );
+          
+          await client.query(
+            'UPDATE users SET balance = balance + $1, total_winnings = total_winnings + $2, bets_won = bets_won + 1 WHERE id = $3',
+            [bet.potential_win, bet.potential_win - bet.amount, bet.user_id]
+          );
+        } else {
+          // Loser
+          await client.query(
+            'UPDATE bets SET status = $1 WHERE id = $2',
+            ['lost', bet.id]
+          );
+        }
+      }
+      
+      // Mark market as resolved
+      await client.query(
+        'UPDATE markets SET resolved = TRUE, winning_option_id = $1 WHERE id = $2',
+        [winningOptionId, marketId]
+      );
+    }
+    
+    await client.query('COMMIT');
+    res.json({ message: 'Market resolved successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Market resolution error:', err);
+    res.status(500).json({ error: 'Failed to resolve market' });
+  } finally {
+    client.release();
+  }
+});
+
+// Auto-verify market outcome using news API (admin trigger)
+app.post('/api/markets/:marketId/auto-verify', async (req, res) => {
+  const { marketId } = req.params;
+  const { userId } = req.body;
+  
+  try {
+    // Check if user is admin
+    const userCheck = await pool.query('SELECT is_admin FROM users WHERE id = $1', [userId]);
+    if (userCheck.rows.length === 0 || !userCheck.rows[0].is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Get market details with options
+    const marketResult = await pool.query(`
+      SELECT m.*, mo.id as option_id, mo.option_text 
+      FROM markets m 
+      LEFT JOIN market_options mo ON m.id = mo.market_id 
+      WHERE m.id = $1
+      ORDER BY mo.option_order
+    `, [marketId]);
+    
+    if (marketResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Market not found' });
+    }
+    
+    const market = marketResult.rows[0];
+    const options = marketResult.rows.map(r => ({
+      id: r.option_id,
+      text: r.option_text
+    })).filter(opt => opt.id);
+    
+    // This is a placeholder for news API integration
+    // To enable, add NEWS_API_KEY to your environment and install node-fetch
+    const newsApiKey = process.env.NEWS_API_KEY;
+    
+    if (!newsApiKey) {
+      return res.json({
+        message: 'Auto-verification requires NewsAPI key',
+        setup: 'Add NEWS_API_KEY to environment variables',
+        searchQuery: market.question,
+        options: options,
+        instructions: `Search news for: "${market.question}" and check which location/option was mentioned most frequently`
+      });
+    }
+    
+    // Example implementation with NewsAPI:
+    /*
+    const fetch = (await import('node-fetch')).default;
+    const searchResults = await Promise.all(options.map(async (option) => {
+      const response = await fetch(
+        `https://newsapi.org/v2/everything?q=${encodeURIComponent(market.question + ' ' + option.text)}&apiKey=${newsApiKey}&pageSize=10`
+      );
+      const data = await response.json();
+      return {
+        option: option.text,
+        optionId: option.id,
+        mentions: data.totalResults || 0
+      };
+    }));
+    
+    const suggested = searchResults.sort((a, b) => b.mentions - a.mentions)[0];
+    
+    return res.json({
+      suggestion: suggested.option,
+      suggestedOptionId: suggested.optionId,
+      confidence: suggested.mentions,
+      allResults: searchResults
+    });
+    */
+    
+    res.json({
+      message: 'Auto-verification framework ready',
+      instructions: 'Uncomment the code above and add node-fetch to package.json'
+    });
+    
+  } catch (err) {
+    console.error('Auto-verify error:', err);
+    res.status(500).json({ error: 'Failed to auto-verify' });
   }
 });
 
