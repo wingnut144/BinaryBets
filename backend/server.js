@@ -13,290 +13,121 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// ============ AUTH ROUTES ============
+// ============ AUTH ENDPOINTS ============
+
+// Register
+app.post('/api/auth/register', async (req, res) => {
+  const { name, email, password } = req.body;
+  
+  try {
+    const existingUser = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (existingUser.rows.length > 0) {
+      return res.status(400).json({ error: 'Email already exists' });
+    }
+
+    const result = await pool.query(
+      'INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id, name, email, is_admin, balance, total_winnings, bets_won, avatar',
+      [name, email, password]
+    );
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Registration error:', err);
+    res.status(500).json({ error: 'Registration failed' });
+  }
+});
 
 // Login
 app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  
   try {
-    const { email, password } = req.body;
     const result = await pool.query(
-      'SELECT * FROM users WHERE email = $1 AND password = $2',
+      'SELECT id, name, email, is_admin, balance, total_winnings, bets_won, avatar FROM users WHERE email = $1 AND password = $2',
       [email, password]
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    
-    const user = result.rows[0];
-    res.json({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      isAdmin: user.is_admin,
-      balance: parseFloat(user.balance),
-      totalWinnings: parseFloat(user.total_winnings),
-      betsWon: user.bets_won
-    });
+
+    res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Login failed' });
   }
 });
 
-// Sign up
-app.post('/api/auth/signup', async (req, res) => {
+// ============ USER PROFILE ENDPOINTS ============
+
+// Update user profile
+app.put('/api/users/:userId/profile', async (req, res) => {
+  const { userId } = req.params;
+  const { email, avatar } = req.body;
+  
   try {
-    const { name, email, password } = req.body;
-    
-    const existing = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (existing.rows.length > 0) {
-      return res.status(400).json({ error: 'Email already exists' });
+    // Check if email is already taken by another user
+    if (email) {
+      const existingUser = await pool.query(
+        'SELECT id FROM users WHERE email = $1 AND id != $2',
+        [email, userId]
+      );
+      if (existingUser.rows.length > 0) {
+        return res.status(400).json({ error: 'Email already taken' });
+      }
     }
-    
-    const result = await pool.query(
-      'INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING *',
-      [name, email, password]
-    );
-    
-    const user = result.rows[0];
-    res.json({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      isAdmin: user.is_admin,
-      balance: parseFloat(user.balance),
-      totalWinnings: parseFloat(user.total_winnings),
-      betsWon: user.bets_won
-    });
+
+    // Build dynamic update query
+    const updates = [];
+    const values = [];
+    let paramCount = 1;
+
+    if (email) {
+      updates.push(`email = $${paramCount++}`);
+      values.push(email);
+    }
+    if (avatar !== undefined) {
+      updates.push(`avatar = $${paramCount++}`);
+      values.push(avatar);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No updates provided' });
+    }
+
+    values.push(userId);
+    const query = `
+      UPDATE users 
+      SET ${updates.join(', ')}
+      WHERE id = $${paramCount}
+      RETURNING id, name, email, is_admin, balance, total_winnings, bets_won, avatar
+    `;
+
+    const result = await pool.query(query, values);
+    res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Profile update error:', err);
+    res.status(500).json({ error: 'Failed to update profile' });
   }
 });
-
-// ============ USER ROUTES ============
 
 // Get user balance
 app.get('/api/users/:userId/balance', async (req, res) => {
+  const { userId } = req.params;
+  
   try {
-    const { userId } = req.params;
     const result = await pool.query('SELECT balance FROM users WHERE id = $1', [userId]);
-    
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
-    res.json({ balance: parseFloat(result.rows[0].balance) });
+    res.json({ balance: result.rows[0].balance });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Balance fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch balance' });
   }
 });
 
-// Get user's bets
-app.get('/api/users/:userId/bets', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const result = await pool.query(
-      `SELECT b.*, m.question as market_question 
-       FROM bets b 
-       JOIN markets m ON b.market_id = m.id 
-       WHERE b.user_id = $1 
-       ORDER BY b.created_at DESC`,
-      [userId]
-    );
-    
-    res.json(result.rows.map(b => ({
-      id: b.id,
-      market: b.market_question,
-      marketId: b.market_id,
-      choice: b.choice,
-      amount: parseFloat(b.amount),
-      odds: parseFloat(b.odds),
-      potentialWin: parseFloat(b.potential_win),
-      status: b.status,
-      createdAt: b.created_at
-    })));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get user bet statistics (NEW)
-app.get('/api/users/:userId/stats', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    
-    // Get user's total bets and amount wagered
-    const userStats = await pool.query(
-      `SELECT 
-        COUNT(*) as total_bets,
-        SUM(amount) as total_wagered,
-        SUM(CASE WHEN status = 'won' THEN potential_win ELSE 0 END) as total_won,
-        SUM(CASE WHEN status = 'won' THEN 1 ELSE 0 END) as bets_won
-      FROM bets 
-      WHERE user_id = $1`,
-      [userId]
-    );
-    
-    // Get comparison with other users
-    const avgStats = await pool.query(
-      `SELECT 
-        AVG(amount) as avg_bet_amount,
-        COUNT(*) / NULLIF(COUNT(DISTINCT user_id), 0) as avg_bets_per_user
-      FROM bets 
-      WHERE user_id != $1`,
-      [userId]
-    );
-    
-    // Get user's favorite categories
-    const categoryStats = await pool.query(
-      `SELECT 
-        c.name as category,
-        COUNT(*) as bet_count
-      FROM bets b
-      JOIN markets m ON b.market_id = m.id
-      LEFT JOIN categories c ON m.category_id = c.id
-      WHERE b.user_id = $1
-      GROUP BY c.name
-      ORDER BY bet_count DESC
-      LIMIT 3`,
-      [userId]
-    );
-    
-    const totalBets = parseInt(userStats.rows[0].total_bets) || 0;
-    const betsWon = parseInt(userStats.rows[0].bets_won) || 0;
-    
-    res.json({
-      totalBets,
-      totalWagered: parseFloat(userStats.rows[0].total_wagered) || 0,
-      totalWon: parseFloat(userStats.rows[0].total_won) || 0,
-      betsWon,
-      winRate: totalBets > 0 ? ((betsWon / totalBets) * 100).toFixed(1) : 0,
-      avgBetAmount: parseFloat(avgStats.rows[0]?.avg_bet_amount) || 0,
-      avgBetsPerUser: parseFloat(avgStats.rows[0]?.avg_bets_per_user) || 0,
-      favoriteCategories: categoryStats.rows
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// ============ MARKET ROUTES ============
-
-// Get all markets (with optional category filter) (MODIFIED)
-app.get('/api/markets', async (req, res) => {
-  try {
-    const { category_id } = req.query;
-    
-    let query = `
-      SELECT m.*, c.name as category_name 
-      FROM markets m 
-      LEFT JOIN categories c ON m.category_id = c.id 
-      WHERE m.status = $1
-    `;
-    const params = ['active'];
-    
-    if (category_id) {
-      query += ' AND m.category_id = $2';
-      params.push(category_id);
-    }
-    
-    query += ' ORDER BY m.id';
-    
-    const result = await pool.query(query, params);
-    res.json(result.rows.map(m => ({
-      id: m.id,
-      question: m.question,
-      category: m.category_name || 'Other',
-      categoryId: m.category_id,
-      yesOdds: parseFloat(m.yes_odds),
-      noOdds: parseFloat(m.no_odds),
-      deadline: m.deadline,
-      status: m.status
-    })));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get market statistics (NEW)
-app.get('/api/markets/:marketId/stats', async (req, res) => {
-  try {
-    const { marketId } = req.params;
-    
-    const result = await pool.query(
-      `SELECT 
-        choice,
-        COUNT(*) as bet_count,
-        SUM(amount) as total_amount,
-        AVG(amount) as avg_amount
-      FROM bets 
-      WHERE market_id = $1 AND status = 'pending'
-      GROUP BY choice`,
-      [marketId]
-    );
-    
-    const stats = {
-      yes: { count: 0, total: 0, avg: 0 },
-      no: { count: 0, total: 0, avg: 0 }
-    };
-    
-    result.rows.forEach(row => {
-      stats[row.choice] = {
-        count: parseInt(row.bet_count),
-        total: parseFloat(row.total_amount),
-        avg: parseFloat(row.avg_amount)
-      };
-    });
-    
-    const totalBets = stats.yes.count + stats.no.count;
-    stats.yesPercentage = totalBets > 0 ? (stats.yes.count / totalBets * 100).toFixed(1) : 0;
-    stats.noPercentage = totalBets > 0 ? (stats.no.count / totalBets * 100).toFixed(1) : 0;
-    
-    res.json(stats);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Create market (admin only) (MODIFIED)
-app.post('/api/markets', async (req, res) => {
-  try {
-    const { question, categoryId, yesOdds, noOdds, deadline } = req.body;
-    
-    const result = await pool.query(
-      'INSERT INTO markets (question, category_id, yes_odds, no_odds, deadline) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [question, categoryId, yesOdds, noOdds, deadline]
-    );
-    
-    const market = result.rows[0];
-    
-    // Get category name
-    const categoryResult = await pool.query('SELECT name FROM categories WHERE id = $1', [market.category_id]);
-    
-    res.json({
-      id: market.id,
-      question: market.question,
-      category: categoryResult.rows[0]?.name || 'Other',
-      categoryId: market.category_id,
-      yesOdds: parseFloat(market.yes_odds),
-      noOdds: parseFloat(market.no_odds),
-      deadline: market.deadline,
-      status: market.status
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// ============ CATEGORY ROUTES (NEW - Admin Only) ============
+// ============ CATEGORY ENDPOINTS ============
 
 // Get all categories
 app.get('/api/categories', async (req, res) => {
@@ -304,198 +135,371 @@ app.get('/api/categories', async (req, res) => {
     const result = await pool.query('SELECT * FROM categories ORDER BY name');
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Categories fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch categories' });
   }
 });
 
 // Create category (admin only)
 app.post('/api/categories', async (req, res) => {
+  const { name, userId } = req.body;
+  
   try {
-    const { name } = req.body;
-    
+    // Check if user is admin
+    const userCheck = await pool.query('SELECT is_admin FROM users WHERE id = $1', [userId]);
+    if (userCheck.rows.length === 0 || !userCheck.rows[0].is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
     const result = await pool.query(
       'INSERT INTO categories (name) VALUES ($1) RETURNING *',
       [name]
     );
-    
     res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
-    if (err.code === '23505') { // Unique violation
-      res.status(400).json({ error: 'Category already exists' });
-    } else {
-      res.status(500).json({ error: 'Server error' });
+    console.error('Category creation error:', err);
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'Category already exists' });
     }
+    res.status(500).json({ error: 'Failed to create category' });
   }
 });
 
 // Delete category (admin only)
 app.delete('/api/categories/:id', async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+  
   try {
-    const { id } = req.params;
+    // Check if user is admin
+    const userCheck = await pool.query('SELECT is_admin FROM users WHERE id = $1', [userId]);
+    if (userCheck.rows.length === 0 || !userCheck.rows[0].is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Check if category is in use
+    const inUse = await pool.query('SELECT COUNT(*) FROM markets WHERE category_id = $1', [id]);
+    if (parseInt(inUse.rows[0].count) > 0) {
+      return res.status(400).json({ error: 'Cannot delete category with active markets' });
+    }
+
     await pool.query('DELETE FROM categories WHERE id = $1', [id]);
-    res.json({ success: true });
+    res.json({ message: 'Category deleted successfully' });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Category deletion error:', err);
+    res.status(500).json({ error: 'Failed to delete category' });
   }
 });
 
-// ============ BET ROUTES ============
+// ============ MARKET ENDPOINTS ============
 
-// Place a bet (MODIFIED - check for existing bet and calculate penalty)
-app.post('/api/bets', async (req, res) => {
+// Get all markets with betting statistics
+app.get('/api/markets', async (req, res) => {
   try {
-    const { userId, marketId, choice, amount, odds, potentialWin } = req.body;
+    const result = await pool.query(`
+      SELECT 
+        m.*,
+        c.name as category_name,
+        COUNT(DISTINCT b.id) as total_bets,
+        COUNT(DISTINCT CASE WHEN b.choice = 'yes' THEN b.id END) as yes_bets,
+        COUNT(DISTINCT CASE WHEN b.choice = 'no' THEN b.id END) as no_bets,
+        COALESCE(SUM(CASE WHEN b.choice = 'yes' THEN b.amount ELSE 0 END), 0) as yes_amount,
+        COALESCE(SUM(CASE WHEN b.choice = 'no' THEN b.amount ELSE 0 END), 0) as no_amount
+      FROM markets m
+      LEFT JOIN categories c ON m.category_id = c.id
+      LEFT JOIN bets b ON m.id = b.market_id AND b.status = 'pending'
+      WHERE m.deadline > NOW()
+      GROUP BY m.id, c.name
+      ORDER BY m.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Markets fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch markets' });
+  }
+});
+
+// Get market statistics
+app.get('/api/markets/:marketId/stats', async (req, res) => {
+  const { marketId } = req.params;
+  
+  try {
+    const result = await pool.query(`
+      SELECT 
+        COUNT(DISTINCT b.id) as total_bets,
+        COUNT(DISTINCT CASE WHEN b.choice = 'yes' THEN b.id END) as yes_bets,
+        COUNT(DISTINCT CASE WHEN b.choice = 'no' THEN b.id END) as no_bets,
+        COALESCE(SUM(CASE WHEN b.choice = 'yes' THEN b.amount ELSE 0 END), 0) as yes_amount,
+        COALESCE(SUM(CASE WHEN b.choice = 'no' THEN b.amount ELSE 0 END), 0) as no_amount
+      FROM bets b
+      WHERE b.market_id = $1 AND b.status = 'pending'
+    `, [marketId]);
     
-    // Check user balance
-    const userResult = await pool.query('SELECT balance FROM users WHERE id = $1', [userId]);
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Market stats fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch market stats' });
+  }
+});
+
+// Create market (admin only)
+app.post('/api/markets', async (req, res) => {
+  const { question, yesOdds, noOdds, categoryId, deadline, userId } = req.body;
+  
+  try {
+    // Check if user is admin
+    const userCheck = await pool.query('SELECT is_admin FROM users WHERE id = $1', [userId]);
+    if (userCheck.rows.length === 0 || !userCheck.rows[0].is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
     }
-    
-    const balance = parseFloat(userResult.rows[0].balance);
-    
+
+    const result = await pool.query(
+      'INSERT INTO markets (question, yes_odds, no_odds, category_id, deadline) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [question, yesOdds, noOdds, categoryId, deadline]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Market creation error:', err);
+    res.status(500).json({ error: 'Failed to create market' });
+  }
+});
+
+// ============ BET ENDPOINTS ============
+
+// Place a bet
+app.post('/api/bets', async (req, res) => {
+  const { userId, marketId, choice, amount, odds, potentialWin } = req.body;
+  
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+
     // Check if user already has an active bet on this market
-    const existingBet = await pool.query(
-      'SELECT * FROM bets WHERE user_id = $1 AND market_id = $2 AND status = $3',
+    const existingBet = await client.query(
+      'SELECT id FROM bets WHERE user_id = $1 AND market_id = $2 AND status = $3',
       [userId, marketId, 'pending']
     );
-    
+
     if (existingBet.rows.length > 0) {
-      return res.status(400).json({ error: 'You already have an active bet on this market. Cancel your existing bet first.' });
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'You already have an active bet on this market' });
     }
-    
+
     // Check for recent cancellation (within 5 minutes)
-    const recentCancellation = await pool.query(
-      `SELECT * FROM bets 
-       WHERE user_id = $1 AND market_id = $2 AND status = $3 
+    const recentCancellation = await client.query(
+      `SELECT id, amount, cancelled_at 
+       FROM bets 
+       WHERE user_id = $1 AND market_id = $2 AND status = 'cancelled' 
        AND cancelled_at > NOW() - INTERVAL '5 minutes'
-       ORDER BY cancelled_at DESC LIMIT 1`,
-      [userId, marketId, 'cancelled']
+       ORDER BY cancelled_at DESC
+       LIMIT 1`,
+      [userId, marketId]
     );
-    
+
     let penaltyFee = 0;
-    let totalCost = amount;
-    
     if (recentCancellation.rows.length > 0) {
-      // Calculate penalty: 10% of bet or $5, whichever is less
+      // Calculate penalty: 10% of new bet amount or $5, whichever is less
       penaltyFee = Math.min(amount * 0.10, 5);
-      totalCost = amount + penaltyFee;
     }
-    
-    if (balance < totalCost) {
+
+    const totalCost = amount + penaltyFee;
+
+    // Check user balance
+    const userBalance = await client.query('SELECT balance FROM users WHERE id = $1', [userId]);
+    if (userBalance.rows[0].balance < totalCost) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ 
-        error: `Insufficient balance. Need ${totalCost.toFixed(2)} (includes ${penaltyFee.toFixed(2)} penalty fee for rebetting within 5 minutes)` 
+        error: `Insufficient balance. You need $${totalCost.toFixed(2)} (includes $${penaltyFee.toFixed(2)} penalty fee for rebetting within 5 minutes)` 
       });
     }
-    
-    // Start transaction
-    await pool.query('BEGIN');
-    
-    // Deduct balance (including penalty if applicable)
-    await pool.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [totalCost, userId]);
-    
-    // Create bet
-    const betResult = await pool.query(
-      'INSERT INTO bets (user_id, market_id, choice, amount, odds, potential_win, penalty_fee) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-      [userId, marketId, choice, amount, odds, potentialWin, penaltyFee]
+
+    // Deduct from user balance
+    await client.query(
+      'UPDATE users SET balance = balance - $1 WHERE id = $2',
+      [totalCost, userId]
     );
+
+    // Create bet
+    await client.query(
+      'INSERT INTO bets (user_id, market_id, choice, amount, odds, potential_win) VALUES ($1, $2, $3, $4, $5, $6)',
+      [userId, marketId, choice, amount, odds, potentialWin]
+    );
+
+    await client.query('COMMIT');
     
-    await pool.query('COMMIT');
+    let message = 'Bet placed successfully';
+    if (penaltyFee > 0) {
+      message += `. A penalty fee of $${penaltyFee.toFixed(2)} was charged for rebetting within 5 minutes.`;
+    }
     
-    const bet = betResult.rows[0];
-    res.json({
-      id: bet.id,
-      userId: bet.user_id,
-      marketId: bet.market_id,
-      choice: bet.choice,
-      amount: parseFloat(bet.amount),
-      odds: parseFloat(bet.odds),
-      potentialWin: parseFloat(bet.potential_win),
-      penaltyFee: parseFloat(bet.penalty_fee),
-      status: bet.status
-    });
+    res.json({ message });
   } catch (err) {
-    await pool.query('ROLLBACK');
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    await client.query('ROLLBACK');
+    console.error('Bet placement error:', err);
+    res.status(500).json({ error: 'Failed to place bet' });
+  } finally {
+    client.release();
   }
 });
 
-// Cancel a bet (NEW)
+// Cancel a bet
 app.post('/api/bets/:betId/cancel', async (req, res) => {
+  const { betId } = req.params;
+  const { userId } = req.body;
+  
+  const client = await pool.connect();
+  
   try {
-    const { betId } = req.params;
-    const { userId } = req.body;
-    
+    await client.query('BEGIN');
+
     // Get bet details
-    const betResult = await pool.query(
-      'SELECT * FROM bets WHERE id = $1 AND user_id = $2',
-      [betId, userId]
+    const bet = await client.query(
+      'SELECT * FROM bets WHERE id = $1 AND user_id = $2 AND status = $3',
+      [betId, userId, 'pending']
     );
-    
-    if (betResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Bet not found' });
+
+    if (bet.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Bet not found or already processed' });
     }
-    
-    const bet = betResult.rows[0];
-    
-    if (bet.status !== 'pending') {
-      return res.status(400).json({ error: 'Can only cancel pending bets' });
-    }
-    
-    // Start transaction
-    await pool.query('BEGIN');
-    
-    // Update bet status to cancelled and set cancelled_at timestamp
-    await pool.query(
+
+    const betAmount = bet.rows[0].amount;
+
+    // Mark bet as cancelled
+    await client.query(
       'UPDATE bets SET status = $1, cancelled_at = NOW() WHERE id = $2',
       ['cancelled', betId]
     );
-    
-    // Refund the bet amount to user
-    await pool.query(
+
+    // Refund user
+    await client.query(
       'UPDATE users SET balance = balance + $1 WHERE id = $2',
-      [bet.amount, userId]
+      [betAmount, userId]
     );
-    
-    await pool.query('COMMIT');
-    
+
+    await client.query('COMMIT');
     res.json({ 
-      success: true, 
-      refundAmount: parseFloat(bet.amount),
-      message: 'Bet cancelled successfully. If you rebet on this market within 5 minutes, a penalty fee will apply.'
+      message: `Bet cancelled successfully. $${betAmount.toFixed(2)} refunded to your account.`,
+      refundAmount: betAmount
     });
   } catch (err) {
-    await pool.query('ROLLBACK');
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    await client.query('ROLLBACK');
+    console.error('Bet cancellation error:', err);
+    res.status(500).json({ error: 'Failed to cancel bet' });
+  } finally {
+    client.release();
   }
 });
 
-// ============ LEADERBOARD ROUTES ============
+// Get user's bets
+app.get('/api/users/:userId/bets', async (req, res) => {
+  const { userId } = req.params;
+  
+  try {
+    const result = await pool.query(`
+      SELECT 
+        b.*,
+        m.question as market,
+        m.deadline,
+        c.name as category
+      FROM bets b
+      JOIN markets m ON b.market_id = m.id
+      LEFT JOIN categories c ON m.category_id = c.id
+      WHERE b.user_id = $1
+      ORDER BY b.created_at DESC
+    `, [userId]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('User bets fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch bets' });
+  }
+});
+
+// ============ USER STATS ENDPOINTS ============
+
+// Get user statistics
+app.get('/api/users/:userId/stats', async (req, res) => {
+  const { userId } = req.params;
+  
+  try {
+    // Get user's personal stats
+    const userStats = await pool.query(`
+      SELECT 
+        COUNT(*) as total_bets,
+        SUM(amount) as total_wagered,
+        COUNT(CASE WHEN status = 'won' THEN 1 END) as wins,
+        COUNT(CASE WHEN status = 'lost' THEN 1 END) as losses,
+        SUM(CASE WHEN status = 'won' THEN potential_win ELSE 0 END) as total_winnings
+      FROM bets
+      WHERE user_id = $1
+    `, [userId]);
+
+    // Get favorite category
+    const favoriteCategory = await pool.query(`
+      SELECT c.name, COUNT(*) as bet_count
+      FROM bets b
+      JOIN markets m ON b.market_id = m.id
+      LEFT JOIN categories c ON m.category_id = c.id
+      WHERE b.user_id = $1
+      GROUP BY c.name
+      ORDER BY bet_count DESC
+      LIMIT 1
+    `, [userId]);
+
+    // Get comparison with other users
+    const avgStats = await pool.query(`
+      SELECT 
+        AVG(amount) as avg_bet_amount,
+        COUNT(*) / NULLIF(COUNT(DISTINCT user_id), 0) as avg_bets_per_user
+      FROM bets 
+      WHERE user_id != $1
+    `, [userId]);
+
+    // Calculate win rate
+    const stats = userStats.rows[0];
+    const totalFinishedBets = parseInt(stats.wins) + parseInt(stats.losses);
+    const winRate = totalFinishedBets > 0 ? (parseInt(stats.wins) / totalFinishedBets * 100).toFixed(1) : 0;
+
+    res.json({
+      totalBets: parseInt(stats.total_bets),
+      totalWagered: parseFloat(stats.total_wagered || 0),
+      winRate: parseFloat(winRate),
+      totalWinnings: parseFloat(stats.total_winnings || 0),
+      favoriteCategory: favoriteCategory.rows[0]?.name || 'None',
+      avgBetAmount: parseFloat(avgStats.rows[0]?.avg_bet_amount || 0),
+      avgBetsPerUser: parseFloat(avgStats.rows[0]?.avg_bets_per_user || 0)
+    });
+  } catch (err) {
+    console.error('User stats error:', err);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
 
 // Get leaderboard
 app.get('/api/leaderboard', async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT id, name, total_winnings, bets_won FROM users WHERE total_winnings > 0 ORDER BY total_winnings DESC LIMIT 20'
-    );
-    
-    res.json(result.rows.map(u => ({
-      id: u.id,
-      name: u.name,
-      winnings: parseFloat(u.total_winnings),
-      betsWon: u.bets_won
-    })));
+    const result = await pool.query(`
+      SELECT 
+        u.id,
+        u.name,
+        u.avatar,
+        u.total_winnings,
+        u.bets_won,
+        u.balance
+      FROM users u
+      WHERE u.total_winnings > 0
+      ORDER BY u.total_winnings DESC
+      LIMIT 10
+    `);
+    res.json(result.rows);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Leaderboard fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
   }
 });
 
+// Start server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
