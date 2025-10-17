@@ -24,6 +24,9 @@ const App = () => {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [userStats, setUserStats] = useState(null);
   const [marketStats, setMarketStats] = useState({});
+  const [showUserStats, setShowUserStats] = useState(false);
+  const [showCategoryPanel, setShowCategoryPanel] = useState(false);
+  const [newCategory, setNewCategory] = useState('');
 
   const [newMarket, setNewMarket] = useState({
     question: '',
@@ -33,14 +36,10 @@ const App = () => {
     deadline: ''
   });
 
-  const [newCategory, setNewCategory] = useState('');
-  const [showCategoryPanel, setShowCategoryPanel] = useState(false);
-
   const [activeBet, setActiveBet] = useState(null);
   const [betAmount, setBetAmount] = useState('');
   const [bets, setBets] = useState([]);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
-  const [showUserStats, setShowUserStats] = useState(false);
 
   // Fetch markets on mount
   useEffect(() => {
@@ -174,6 +173,8 @@ const App = () => {
     setBalance(10000);
     setBets([]);
     setShowAdminPanel(false);
+    setShowCategoryPanel(false);
+    setShowUserStats(false);
   };
 
   const createNewMarket = async () => {
@@ -245,113 +246,104 @@ const App = () => {
     }
   };
 
+  const hasActiveBetOnMarket = (marketId) => {
+    return bets.some(bet => bet.marketId === marketId && bet.status === 'pending');
+  };
+
   const placeBet = (market, choice) => {
-  if (!isLoggedIn) {
-    setShowAuth(true);
-    return;
-  }
-  
-  // Check if user already has an active bet on this market
-  if (hasActiveBetOnMarket(market.id)) {
-    alert('You already have an active bet on this market. Cancel your existing bet first if you want to place a new one.');
-    return;
-  }
-  
-  setActiveBet({ market, choice });
-};
+    if (!isLoggedIn) {
+      setShowAuth(true);
+      return;
+    }
+    
+    if (hasActiveBetOnMarket(market.id)) {
+      alert('You already have an active bet on this market. Cancel your existing bet first if you want to place a new one.');
+      return;
+    }
+    
+    setActiveBet({ market, choice });
+  };
 
   const confirmBet = async () => {
-  const amount = parseFloat(betAmount);
-  if (amount <= 0 || amount > balance) {
-    alert('Invalid bet amount');
-    return;
-  }
-
-  const odds = activeBet.choice === 'yes' ? activeBet.market.yesOdds : activeBet.market.noOdds;
-  const potentialWin = amount * odds;
-
-  try {
-    const response = await fetch(`${API_URL}/api/bets`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId: user.id,
-        marketId: activeBet.market.id,
-        choice: activeBet.choice,
-        amount,
-        odds,
-        potentialWin
-      })
-    });
-
-    // Add after confirmBet function
-const cancelBet = async (betId) => {
-  if (!confirm('Are you sure you want to cancel this bet? You will be charged a penalty fee if you rebet on this market within 5 minutes.')) {
-    return;
-  }
-
-  try {
-    const response = await fetch(`${API_URL}/api/bets/${betId}/cancel`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: user.id })
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      alert(error.error || 'Failed to cancel bet');
+    const amount = parseFloat(betAmount);
+    if (amount <= 0 || amount > balance) {
+      alert('Invalid bet amount');
       return;
     }
 
-    const data = await response.json();
-    alert(data.message);
-    
-    // Refresh user data
-    await fetchUserBets();
-    await fetchUserBalance();
-    await fetchUserStats();
-    
-    // Refresh market stats for cancelled bet
-    const cancelledBet = bets.find(b => b.id === betId);
-    if (cancelledBet) {
-      await fetchMarketStats(cancelledBet.marketId);
+    const odds = activeBet.choice === 'yes' ? activeBet.market.yesOdds : activeBet.market.noOdds;
+    const potentialWin = amount * odds;
+
+    try {
+      const response = await fetch(`${API_URL}/api/bets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          marketId: activeBet.market.id,
+          choice: activeBet.choice,
+          amount,
+          odds,
+          potentialWin
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        alert(error.error || 'Failed to place bet');
+        return;
+      }
+
+      const marketId = activeBet.market.id;
+      
+      await fetchUserBets();
+      await fetchUserBalance();
+      await fetchUserStats();
+      await fetchMarketStats(marketId);
+      
+      setActiveBet(null);
+      setBetAmount('');
+    } catch (err) {
+      console.error('Bet error:', err);
+      alert('Failed to place bet');
     }
-  } catch (err) {
-    console.error('Cancel bet error:', err);
-    alert('Failed to cancel bet');
-  }
-};
+  };
 
-// Add this helper function to check if user already has a bet on a market
-const hasActiveBetOnMarket = (marketId) => {
-  return bets.some(bet => bet.marketId === marketId && bet.status === 'pending');
-};
-
-    
-
-    if (!response.ok) {
-      const error = await response.json();
-      alert(error.error || 'Failed to place bet');
+  const cancelBet = async (betId) => {
+    if (!confirm('Are you sure you want to cancel this bet? You will be charged a penalty fee if you rebet on this market within 5 minutes.')) {
       return;
     }
 
-    // Store market ID before clearing activeBet
-    const marketId = activeBet.market.id;
-    
-    await fetchUserBets();
-    await fetchUserBalance();
-    await fetchUserStats(); // Update user stats too
-    
-    // Refresh stats for the market that was just bet on
-    await fetchMarketStats(marketId);
-    
-    setActiveBet(null);
-    setBetAmount('');
-  } catch (err) {
-    console.error('Bet error:', err);
-    alert('Failed to place bet');
-  }
-};
+    try {
+      const response = await fetch(`${API_URL}/api/bets/${betId}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        alert(error.error || 'Failed to cancel bet');
+        return;
+      }
+
+      const data = await response.json();
+      alert(data.message);
+      
+      const cancelledBet = bets.find(b => b.id === betId);
+      
+      await fetchUserBets();
+      await fetchUserBalance();
+      await fetchUserStats();
+      
+      if (cancelledBet) {
+        await fetchMarketStats(cancelledBet.marketId);
+      }
+    } catch (err) {
+      console.error('Cancel bet error:', err);
+      alert('Failed to cancel bet');
+    }
+  };
 
   const getRankIcon = (rank) => {
     switch(rank) {
@@ -563,7 +555,7 @@ const hasActiveBetOnMarket = (marketId) => {
         </div>
       )}
 
-      {/* Category Management Modal (Admin Only) */}
+      {/* Category Management Modal */}
       {showCategoryPanel && isAdmin && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
           <div className="bg-slate-800 rounded-xl p-8 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
@@ -793,7 +785,6 @@ const hasActiveBetOnMarket = (marketId) => {
               </p>
             </div>
 
-            {/* Show market statistics */}
             {marketStats[activeBet.market.id] && (
               <div className="bg-slate-700 rounded-lg p-3 mb-4">
                 <p className="text-sm text-gray-300 mb-2">Others are betting:</p>
@@ -881,7 +872,6 @@ const hasActiveBetOnMarket = (marketId) => {
                   </div>
                 </div>
                 
-                {/* Betting Statistics */}
                 {stats.yesPercentage !== undefined && (
                   <div className="mb-4 bg-slate-700 rounded-lg p-3">
                     <p className="text-sm text-gray-300 mb-2">Community Betting:</p>
@@ -930,45 +920,44 @@ const hasActiveBetOnMarket = (marketId) => {
           })}
         </div>
 
-       {/* Active Bets */}
-{isLoggedIn && bets.length > 0 && (
-  <div className="bg-slate-800 bg-opacity-50 rounded-xl p-6 border border-purple-500 backdrop-blur-sm">
-    <h3 className="text-2xl font-bold text-white mb-4">Your Bets</h3>
-    <div className="space-y-3">
-      {bets.map((bet) => (
-        <div key={bet.id} className={`rounded-lg p-4 flex justify-between items-center ${
-          bet.status === 'pending' ? 'bg-slate-700' : 'bg-slate-800 opacity-70'
-        }`}>
-          <div className="flex-1">
-            <p className="text-white font-semibold">{bet.market}</p>
-            <p className="text-purple-300 text-sm">
-              Bet: <span className="font-bold">{bet.choice.toUpperCase()}</span> at {bet.odds}x
-              {bet.status === 'cancelled' && <span className="text-red-400 ml-2">(Cancelled)</span>}
-              {bet.status === 'won' && <span className="text-green-400 ml-2">(Won!)</span>}
-              {bet.status === 'lost' && <span className="text-gray-400 ml-2">(Lost)</span>}
-            </p>
-          </div>
-          <div className="text-right flex items-center space-x-3">
-            <div>
-              <p className="text-white font-bold">${bet.amount.toFixed(2)}</p>
-              {bet.status === 'pending' && (
-                <p className="text-green-400 text-sm">Potential: ${bet.potentialWin.toFixed(2)}</p>
-              )}
+        {isLoggedIn && bets.length > 0 && (
+          <div className="bg-slate-800 bg-opacity-50 rounded-xl p-6 border border-purple-500 backdrop-blur-sm">
+            <h3 className="text-2xl font-bold text-white mb-4">Your Bets</h3>
+            <div className="space-y-3">
+              {bets.map((bet) => (
+                <div key={bet.id} className={`rounded-lg p-4 flex justify-between items-center ${
+                  bet.status === 'pending' ? 'bg-slate-700' : 'bg-slate-800 opacity-70'
+                }`}>
+                  <div className="flex-1">
+                    <p className="text-white font-semibold">{bet.market}</p>
+                    <p className="text-purple-300 text-sm">
+                      Bet: <span className="font-bold">{bet.choice.toUpperCase()}</span> at {bet.odds}x
+                      {bet.status === 'cancelled' && <span className="text-red-400 ml-2">(Cancelled)</span>}
+                      {bet.status === 'won' && <span className="text-green-400 ml-2">(Won!)</span>}
+                      {bet.status === 'lost' && <span className="text-gray-400 ml-2">(Lost)</span>}
+                    </p>
+                  </div>
+                  <div className="text-right flex items-center space-x-3">
+                    <div>
+                      <p className="text-white font-bold">${bet.amount.toFixed(2)}</p>
+                      {bet.status === 'pending' && (
+                        <p className="text-green-400 text-sm">Potential: ${bet.potentialWin.toFixed(2)}</p>
+                      )}
+                    </div>
+                    {bet.status === 'pending' && (
+                      <button
+                        onClick={() => cancelBet(bet.id)}
+                        className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm transition"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
-            {bet.status === 'pending' && (
-              <button
-                onClick={() => cancelBet(bet.id)}
-                className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm transition"
-              >
-                Cancel
-              </button>
-            )}
           </div>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
+        )}
       </main>
     </div>
   );
