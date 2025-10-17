@@ -30,7 +30,7 @@ CREATE TABLE markets (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Bets table
+-- Bets table (MODIFIED - added cancelled_at)
 CREATE TABLE bets (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -40,6 +40,8 @@ CREATE TABLE bets (
     odds DECIMAL(5, 2) NOT NULL,
     potential_win DECIMAL(10, 2) NOT NULL,
     status VARCHAR(20) DEFAULT 'pending',
+    penalty_fee DECIMAL(10, 2) DEFAULT 0.00,
+    cancelled_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
