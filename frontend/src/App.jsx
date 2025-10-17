@@ -56,10 +56,18 @@ function App() {
     try {
       const response = await fetch(`${API_URL}/api/markets`);
       const data = await response.json();
-      setMarkets(data);
+      
+      // Ensure numeric fields are parsed as numbers
+      const parsedData = data.map(market => ({
+        ...market,
+        yesOdds: parseFloat(market.yesOdds || market.yes_odds),
+        noOdds: parseFloat(market.noOdds || market.no_odds)
+      }));
+      
+      setMarkets(parsedData);
       
       // Fetch stats for each market
-      data.forEach(market => {
+      parsedData.forEach(market => {
         fetchMarketStats(market.id);
       });
     } catch (err) {
@@ -94,7 +102,16 @@ function App() {
     try {
       const response = await fetch(`${API_URL}/api/users/${user.id}/bets`);
       const data = await response.json();
-      setBets(data);
+      
+      // Ensure numeric fields are parsed as numbers
+      const parsedBets = data.map(bet => ({
+        ...bet,
+        amount: parseFloat(bet.amount),
+        odds: parseFloat(bet.odds),
+        potentialWin: parseFloat(bet.potentialWin || bet.potential_win)
+      }));
+      
+      setBets(parsedBets);
     } catch (err) {
       console.error('Failed to fetch user bets:', err);
     }
@@ -104,7 +121,7 @@ function App() {
     try {
       const response = await fetch(`${API_URL}/api/users/${user.id}/balance`);
       const data = await response.json();
-      setBalance(data.balance);
+      setBalance(parseFloat(data.balance));
     } catch (err) {
       console.error('Failed to fetch balance:', err);
     }
@@ -114,7 +131,19 @@ function App() {
     try {
       const response = await fetch(`${API_URL}/api/users/${user.id}/stats`);
       const data = await response.json();
-      setUserStats(data);
+      
+      // Ensure all numeric fields are parsed
+      const parsedStats = {
+        totalBets: parseInt(data.totalBets || 0),
+        totalWagered: parseFloat(data.totalWagered || 0),
+        winRate: parseFloat(data.winRate || 0),
+        totalWinnings: parseFloat(data.totalWinnings || 0),
+        favoriteCategory: data.favoriteCategory || 'None',
+        avgBetAmount: parseFloat(data.avgBetAmount || 0),
+        avgBetsPerUser: parseFloat(data.avgBetsPerUser || 0)
+      };
+      
+      setUserStats(parsedStats);
     } catch (err) {
       console.error('Failed to fetch user stats:', err);
     }
@@ -124,7 +153,15 @@ function App() {
     try {
       const response = await fetch(`${API_URL}/api/leaderboard`);
       const data = await response.json();
-      setLeaderboard(data);
+      
+      // Ensure numeric fields are parsed as numbers
+      const parsedLeaderboard = data.map(player => ({
+        ...player,
+        totalWinnings: parseFloat(player.totalWinnings || player.total_winnings),
+        balance: parseFloat(player.balance)
+      }));
+      
+      setLeaderboard(parsedLeaderboard);
     } catch (err) {
       console.error('Failed to fetch leaderboard:', err);
     }
@@ -149,7 +186,7 @@ function App() {
 
       const data = await response.json();
       setUser(data);
-      setBalance(data.balance);
+      setBalance(parseFloat(data.balance));
       setShowAuth(false);
       setAuthForm({ name: '', email: '', password: '' });
     } catch (err) {
@@ -411,7 +448,7 @@ function App() {
               <>
                 <div className="flex items-center space-x-2 bg-slate-700 px-4 py-2 rounded-lg">
                   <DollarSign className="text-green-400" size={20} />
-                  <span className="text-white font-semibold">${balance.toFixed(2)}</span>
+                  <span className="text-white font-semibold">${parseFloat(balance).toFixed(2)}</span>
                 </div>
                 
                 <button
@@ -652,7 +689,7 @@ function App() {
               <h3 className="text-xl font-bold text-white mb-4">Account Stats</h3>
               <div className="grid grid-cols-3 gap-4">
                 <div className="bg-slate-600 p-4 rounded-lg text-center">
-                  <p className="text-2xl font-bold text-green-400">${balance.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-green-400">${parseFloat(balance).toFixed(2)}</p>
                   <p className="text-sm text-purple-300">Current Balance</p>
                 </div>
                 <div className="bg-slate-600 p-4 rounded-lg text-center">
@@ -695,9 +732,9 @@ function App() {
                       </div>
                       <div className="text-right flex items-center space-x-3">
                         <div>
-                          <p className="text-white font-bold">${bet.amount.toFixed(2)}</p>
+                          <p className="text-white font-bold">${parseFloat(bet.amount).toFixed(2)}</p>
                           {bet.status === 'pending' && (
-                            <p className="text-green-400 text-sm">Potential: ${bet.potentialWin.toFixed(2)}</p>
+                            <p className="text-green-400 text-sm">Potential: ${parseFloat(bet.potentialWin).toFixed(2)}</p>
                           )}
                         </div>
                         {bet.status === 'pending' && (
@@ -895,7 +932,7 @@ function App() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-green-400 font-bold text-xl">${player.totalWinnings.toFixed(2)}</p>
+                    <p className="text-green-400 font-bold text-xl">${parseFloat(player.totalWinnings).toFixed(2)}</p>
                     <p className="text-purple-300 text-sm">Total Winnings</p>
                   </div>
                 </div>
@@ -927,11 +964,11 @@ function App() {
               </div>
               <div className="bg-slate-700 p-4 rounded-lg">
                 <p className="text-purple-300 text-sm mb-1">Total Wagered</p>
-                <p className="text-white text-2xl font-bold">${userStats.totalWagered.toFixed(2)}</p>
+                <p className="text-white text-2xl font-bold">${parseFloat(userStats.totalWagered).toFixed(2)}</p>
               </div>
               <div className="bg-slate-700 p-4 rounded-lg">
                 <p className="text-purple-300 text-sm mb-1">Total Winnings</p>
-                <p className="text-green-400 text-2xl font-bold">${userStats.totalWinnings.toFixed(2)}</p>
+                <p className="text-green-400 text-2xl font-bold">${parseFloat(userStats.totalWinnings).toFixed(2)}</p>
               </div>
             </div>
 
@@ -943,10 +980,10 @@ function App() {
             <div className="bg-slate-700 p-4 rounded-lg">
               <p className="text-white font-bold mb-2">Compared to Others:</p>
               <p className="text-purple-300 text-sm">
-                Your avg bet: <span className="text-white font-semibold">${(userStats.totalWagered / Math.max(userStats.totalBets, 1)).toFixed(2)}</span>
+                Your avg bet: <span className="text-white font-semibold">${(parseFloat(userStats.totalWagered) / Math.max(userStats.totalBets, 1)).toFixed(2)}</span>
               </p>
               <p className="text-purple-300 text-sm">
-                Community avg: <span className="text-white font-semibold">${userStats.avgBetAmount.toFixed(2)}</span>
+                Community avg: <span className="text-white font-semibold">${parseFloat(userStats.avgBetAmount).toFixed(2)}</span>
               </p>
             </div>
           </div>
