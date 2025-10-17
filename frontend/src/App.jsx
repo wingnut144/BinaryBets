@@ -930,28 +930,45 @@ const hasActiveBetOnMarket = (marketId) => {
           })}
         </div>
 
-        {/* Active Bets */}
-        {isLoggedIn && bets.length > 0 && (
-          <div className="bg-slate-800 bg-opacity-50 rounded-xl p-6 border border-purple-500 backdrop-blur-sm">
-            <h3 className="text-2xl font-bold text-white mb-4">Your Active Bets</h3>
-            <div className="space-y-3">
-              {bets.map((bet) => (
-                <div key={bet.id} className="bg-slate-700 rounded-lg p-4 flex justify-between items-center">
-                  <div>
-                    <p className="text-white font-semibold">{bet.market}</p>
-                    <p className="text-purple-300 text-sm">
-                      Bet: <span className="font-bold">{bet.choice.toUpperCase()}</span> at {bet.odds}x
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-white font-bold">${bet.amount.toFixed(2)}</p>
-                    <p className="text-green-400 text-sm">Win: ${bet.potentialWin.toFixed(2)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+       {/* Active Bets */}
+{isLoggedIn && bets.length > 0 && (
+  <div className="bg-slate-800 bg-opacity-50 rounded-xl p-6 border border-purple-500 backdrop-blur-sm">
+    <h3 className="text-2xl font-bold text-white mb-4">Your Bets</h3>
+    <div className="space-y-3">
+      {bets.map((bet) => (
+        <div key={bet.id} className={`rounded-lg p-4 flex justify-between items-center ${
+          bet.status === 'pending' ? 'bg-slate-700' : 'bg-slate-800 opacity-70'
+        }`}>
+          <div className="flex-1">
+            <p className="text-white font-semibold">{bet.market}</p>
+            <p className="text-purple-300 text-sm">
+              Bet: <span className="font-bold">{bet.choice.toUpperCase()}</span> at {bet.odds}x
+              {bet.status === 'cancelled' && <span className="text-red-400 ml-2">(Cancelled)</span>}
+              {bet.status === 'won' && <span className="text-green-400 ml-2">(Won!)</span>}
+              {bet.status === 'lost' && <span className="text-gray-400 ml-2">(Lost)</span>}
+            </p>
           </div>
-        )}
+          <div className="text-right flex items-center space-x-3">
+            <div>
+              <p className="text-white font-bold">${bet.amount.toFixed(2)}</p>
+              {bet.status === 'pending' && (
+                <p className="text-green-400 text-sm">Potential: ${bet.potentialWin.toFixed(2)}</p>
+              )}
+            </div>
+            {bet.status === 'pending' && (
+              <button
+                onClick={() => cancelBet(bet.id)}
+                className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm transition"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
       </main>
     </div>
   );
