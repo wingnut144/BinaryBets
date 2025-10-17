@@ -26,7 +26,7 @@ CREATE TABLE markets (
     category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     yes_odds DECIMAL(5, 2) NOT NULL,
     no_odds DECIMAL(5, 2) NOT NULL,
-    deadline TIMESTAMP,
+    deadline TIMESTAMP NOT NULL,
     status VARCHAR(20) DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
