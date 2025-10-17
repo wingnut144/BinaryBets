@@ -246,12 +246,19 @@ const App = () => {
   };
 
   const placeBet = (market, choice) => {
-    if (!isLoggedIn) {
-      setShowAuth(true);
-      return;
-    }
-    setActiveBet({ market, choice });
-  };
+  if (!isLoggedIn) {
+    setShowAuth(true);
+    return;
+  }
+  
+  // Check if user already has an active bet on this market
+  if (hasActiveBetOnMarket(market.id)) {
+    alert('You already have an active bet on this market. Cancel your existing bet first if you want to place a new one.');
+    return;
+  }
+  
+  setActiveBet({ market, choice });
+};
 
   const confirmBet = async () => {
   const amount = parseFloat(betAmount);
@@ -276,6 +283,51 @@ const App = () => {
         potentialWin
       })
     });
+
+    // Add after confirmBet function
+const cancelBet = async (betId) => {
+  if (!confirm('Are you sure you want to cancel this bet? You will be charged a penalty fee if you rebet on this market within 5 minutes.')) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_URL}/api/bets/${betId}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: user.id })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      alert(error.error || 'Failed to cancel bet');
+      return;
+    }
+
+    const data = await response.json();
+    alert(data.message);
+    
+    // Refresh user data
+    await fetchUserBets();
+    await fetchUserBalance();
+    await fetchUserStats();
+    
+    // Refresh market stats for cancelled bet
+    const cancelledBet = bets.find(b => b.id === betId);
+    if (cancelledBet) {
+      await fetchMarketStats(cancelledBet.marketId);
+    }
+  } catch (err) {
+    console.error('Cancel bet error:', err);
+    alert('Failed to cancel bet');
+  }
+};
+
+// Add this helper function to check if user already has a bet on a market
+const hasActiveBetOnMarket = (marketId) => {
+  return bets.some(bet => bet.marketId === marketId && bet.status === 'pending');
+};
+
+    
 
     if (!response.ok) {
       const error = await response.json();
