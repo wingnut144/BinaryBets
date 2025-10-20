@@ -1,25 +1,22 @@
 -- Create users table with email verification
 CREATE TABLE users (
-  id SERIAL PRIMARY KEY,
-  username VARCHAR(50) UNIQUE NOT NULL,
-  name VARCHAR(255) NOT NULL,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password VARCHAR(255) NOT NULL,
-  avatar VARCHAR(500) DEFAULT 'https://ui-avatars.com/api/?name=User&background=random',
-  is_admin BOOLEAN DEFAULT FALSE,
-  email_verified BOOLEAN DEFAULT FALSE,
-  verification_token VARCHAR(255),
-  balance DECIMAL(10, 2) DEFAULT 10000.00,
-  total_winnings DECIMAL(10, 2) DEFAULT 0,
-  bets_won INTEGER DEFAULT 0,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    username VARCHAR(50) UNIQUE NOT NULL,     -- ADD THIS LINE
+    full_name VARCHAR(255) NOT NULL,          -- ADD THIS LINE
+    balance DECIMAL(10,2) DEFAULT 10000,
+    is_admin BOOLEAN DEFAULT FALSE,
+    email_verified BOOLEAN DEFAULT TRUE,      -- ADD THIS LINE
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create categories table
 CREATE TABLE categories (
-  id SERIAL PRIMARY KEY,
-  name VARCHAR(255) UNIQUE NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) UNIQUE NOT NULL,
+    color VARCHAR(20) DEFAULT 'blue',  -- ADD THIS LINE
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create markets table (supports both binary and multi-choice)
