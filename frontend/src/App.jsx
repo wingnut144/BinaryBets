@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, DollarSign, Calendar, Users, Trophy, Settings, X, PlusCircle, User, LogOut } from 'lucide-react';
+import { TrendingUp, DollarSign, Calendar, Users, Trophy, Settings, X, PlusCircle, User, LogOut, Search, ExternalLink, CheckCircle, AlertCircle } from 'lucide-react';
 
 const API_URL = 'http://64.23.152.157:5000/api';
 
@@ -17,6 +17,7 @@ export default function App() {
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showResolveModal, setShowResolveModal] = useState(false);
+  const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [selectedMarket, setSelectedMarket] = useState(null);
   const [selectedChoice, setSelectedChoice] = useState(null);
@@ -26,6 +27,8 @@ export default function App() {
   const [userStats, setUserStats] = useState(null);
   const [userBets, setUserBets] = useState([]);
   const [expiredMarkets, setExpiredMarkets] = useState([]);
+  const [verificationData, setVerificationData] = useState(null);
+  const [verifyingMarket, setVerifyingMarket] = useState(null);
   
   // Form states
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
@@ -68,7 +71,6 @@ export default function App() {
     try {
       const response = await fetch(`${API_URL}/markets`);
       const data = await response.json();
-      console.log('Fetched markets:', data);
       setMarkets(data);
     } catch (error) {
       console.error('Error fetching markets:', error);
@@ -127,6 +129,21 @@ export default function App() {
       setShowResolveModal(true);
     } catch (error) {
       console.error('Error fetching expired markets:', error);
+    }
+  };
+
+  const fetchVerification = async (market) => {
+    setVerifyingMarket(market.id);
+    try {
+      const response = await fetch(`${API_URL}/markets/${market.id}/verify`);
+      const data = await response.json();
+      setVerificationData(data);
+      setShowVerificationModal(true);
+    } catch (error) {
+      console.error('Error fetching verification:', error);
+      alert('Failed to fetch verification data');
+    } finally {
+      setVerifyingMarket(null);
     }
   };
 
@@ -428,6 +445,7 @@ export default function App() {
       
       if (response.ok) {
         alert(`Market resolved! ${data.winnersCount} winners paid out $${parseFloat(data.totalPayout).toFixed(2)}`);
+        setShowVerificationModal(false);
         fetchExpiredMarkets();
         fetchMarkets();
       } else {
@@ -719,11 +737,10 @@ export default function App() {
         </Modal>
       )}
 
-      {/* Account Modal */}
+      {/* Account Modal - [keeping existing code, no changes needed] */}
       {showAccountModal && user && (
         <Modal onClose={() => setShowAccountModal(false)} title="My Account" size="large">
           <div className="space-y-6">
-            {/* Profile Section */}
             <div className="bg-slate-800 rounded-lg p-6">
               <h3 className="text-xl font-semibold text-white mb-4">Profile</h3>
               <div className="flex items-center space-x-4 mb-4">
@@ -775,7 +792,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Account Stats */}
             <div className="grid grid-cols-3 gap-4">
               <div className="bg-green-500/20 rounded-lg p-4">
                 <p className="text-green-300 text-sm">Balance</p>
@@ -791,7 +807,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* My Bets */}
             <div className="bg-slate-800 rounded-lg p-6">
               <h3 className="text-xl font-semibold text-white mb-4">My Bets</h3>
               <div className="space-y-3 max-h-96 overflow-y-auto">
@@ -870,7 +885,7 @@ export default function App() {
         </Modal>
       )}
 
-      {/* Category Manager Modal */}
+      {/* Category Manager Modal - [keeping existing, no changes] */}
       {showCategoryManager && user?.is_admin && (
         <Modal onClose={() => setShowCategoryManager(false)} title="Manage Categories">
           <div className="space-y-4">
@@ -907,7 +922,7 @@ export default function App() {
         </Modal>
       )}
 
-      {/* Admin Panel Modal */}
+      {/* Admin Panel Modal - [keeping existing, no changes] */}
       {showAdminPanel && user?.is_admin && (
         <Modal onClose={() => setShowAdminPanel(false)} title="Create Market" size="large">
           <form onSubmit={handleCreateMarket} className="space-y-4">
@@ -1043,7 +1058,7 @@ export default function App() {
         </Modal>
       )}
 
-      {/* Resolve Markets Modal */}
+      {/* Resolve Markets Modal - UPDATED WITH VERIFY BUTTON */}
       {showResolveModal && user?.is_admin && (
         <Modal onClose={() => setShowResolveModal(false)} title="Resolve Expired Markets" size="large">
           <div className="space-y-4">
@@ -1052,10 +1067,22 @@ export default function App() {
             ) : (
               expiredMarkets.map(market => (
                 <div key={market.id} className="bg-slate-800 rounded-lg p-4">
-                  <p className="text-white font-semibold mb-2">{market.question}</p>
-                  <p className="text-slate-400 text-sm mb-3">
-                    Expired: {new Date(market.deadline).toLocaleDateString()}
-                  </p>
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <p className="text-white font-semibold mb-1">{market.question}</p>
+                      <p className="text-slate-400 text-sm">
+                        Expired: {new Date(market.deadline).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => fetchVerification(market)}
+                      disabled={verifyingMarket === market.id}
+                      className="flex items-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    >
+                      <Search className="w-4 h-4" />
+                      <span>{verifyingMarket === market.id ? 'Verifying...' : 'Verify'}</span>
+                    </button>
+                  </div>
                   
                   {market.market_type === 'binary' ? (
                     <div className="flex space-x-2">
@@ -1092,22 +1119,186 @@ export default function App() {
           </div>
         </Modal>
       )}
+
+      {/* Verification Modal - NEW! */}
+      {showVerificationModal && verificationData && (
+        <Modal 
+          onClose={() => {
+            setShowVerificationModal(false);
+            setVerificationData(null);
+          }} 
+          title="Verification Data" 
+          size="large"
+        >
+          <div className="space-y-6">
+            {/* Market Info */}
+            <div className="bg-slate-800 rounded-lg p-4">
+              <h3 className="text-white font-semibold mb-2">{verificationData.market.question}</h3>
+              <p className="text-slate-400 text-sm">
+                Deadline: {new Date(verificationData.market.deadline).toLocaleDateString()}
+              </p>
+            </div>
+
+            {/* AI Suggestion */}
+            {verificationData.suggested_winner && (
+              <div className={`rounded-lg p-4 border-2 ${
+                verificationData.confidence > 0.7 
+                  ? 'bg-green-500/20 border-green-500' 
+                  : 'bg-yellow-500/20 border-yellow-500'
+              }`}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    {verificationData.confidence > 0.7 ? (
+                      <CheckCircle className="w-5 h-5 text-green-400" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 text-yellow-400" />
+                    )}
+                    <h4 className="text-white font-semibold">AI Suggestion</h4>
+                  </div>
+                  <span className={`text-sm font-semibold ${
+                    verificationData.confidence > 0.7 ? 'text-green-400' : 'text-yellow-400'
+                  }`}>
+                    {(verificationData.confidence * 100).toFixed(0)}% Confidence
+                  </span>
+                </div>
+                <p className="text-white text-lg">
+                  Suggested Winner: <span className="font-bold">{verificationData.suggested_winner}</span>
+                </p>
+              </div>
+            )}
+
+            {/* Analysis Scores */}
+            {verificationData.analysis && (
+              <div className="bg-slate-800 rounded-lg p-4">
+                <h4 className="text-white font-semibold mb-3">Analysis</h4>
+                <div className="space-y-2">
+                  {Object.entries(verificationData.analysis)
+                    .sort(([,a], [,b]) => b - a)
+                    .map(([option, score]) => (
+                      <div key={option} className="flex items-center justify-between">
+                        <span className="text-white">{option}</span>
+                        <div className="flex items-center space-x-3">
+                          <div className="w-32 bg-slate-700 rounded-full h-2">
+                            <div 
+                              className="bg-purple-500 h-2 rounded-full"
+                              style={{ 
+                                width: `${Math.min(score / Math.max(...Object.values(verificationData.analysis)) * 100, 100)}%` 
+                              }}
+                            />
+                          </div>
+                          <span className="text-purple-400 font-semibold w-12 text-right">{score}</span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Special Data (USGS Earthquakes, etc.) */}
+            {verificationData.data && (
+              <div className="bg-slate-800 rounded-lg p-4">
+                <h4 className="text-white font-semibold mb-3">{verificationData.data.source}</h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {verificationData.data.earthquakes?.map((eq, i) => (
+                    <div key={i} className="bg-slate-700 rounded p-2 text-sm">
+                      <p className="text-white">
+                        <span className="font-semibold">M{eq.magnitude}</span> - {eq.location}
+                      </p>
+                      {eq.state && (
+                        <p className="text-purple-400">State: {eq.state}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* News Articles */}
+            {verificationData.news?.articles && verificationData.news.articles.length > 0 && (
+              <div className="bg-slate-800 rounded-lg p-4">
+                <h4 className="text-white font-semibold mb-3">
+                  Related News ({verificationData.news.totalResults} results)
+                </h4>
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {verificationData.news.articles.map((article, i) => (
+                    <div key={i} className="bg-slate-700 rounded-lg p-3">
+                      <h5 className="text-white font-medium mb-1">{article.title}</h5>
+                      {article.description && (
+                        <p className="text-slate-300 text-sm mb-2">{article.description}</p>
+                      )}
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-400">{article.source}</span>
+                        <a
+                          href={article.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center space-x-1 text-purple-400 hover:text-purple-300"
+                        >
+                          <span>Read more</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Resolution Buttons */}
+            <div className="bg-slate-900 rounded-lg p-4">
+              <h4 className="text-white font-semibold mb-3">Resolve Market</h4>
+              {verificationData.market.type === 'binary' ? (
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => handleResolveMarket(verificationData.market.id, 'yes')}
+                    className={`flex-1 px-4 py-3 text-white rounded-lg font-semibold transition-colors ${
+                      verificationData.suggested_winner === 'YES' 
+                        ? 'bg-green-600 hover:bg-green-700 ring-2 ring-green-400'
+                        : 'bg-green-600/50 hover:bg-green-600'
+                    }`}
+                  >
+                    YES Won {verificationData.suggested_winner === 'YES' && '⭐'}
+                  </button>
+                  <button
+                    onClick={() => handleResolveMarket(verificationData.market.id, 'no')}
+                    className={`flex-1 px-4 py-3 text-white rounded-lg font-semibold transition-colors ${
+                      verificationData.suggested_winner === 'NO'
+                        ? 'bg-red-600 hover:bg-red-700 ring-2 ring-red-400'
+                        : 'bg-red-600/50 hover:bg-red-600'
+                    }`}
+                  >
+                    NO Won {verificationData.suggested_winner === 'NO' && '⭐'}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {verificationData.options?.map(option => (
+                    <button
+                      key={option.id}
+                      onClick={() => handleResolveMarket(verificationData.market.id, option.id)}
+                      className={`w-full px-4 py-3 text-white rounded-lg font-semibold text-left transition-colors ${
+                        verificationData.suggested_winner === option.text
+                          ? 'bg-purple-600 hover:bg-purple-700 ring-2 ring-purple-400'
+                          : 'bg-purple-600/50 hover:bg-purple-600'
+                      }`}
+                    >
+                      {option.text} {verificationData.suggested_winner === option.text && '⭐ Suggested'}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
 
-// Market Card Component
+// Market Card Component (unchanged)
 function MarketCard({ market, user, handleBet }) {
   const deadline = new Date(market.deadline);
   const isExpired = deadline < new Date();
-  
-  console.log('MarketCard rendering:', {
-    id: market.id,
-    question: market.question,
-    market_type: market.market_type,
-    options: market.options,
-    optionsLength: market.options?.length
-  });
 
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-6 border border-purple-500/20 hover:border-purple-500/40 transition-all">
@@ -1165,7 +1356,6 @@ function MarketCard({ market, user, handleBet }) {
       ) : (
         <div className="space-y-2">
           {market.options && market.options.length > 0 ? (
-            // FIX: Use unique key and deduplicate options
             market.options
               .filter((option, index, self) => 
                 index === self.findIndex(o => o.id === option.id)
@@ -1212,7 +1402,7 @@ function MarketCard({ market, user, handleBet }) {
   );
 }
 
-// Modal Component
+// Modal Component (unchanged)
 function Modal({ children, onClose, title, size = 'normal' }) {
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
