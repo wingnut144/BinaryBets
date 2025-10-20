@@ -1,4 +1,4 @@
--- Create users table with username
+-- Create users table with email verification
 CREATE TABLE users (
   id SERIAL PRIMARY KEY,
   username VARCHAR(50) UNIQUE NOT NULL,
@@ -7,6 +7,8 @@ CREATE TABLE users (
   password VARCHAR(255) NOT NULL,
   avatar VARCHAR(500) DEFAULT 'https://ui-avatars.com/api/?name=User&background=random',
   is_admin BOOLEAN DEFAULT FALSE,
+  email_verified BOOLEAN DEFAULT FALSE,
+  verification_token VARCHAR(255),
   balance DECIMAL(10, 2) DEFAULT 10000.00,
   total_winnings DECIMAL(10, 2) DEFAULT 0,
   bets_won INTEGER DEFAULT 0,
@@ -59,9 +61,9 @@ CREATE TABLE bets (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Insert admin user
-INSERT INTO users (username, name, email, password, is_admin, balance) VALUES
-('admin', 'Administrator', 'admin@binarybets.com', 'admin123', TRUE, 50000.00);
+-- Insert admin user (pre-verified)
+INSERT INTO users (username, name, email, password, is_admin, email_verified, balance) VALUES
+('admin', 'Administrator', 'admin@binarybets.com', 'admin123', TRUE, TRUE, 50000.00);
 
 -- Insert default categories
 INSERT INTO categories (name) VALUES
@@ -108,21 +110,22 @@ INSERT INTO market_options (market_id, option_text, odds, option_order) VALUES
 (9, 'NVIDIA', 3.5, 3),
 (9, 'Amazon', 4.0, 4);
 
--- Insert demo users for leaderboard
-INSERT INTO users (username, name, email, password, balance, total_winnings, bets_won) VALUES
-('cryptoqueen', 'Sarah Chen', 'sarah@example.com', 'password123', 57850.00, 47850.00, 32),
-('betmaster', 'Marcus Rivera', 'marcus@example.com', 'password123', 53200.00, 43200.00, 28),
-('alexthegreat', 'Alex Thompson', 'alex@example.com', 'password123', 49500.00, 39500.00, 25),
-('jamieliu', 'Jamie Liu', 'jamie@example.com', 'password123', 45700.00, 35700.00, 22),
-('taylorwins', 'Taylor Brooks', 'taylor@example.com', 'password123', 41200.00, 31200.00, 19),
-('jordanbet', 'Jordan Martinez', 'jordan@example.com', 'password123', 38900.00, 28900.00, 17),
-('caseyace', 'Casey Anderson', 'casey@example.com', 'password123', 35600.00, 25600.00, 15),
-('rileypro', 'Riley Johnson', 'riley@example.com', 'password123', 32100.00, 22100.00, 13);
+-- Insert demo users for leaderboard (all verified)
+INSERT INTO users (username, name, email, password, email_verified, balance, total_winnings, bets_won) VALUES
+('cryptoqueen', 'Sarah Chen', 'sarah@example.com', 'password123', TRUE, 57850.00, 47850.00, 32),
+('betmaster', 'Marcus Rivera', 'marcus@example.com', 'password123', TRUE, 53200.00, 43200.00, 28),
+('alexthegreat', 'Alex Thompson', 'alex@example.com', 'password123', TRUE, 49500.00, 39500.00, 25),
+('jamieliu', 'Jamie Liu', 'jamie@example.com', 'password123', TRUE, 45700.00, 35700.00, 22),
+('taylorwins', 'Taylor Brooks', 'taylor@example.com', 'password123', TRUE, 41200.00, 31200.00, 19),
+('jordanbet', 'Jordan Martinez', 'jordan@example.com', 'password123', TRUE, 38900.00, 28900.00, 17),
+('caseyace', 'Casey Anderson', 'casey@example.com', 'password123', TRUE, 35600.00, 25600.00, 15),
+('rileypro', 'Riley Johnson', 'riley@example.com', 'password123', TRUE, 32100.00, 22100.00, 13);
 
 -- Create indexes for performance
 CREATE INDEX idx_bets_user_id ON bets(user_id);
 CREATE INDEX idx_bets_market_id ON bets(market_id);
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_verification_token ON users(verification_token);
 CREATE INDEX idx_markets_category_id ON markets(category_id);
 CREATE INDEX idx_markets_deadline ON markets(deadline);
