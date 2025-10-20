@@ -89,21 +89,19 @@ INSERT INTO markets (question, market_type, category_id, deadline) VALUES
 ('Which US state will experience the strongest earthquake in 2025?', 'multi-choice', 4, '2025-12-31 23:59:59'),
 ('Which company will reach $4 trillion market cap first?', 'multi-choice', 1, '2026-12-31 23:59:59');
 
--- Insert options for multi-choice market 7 (meteor impact)
+-- Insert options for multi-choice markets
 INSERT INTO market_options (market_id, option_text, odds, option_order) VALUES
 (7, 'California', 2.5, 1),
 (7, 'Texas', 3.0, 2),
 (7, 'Arizona', 4.0, 3),
 (7, 'Nevada', 5.0, 4);
 
--- Insert options for multi-choice market 8 (earthquake)
 INSERT INTO market_options (market_id, option_text, odds, option_order) VALUES
 (8, 'California', 1.8, 1),
 (8, 'Alaska', 2.5, 2),
 (8, 'Oklahoma', 6.0, 3),
 (8, 'Hawaii', 3.5, 4);
 
--- Insert options for multi-choice market 9 (company market cap)
 INSERT INTO market_options (market_id, option_text, odds, option_order) VALUES
 (9, 'Apple', 2.0, 1),
 (9, 'Microsoft', 2.2, 2),
