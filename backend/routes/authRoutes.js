@@ -14,7 +14,6 @@ export default function authRoutes(pool) {
         return res.status(400).json({ error: 'All fields are required' });
       }
       
-      // Generate verification token
       const verificationToken = crypto.randomBytes(32).toString('hex');
       
       const result = await pool.query(
@@ -25,7 +24,6 @@ export default function authRoutes(pool) {
       
       const user = result.rows[0];
       
-      // Send verification email (don't wait for it)
       sendVerificationEmail(user, verificationToken).catch(err => 
         console.error('Failed to send verification email:', err)
       );
@@ -59,10 +57,10 @@ export default function authRoutes(pool) {
       if (result.rows.length > 0) {
         const user = result.rows[0];
         
-        // Check if email is verified
         if (!user.email_verified) {
           return res.status(403).json({ 
-            error: 'Please verify your email before logging in. Check your inbox.' 
+            error: 'Please verify your email before logging in. Check your inbox.',
+            needsVerification: true
           });
         }
         
@@ -121,7 +119,6 @@ export default function authRoutes(pool) {
         return res.status(400).json({ error: 'Email already verified' });
       }
       
-      // Generate new verification token
       const verificationToken = crypto.randomBytes(32).toString('hex');
       
       await pool.query(
@@ -129,7 +126,6 @@ export default function authRoutes(pool) {
         [verificationToken, user.id]
       );
       
-      // Send verification email
       await sendVerificationEmail(user, verificationToken);
       
       res.json({ 
