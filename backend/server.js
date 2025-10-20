@@ -122,26 +122,31 @@ app.post('/api/markets', async (req, res) => {
 
 // Add this right after the existing /api/calculate-odds endpoint
 app.post('/api/markets/calculate-odds', async (req, res) => {
-  const { question, options } = req.body;
+  const { question, options, marketType } = req.body;
   try {
     let calculatedOdds;
-    if (options.length === 2) {
+    
+    // Handle binary bets (options might be null)
+    if (!options || options.length === 2 || marketType === 'binary') {
       calculatedOdds = { yes: 2.0, no: 2.0 };
     } else {
+      // Multi-choice
       const baseOdds = options.length;
       calculatedOdds = {
         options: options.map(opt => ({
           text: opt,
-          odds: baseOdds + Math.random() * 0.5
+          odds: parseFloat((baseOdds + Math.random() * 0.5).toFixed(2))
         }))
       };
     }
+    
     res.json(calculatedOdds);
   } catch (error) {
     console.error('Error calculating odds:', error);
     res.status(500).json({ error: 'Failed to calculate odds' });
   }
 });
+
 app.post('/api/markets/:marketId/resolve', async (req, res) => {
   const { marketId } = req.params;
   const { winning_option_id } = req.body;
