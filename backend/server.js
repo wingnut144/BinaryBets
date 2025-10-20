@@ -126,7 +126,7 @@ app.post('/api/markets/calculate-odds', async (req, res) => {
   try {
     let calculatedOdds;
     if (options.length === 2) {
-      calculatedOdds = { yes_odds: 2.0, no_odds: 2.0 };
+      calculatedOdds = { yes: 2.0, no: 2.0 };
     } else {
       const baseOdds = options.length;
       calculatedOdds = {
