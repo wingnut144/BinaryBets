@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, DollarSign, Calendar, Users, Trophy, Settings, X, PlusCircle, User, LogOut, Search, ExternalLink, CheckCircle, AlertCircle } from 'lucide-react';
+import { TrendingUp, DollarSign, Calendar, Users, Trophy, Settings, X, PlusCircle, User, LogOut, Search, ExternalLink, CheckCircle, AlertCircle, Sparkles } from 'lucide-react';
 
 const API_URL = 'http://64.23.152.157:5000/api';
 
@@ -29,10 +29,12 @@ export default function App() {
   const [expiredMarkets, setExpiredMarkets] = useState([]);
   const [verificationData, setVerificationData] = useState(null);
   const [verifyingMarket, setVerifyingMarket] = useState(null);
+  const [calculatingOdds, setCalculatingOdds] = useState(false);
+  const [suggestedOdds, setSuggestedOdds] = useState(null);
   
   // Form states
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
-  const [registerForm, setRegisterForm] = useState({ name: '', email: '', password: '' });
+  const [registerForm, setRegisterForm] = useState({ username: '', name: '', email: '', password: '' });
   const [newCategory, setNewCategory] = useState('');
   const [editAvatar, setEditAvatar] = useState('');
   const [editEmail, setEditEmail] = useState('');
@@ -147,6 +149,54 @@ export default function App() {
     }
   };
 
+  const calculateAIOdds = async () => {
+    if (!marketForm.question) {
+      alert('Please enter a question first');
+      return;
+    }
+    
+    setCalculatingOdds(true);
+    try {
+      const response = await fetch(`${API_URL}/calculate-odds`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: marketForm.question,
+          options: marketForm.marketType === 'multi-choice' 
+            ? marketForm.options.map(o => o.text).filter(t => t.trim())
+            : null
+        })
+      });
+      
+      const data = await response.json();
+      setSuggestedOdds(data.odds);
+      
+      // Auto-fill odds
+      if (marketForm.marketType === 'binary') {
+        setMarketForm({
+          ...marketForm,
+          yesOdds: data.odds.yes.toFixed(1),
+          noOdds: data.odds.no.toFixed(1)
+        });
+      } else {
+        const newOptions = marketForm.options.map(opt => {
+          if (opt.text.trim() && data.odds[opt.text]) {
+            return { ...opt, odds: data.odds[opt.text].toFixed(1) };
+          }
+          return opt;
+        });
+        setMarketForm({ ...marketForm, options: newOptions });
+      }
+      
+      alert('✨ AI odds calculated and filled in!');
+    } catch (error) {
+      console.error('Calculate odds error:', error);
+      alert('Failed to calculate odds. You can enter odds manually.');
+    } finally {
+      setCalculatingOdds(false);
+    }
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     try {
@@ -161,6 +211,8 @@ export default function App() {
         localStorage.setItem('user', JSON.stringify(data.user));
         setShowAuthModal(false);
         setLoginForm({ email: '', password: '' });
+      } else {
+        alert(data.error || 'Login failed');
       }
     } catch (error) {
       console.error('Login error:', error);
@@ -181,7 +233,9 @@ export default function App() {
         setUser(data.user);
         localStorage.setItem('user', JSON.stringify(data.user));
         setShowAuthModal(false);
-        setRegisterForm({ name: '', email: '', password: '' });
+        setRegisterForm({ username: '', name: '', email: '', password: '' });
+      } else {
+        alert(data.error || 'Registration failed');
       }
     } catch (error) {
       console.error('Register error:', error);
@@ -260,7 +314,7 @@ export default function App() {
   };
 
   const handleCancelBet = async (betId) => {
-    if (!window.confirm('Are you sure you want to cancel this bet?')) return;
+    if (!window.confirm('Are you sure you want to cancel this bet? You will receive 95% refund.')) return;
 
     try {
       const response = await fetch(`${API_URL}/bets/${betId}/cancel`, {
@@ -336,7 +390,7 @@ export default function App() {
   };
 
   const handleDeleteCategory = async (categoryId) => {
-    if (!window.confirm('Delete this category? Markets using it will have no category.')) return;
+    if (!window.confirm('Delete this category? Bets using it will have no category.')) return;
 
     try {
       const response = await fetch(`${API_URL}/categories/${categoryId}`, {
@@ -366,7 +420,7 @@ export default function App() {
       
       if (marketForm.marketType === 'binary') {
         if (!marketForm.yesOdds || !marketForm.noOdds) {
-          alert('Please provide odds for both YES and NO');
+          alert('Please provide odds for both YES and NO (or use AI to calculate)');
           return;
         }
         
@@ -382,7 +436,7 @@ export default function App() {
         const validOptions = marketForm.options.filter(opt => opt.text.trim() && opt.odds);
         
         if (validOptions.length < 2) {
-          alert('Please provide at least 2 options with odds');
+          alert('Please provide at least 2 options with odds (or use AI to calculate)');
           return;
         }
         
@@ -419,15 +473,16 @@ export default function App() {
             { text: '', odds: '' }
           ]
         });
+        setSuggestedOdds(null);
         fetchMarkets();
-        alert('Market created successfully!');
+        alert('Bet created successfully!');
       } else {
         const data = await response.json();
-        alert(data.error || 'Failed to create market');
+        alert(data.error || 'Failed to create bet');
       }
     } catch (error) {
       console.error('Create market error:', error);
-      alert('Failed to create market');
+      alert('Failed to create bet');
     }
   };
 
@@ -444,16 +499,16 @@ export default function App() {
       const data = await response.json();
       
       if (response.ok) {
-        alert(`Market resolved! ${data.winnersCount} winners paid out $${parseFloat(data.totalPayout).toFixed(2)}`);
+        alert(`Bet resolved! ${data.winnersCount} winners paid out $${parseFloat(data.totalPayout).toFixed(2)}`);
         setShowVerificationModal(false);
         fetchExpiredMarkets();
         fetchMarkets();
       } else {
-        alert(data.error || 'Failed to resolve market');
+        alert(data.error || 'Failed to resolve bet');
       }
     } catch (error) {
       console.error('Resolve market error:', error);
-      alert('Failed to resolve market');
+      alert('Failed to resolve bet');
     }
   };
 
@@ -531,13 +586,13 @@ export default function App() {
                         onClick={() => setShowAdminPanel(true)}
                         className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
                       >
-                        Create Market
+                        Create Bet
                       </button>
                       <button
                         onClick={fetchExpiredMarkets}
                         className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
                       >
-                        Resolve Markets
+                        Resolve Bets
                       </button>
                     </>
                   )}
@@ -574,7 +629,7 @@ export default function App() {
                 : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
             }`}
           >
-            All Markets
+            All Bets
           </button>
           {categories.map(category => (
             <button
@@ -645,7 +700,15 @@ export default function App() {
             <form onSubmit={handleRegister} className="space-y-4">
               <input
                 type="text"
-                placeholder="Name"
+                placeholder="Username (e.g., cryptoking)"
+                value={registerForm.username}
+                onChange={(e) => setRegisterForm({...registerForm, username: e.target.value})}
+                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
+                required
+              />
+              <input
+                type="text"
+                placeholder="Full Name"
                 value={registerForm.name}
                 onChange={(e) => setRegisterForm({...registerForm, name: e.target.value})}
                 className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
@@ -737,7 +800,7 @@ export default function App() {
         </Modal>
       )}
 
-      {/* Account Modal - [keeping existing code, no changes needed] */}
+      {/* Account Modal */}
       {showAccountModal && user && (
         <Modal onClose={() => setShowAccountModal(false)} title="My Account" size="large">
           <div className="space-y-6">
@@ -746,8 +809,9 @@ export default function App() {
               <div className="flex items-center space-x-4 mb-4">
                 <img src={user.avatar} alt="Avatar" className="w-16 h-16 rounded-full" />
                 <div>
-                  <p className="text-white font-semibold">{user.name}</p>
-                  <p className="text-slate-400">{user.email}</p>
+                  <p className="text-white font-semibold">@{user.username}</p>
+                  <p className="text-slate-400 text-sm">{user.name}</p>
+                  <p className="text-slate-400 text-sm">{user.email}</p>
                 </div>
               </div>
               
@@ -869,9 +933,9 @@ export default function App() {
               >
                 <div className="flex items-center space-x-4">
                   <span className="text-2xl font-bold text-white">#{index + 1}</span>
-                  <img src={player.avatar} alt={player.name} className="w-10 h-10 rounded-full" />
+                  <img src={player.avatar} alt={player.username} className="w-10 h-10 rounded-full" />
                   <div>
-                    <p className="text-white font-semibold">{player.name}</p>
+                    <p className="text-white font-semibold">@{player.username}</p>
                     <p className="text-slate-400 text-sm">{player.bets_won} wins</p>
                   </div>
                 </div>
@@ -885,7 +949,7 @@ export default function App() {
         </Modal>
       )}
 
-      {/* Category Manager Modal - [keeping existing, no changes] */}
+      {/* Category Manager Modal */}
       {showCategoryManager && user?.is_admin && (
         <Modal onClose={() => setShowCategoryManager(false)} title="Manage Categories">
           <div className="space-y-4">
@@ -922,13 +986,13 @@ export default function App() {
         </Modal>
       )}
 
-      {/* Admin Panel Modal - [keeping existing, no changes] */}
+      {/* Admin Panel Modal */}
       {showAdminPanel && user?.is_admin && (
-        <Modal onClose={() => setShowAdminPanel(false)} title="Create Market" size="large">
+        <Modal onClose={() => setShowAdminPanel(false)} title="Create Bet" size="large">
           <form onSubmit={handleCreateMarket} className="space-y-4">
             <input
               type="text"
-              placeholder="Market question"
+              placeholder="Bet question"
               value={marketForm.question}
               onChange={(e) => setMarketForm({...marketForm, question: e.target.value})}
               className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
@@ -968,30 +1032,7 @@ export default function App() {
               </label>
             </div>
 
-            {marketForm.marketType === 'binary' ? (
-              <div className="grid grid-cols-2 gap-4">
-                <input
-                  type="number"
-                  step="0.1"
-                  min="1.1"
-                  placeholder="YES odds (e.g., 2.5)"
-                  value={marketForm.yesOdds}
-                  onChange={(e) => setMarketForm({...marketForm, yesOdds: e.target.value})}
-                  className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
-                  required
-                />
-                <input
-                  type="number"
-                  step="0.1"
-                  min="1.1"
-                  placeholder="NO odds (e.g., 1.5)"
-                  value={marketForm.noOdds}
-                  onChange={(e) => setMarketForm({...marketForm, noOdds: e.target.value})}
-                  className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
-                  required
-                />
-              </div>
-            ) : (
+            {marketForm.marketType === 'multi-choice' && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-white font-semibold">Options (2-4 required)</label>
@@ -1039,6 +1080,50 @@ export default function App() {
                 ))}
               </div>
             )}
+
+            <button
+              type="button"
+              onClick={calculateAIOdds}
+              disabled={calculatingOdds || !marketForm.question || (marketForm.marketType === 'multi-choice' && marketForm.options.filter(o => o.text.trim()).length < 2)}
+              className="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+            >
+              {calculatingOdds ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                  <span>Calculating AI Odds...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5" />
+                  <span>🤖 Calculate AI Odds</span>
+                </>
+              )}
+            </button>
+
+            {marketForm.marketType === 'binary' && (
+              <div className="grid grid-cols-2 gap-4">
+                <input
+                  type="number"
+                  step="0.1"
+                  min="1.1"
+                  placeholder="YES odds (e.g., 2.5)"
+                  value={marketForm.yesOdds}
+                  onChange={(e) => setMarketForm({...marketForm, yesOdds: e.target.value})}
+                  className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
+                  required
+                />
+                <input
+                  type="number"
+                  step="0.1"
+                  min="1.1"
+                  placeholder="NO odds (e.g., 1.5)"
+                  value={marketForm.noOdds}
+                  onChange={(e) => setMarketForm({...marketForm, noOdds: e.target.value})}
+                  className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
+                  required
+                />
+              </div>
+            )}
             
             <input
               type="datetime-local"
@@ -1052,18 +1137,18 @@ export default function App() {
               type="submit"
               className="w-full px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold"
             >
-              Create Market
+              Create Bet
             </button>
           </form>
         </Modal>
       )}
 
-      {/* Resolve Markets Modal - UPDATED WITH VERIFY BUTTON */}
+      {/* Resolve Bets Modal */}
       {showResolveModal && user?.is_admin && (
-        <Modal onClose={() => setShowResolveModal(false)} title="Resolve Expired Markets" size="large">
+        <Modal onClose={() => setShowResolveModal(false)} title="Resolve Expired Bets" size="large">
           <div className="space-y-4">
             {expiredMarkets.length === 0 ? (
-              <p className="text-slate-400 text-center py-8">No expired markets to resolve</p>
+              <p className="text-slate-400 text-center py-8">No expired bets to resolve</p>
             ) : (
               expiredMarkets.map(market => (
                 <div key={market.id} className="bg-slate-800 rounded-lg p-4">
@@ -1120,7 +1205,7 @@ export default function App() {
         </Modal>
       )}
 
-      {/* Verification Modal - NEW! */}
+      {/* Verification Modal */}
       {showVerificationModal && verificationData && (
         <Modal 
           onClose={() => {
@@ -1131,7 +1216,6 @@ export default function App() {
           size="large"
         >
           <div className="space-y-6">
-            {/* Market Info */}
             <div className="bg-slate-800 rounded-lg p-4">
               <h3 className="text-white font-semibold mb-2">{verificationData.market.question}</h3>
               <p className="text-slate-400 text-sm">
@@ -1139,7 +1223,6 @@ export default function App() {
               </p>
             </div>
 
-            {/* AI Suggestion */}
             {verificationData.suggested_winner && (
               <div className={`rounded-lg p-4 border-2 ${
                 verificationData.confidence > 0.7 
@@ -1167,7 +1250,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Analysis Scores */}
             {verificationData.analysis && (
               <div className="bg-slate-800 rounded-lg p-4">
                 <h4 className="text-white font-semibold mb-3">Analysis</h4>
@@ -1194,7 +1276,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Special Data (USGS Earthquakes, etc.) */}
             {verificationData.data && (
               <div className="bg-slate-800 rounded-lg p-4">
                 <h4 className="text-white font-semibold mb-3">{verificationData.data.source}</h4>
@@ -1213,7 +1294,6 @@ export default function App() {
               </div>
             )}
 
-            {/* News Articles */}
             {verificationData.news?.articles && verificationData.news.articles.length > 0 && (
               <div className="bg-slate-800 rounded-lg p-4">
                 <h4 className="text-white font-semibold mb-3">
@@ -1244,9 +1324,8 @@ export default function App() {
               </div>
             )}
 
-            {/* Resolution Buttons */}
             <div className="bg-slate-900 rounded-lg p-4">
-              <h4 className="text-white font-semibold mb-3">Resolve Market</h4>
+              <h4 className="text-white font-semibold mb-3">Resolve Bet</h4>
               {verificationData.market.type === 'binary' ? (
                 <div className="flex space-x-2">
                   <button
@@ -1295,7 +1374,7 @@ export default function App() {
   );
 }
 
-// Market Card Component (unchanged)
+// Market Card Component
 function MarketCard({ market, user, handleBet }) {
   const deadline = new Date(market.deadline);
   const isExpired = deadline < new Date();
@@ -1395,14 +1474,14 @@ function MarketCard({ market, user, handleBet }) {
 
       {isExpired && (
         <div className="mt-4 px-3 py-2 bg-orange-500/20 border border-orange-500/50 rounded-lg text-orange-300 text-sm text-center">
-          Market Expired - Awaiting Resolution
+          Bet Expired - Awaiting Resolution
         </div>
       )}
     </div>
   );
 }
 
-// Modal Component (unchanged)
+// Modal Component
 function Modal({ children, onClose, title, size = 'normal' }) {
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
