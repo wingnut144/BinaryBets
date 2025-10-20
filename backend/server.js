@@ -17,25 +17,110 @@ const pool = new Pool({
   port: 5432,
 });
 
-// API Keys - Add these to your environment or replace with your keys
 const NEWS_API_KEY = process.env.NEWS_API_KEY || 'YOUR_NEWS_API_KEY_HERE';
 const NASA_API_KEY = process.env.NASA_API_KEY || 'DEMO_KEY';
 
-// Verification Helper Functions
+// AI Odds Calculator
+async function calculateOdds(question, options = null) {
+  try {
+    // Search for recent information about the topic
+    const searchQuery = question.replace(/\?$/, '').toLowerCase();
+    const newsData = await searchNews(searchQuery, new Date().toISOString().split('T')[0]);
+    
+    if (options) {
+      // Multi-choice odds calculation
+      const scores = analyzeNewsForOptions(newsData.articles, options.map(opt => ({ option_text: opt })));
+      const totalScore = Object.values(scores).reduce((a, b) => a + b, 0) || options.length;
+      
+      // Convert scores to probabilities
+      const probabilities = {};
+      options.forEach(option => {
+        const score = scores[option] || 1;
+        probabilities[option] = score / totalScore;
+      });
+      
+      // Convert probabilities to odds (with minimum 1.1x)
+      const calculatedOdds = {};
+      options.forEach(option => {
+        const prob = probabilities[option];
+        const baseOdds = prob > 0 ? 1 / prob : 10;
+        // Add some variance and ensure minimum odds
+        const variance = Math.random() * 0.3 - 0.15; // -15% to +15%
+        calculatedOdds[option] = Math.max(1.1, Math.round((baseOdds + baseOdds * variance) * 10) / 10);
+      });
+      
+      return calculatedOdds;
+    } else {
+      // Binary odds calculation (YES/NO)
+      // Analyze sentiment from articles
+      const yesIndicators = ['will', 'likely', 'expected', 'predicted', 'forecast', 'anticipate'];
+      const noIndicators = ['unlikely', 'doubtful', 'won\'t', 'wont', 'not expected', 'improbable'];
+      
+      let yesScore = 1;
+      let noScore = 1;
+      
+      newsData.articles.forEach(article => {
+        const text = `${article.title} ${article.description || ''}`.toLowerCase();
+        yesIndicators.forEach(indicator => {
+          if (text.includes(indicator)) yesScore += 0.5;
+        });
+        noIndicators.forEach(indicator => {
+          if (text.includes(indicator)) noScore += 0.5;
+        });
+      });
+      
+      // Calculate probabilities
+      const total = yesScore + noScore;
+      const yesProbability = yesScore / total;
+      const noProbability = noScore / total;
+      
+      // Convert to odds
+      let yesOdds = yesProbability > 0 ? 1 / yesProbability : 5.0;
+      let noOdds = noProbability > 0 ? 1 / noProbability : 5.0;
+      
+      // Add variance
+      const variance = Math.random() * 0.4 - 0.2; // -20% to +20%
+      yesOdds = Math.max(1.1, Math.round((yesOdds + yesOdds * variance) * 10) / 10);
+      noOdds = Math.max(1.1, Math.round((noOdds + noOdds * variance) * 10) / 10);
+      
+      return { yes: yesOdds, no: noOdds };
+    }
+  } catch (error) {
+    console.error('Odds calculation error:', error);
+    // Return default odds if calculation fails
+    if (options) {
+      const defaultOdds = {};
+      options.forEach((opt, i) => {
+        defaultOdds[opt] = 2.0 + (i * 0.5);
+      });
+      return defaultOdds;
+    } else {
+      return { yes: 2.0, no: 2.0 };
+    }
+  }
+}
+
+// Calculate odds endpoint
+app.post('/api/calculate-odds', async (req, res) => {
+  try {
+    const { question, options } = req.body;
+    
+    if (!question) {
+      return res.status(400).json({ error: 'Question is required' });
+    }
+    
+    const odds = await calculateOdds(question, options);
+    res.json({ odds });
+  } catch (error) {
+    console.error('Calculate odds error:', error);
+    res.status(500).json({ error: 'Failed to calculate odds' });
+  }
+});
+
+// Helper functions
 async function searchNews(query, fromDate) {
   if (!NEWS_API_KEY || NEWS_API_KEY === 'YOUR_NEWS_API_KEY_HERE') {
-    // Return mock data if no API key
-    return {
-      articles: [
-        {
-          title: 'No NewsAPI key configured',
-          description: 'Add NEWS_API_KEY to environment to enable automatic verification',
-          url: 'https://newsapi.org/register',
-          source: { name: 'System' }
-        }
-      ],
-      totalResults: 0
-    };
+    return { articles: [], totalResults: 0 };
   }
 
   try {
@@ -65,7 +150,6 @@ async function getUSGSEarthquakes(startDate, endDate) {
     
     const data = await response.json();
     
-    // Extract state from place names
     return data.features.map(eq => ({
       magnitude: eq.properties.mag,
       place: eq.properties.place,
@@ -108,12 +192,9 @@ function analyzeNewsForOptions(articles, options) {
     
     options.forEach(option => {
       const optionText = option.option_text.toLowerCase();
-      
-      // Count mentions
       const mentions = (text.match(new RegExp(optionText, 'gi')) || []).length;
       scores[option.option_text] += mentions;
       
-      // Boost for title mentions
       if (article.title && article.title.toLowerCase().includes(optionText)) {
         scores[option.option_text] += 3;
       }
@@ -129,11 +210,8 @@ function calculateConfidence(scores, totalArticles) {
   
   if (totalScore === 0 || totalArticles === 0) return 0;
   
-  // Confidence based on:
-  // 1. How dominant the winner is
-  // 2. Number of articles mentioning it
   const dominance = maxScore / totalScore;
-  const coverage = Math.min(maxScore / 5, 1); // At least 5 mentions for high confidence
+  const coverage = Math.min(maxScore / 5, 1);
   
   return (dominance * 0.6 + coverage * 0.4);
 }
@@ -143,7 +221,6 @@ app.get('/api/markets/:marketId/verify', async (req, res) => {
   try {
     const { marketId } = req.params;
     
-    // Get market details
     const marketResult = await pool.query(`
       SELECT m.*, c.name as category_name
       FROM markets m
@@ -157,7 +234,6 @@ app.get('/api/markets/:marketId/verify', async (req, res) => {
     
     const market = marketResult.rows[0];
     
-    // Get options for multi-choice markets
     let options = [];
     if (market.market_type === 'multi-choice') {
       const optionsResult = await pool.query(`
@@ -173,19 +249,16 @@ app.get('/api/markets/:marketId/verify', async (req, res) => {
       ];
     }
     
-    // Calculate date range for search
     const deadline = new Date(market.deadline);
     const searchStartDate = new Date(deadline);
-    searchStartDate.setDate(searchStartDate.getDate() - 30); // 30 days before deadline
+    searchStartDate.setDate(searchStartDate.getDate() - 30);
     
     const fromDate = searchStartDate.toISOString().split('T')[0];
     const toDate = deadline.toISOString().split('T')[0];
     
-    // Search news
     const newsQuery = market.question.replace(/\?$/, '');
     const newsData = await searchNews(newsQuery, fromDate);
     
-    // Initialize verification result
     let verificationResult = {
       market: {
         id: market.id,
@@ -214,9 +287,7 @@ app.get('/api/markets/:marketId/verify', async (req, res) => {
       confidence: 0
     };
     
-    // Analyze based on category
     if (market.category_name === 'Science' && market.question.toLowerCase().includes('earthquake')) {
-      // Use USGS data for earthquakes
       const earthquakes = await getUSGSEarthquakes(fromDate, toDate);
       
       verificationResult.data = {
@@ -229,7 +300,6 @@ app.get('/api/markets/:marketId/verify', async (req, res) => {
         }))
       };
       
-      // Count earthquakes by state
       const stateCounts = {};
       options.forEach(opt => {
         stateCounts[opt.option_text] = earthquakes.filter(eq => 
@@ -239,7 +309,6 @@ app.get('/api/markets/:marketId/verify', async (req, res) => {
       
       verificationResult.analysis = stateCounts;
       
-      // Find strongest earthquake by state
       const strongestByState = {};
       earthquakes.forEach(eq => {
         if (eq.state && options.some(opt => opt.option_text === eq.state)) {
@@ -249,7 +318,6 @@ app.get('/api/markets/:marketId/verify', async (req, res) => {
         }
       });
       
-      // Winner is state with strongest earthquake
       if (Object.keys(strongestByState).length > 0) {
         const winner = Object.entries(strongestByState)
           .sort(([,a], [,b]) => b - a)[0];
@@ -258,11 +326,9 @@ app.get('/api/markets/:marketId/verify', async (req, res) => {
         verificationResult.confidence = earthquakes.length > 5 ? 0.85 : 0.60;
       }
     } else {
-      // Use news analysis for other markets
       const scores = analyzeNewsForOptions(newsData.articles, options);
       verificationResult.analysis = scores;
       
-      // Determine suggested winner
       const maxScore = Math.max(...Object.values(scores));
       if (maxScore > 0) {
         const winner = Object.entries(scores).find(([, score]) => score === maxScore);
@@ -301,15 +367,27 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { username, name, email, password } = req.body;
+    
+    if (!username || !name || !email || !password) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+    
     const result = await pool.query(
-      'INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING *',
-      [name, email, password]
+      'INSERT INTO users (username, name, email, password) VALUES ($1, $2, $3, $4) RETURNING *',
+      [username, name, email, password]
     );
     
     const user = result.rows[0];
     res.json({ user: { ...user, password: undefined } });
   } catch (error) {
+    if (error.code === '23505') { // Unique violation
+      if (error.constraint === 'users_username_key') {
+        return res.status(400).json({ error: 'Username already taken' });
+      } else if (error.constraint === 'users_email_key') {
+        return res.status(400).json({ error: 'Email already registered' });
+      }
+    }
     console.error('Register error:', error);
     res.status(500).json({ error: 'Registration failed' });
   }
@@ -633,7 +711,7 @@ app.put('/api/users/:userId/profile', async (req, res) => {
 app.get('/api/leaderboard', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT id, name, email, avatar, balance, total_winnings, bets_won
+      SELECT id, username, name, email, avatar, balance, total_winnings, bets_won
       FROM users
       ORDER BY total_winnings DESC
       LIMIT 10
