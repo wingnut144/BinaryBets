@@ -1,1160 +1,902 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, DollarSign, Award, Shield, Plus, X, BarChart3, User, CheckCircle } from 'lucide-react';
+import { TrendingUp, DollarSign, Calendar, Users, Trophy, Settings, X, PlusCircle, User, LogOut } from 'lucide-react';
 
-const API_URL = `http://${window.location.hostname}:5000`;
+const API_URL = 'http://64.23.152.157:5000/api';
 
-function App() {
-  const [user, setUser] = useState(null);
+export default function App() {
+  // State management
   const [markets, setMarkets] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [user, setUser] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [bets, setBets] = useState([]);
-  const [balance, setBalance] = useState(10000);
-  const [showAuth, setShowAuth] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showBetModal, setShowBetModal] = useState(false);
+  const [showAccountModal, setShowAccountModal] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
-  const [showUserStats, setShowUserStats] = useState(false);
-  const [showUserAccount, setShowUserAccount] = useState(false);
+  const [showStats, setShowStats] = useState(false);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
-  const [showResolvePanel, setShowResolvePanel] = useState(false);
-  const [activeBet, setActiveBet] = useState(null);
-  const [betAmount, setBetAmount] = useState('');
+  const [showResolveModal, setShowResolveModal] = useState(false);
   const [authMode, setAuthMode] = useState('login');
-  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
+  const [selectedMarket, setSelectedMarket] = useState(null);
+  const [selectedChoice, setSelectedChoice] = useState(null);
+  const [selectedOption, setSelectedOption] = useState(null);
+  const [betAmount, setBetAmount] = useState('');
   const [leaderboard, setLeaderboard] = useState([]);
   const [userStats, setUserStats] = useState(null);
-  const [marketStats, setMarketStats] = useState({});
-  const [newCategory, setNewCategory] = useState('');
+  const [userBets, setUserBets] = useState([]);
   const [expiredMarkets, setExpiredMarkets] = useState([]);
-  const [marketType, setMarketType] = useState('binary');
-  const [newMarket, setNewMarket] = useState({
+  
+  // Form states
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [registerForm, setRegisterForm] = useState({ name: '', email: '', password: '' });
+  const [newCategory, setNewCategory] = useState('');
+  const [editAvatar, setEditAvatar] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [marketForm, setMarketForm] = useState({
     question: '',
+    categoryId: '',
+    marketType: 'binary',
     yesOdds: '',
     noOdds: '',
-    categoryId: '',
     deadline: '',
     options: [
       { text: '', odds: '' },
       { text: '', odds: '' }
     ]
   });
-  const [editProfile, setEditProfile] = useState({
-    email: '',
-    avatar: ''
-  });
 
-  const isLoggedIn = !!user;
-  const isAdmin = user?.isAdmin || user?.is_admin || false;
-
+  // Fetch data on mount
   useEffect(() => {
     fetchMarkets();
     fetchCategories();
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
   }, []);
 
   useEffect(() => {
-    if (isLoggedIn) {
-      fetchUserBets();
-      fetchUserBalance();
+    if (user) {
       fetchUserStats();
+      fetchUserBets();
     }
   }, [user]);
 
+  // API calls
   const fetchMarkets = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/markets`);
+      const response = await fetch(`${API_URL}/markets`);
       const data = await response.json();
-      
-      const parsedData = data.map(market => ({
-        ...market,
-        yesOdds: market.yes_odds ? parseFloat(market.yes_odds) : null,
-        noOdds: market.no_odds ? parseFloat(market.no_odds) : null,
-        options: market.options ? market.options.map(opt => ({
-          ...opt,
-          odds: parseFloat(opt.odds),
-          totalBets: parseInt(opt.total_bets || 0),
-          totalAmount: parseFloat(opt.total_amount || 0)
-        })) : null
-      }));
-      
-      setMarkets(parsedData);
-    } catch (err) {
-      console.error('Failed to fetch markets:', err);
-    }
-  };
-
-  const fetchExpiredMarkets = async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/markets/expired?userId=${user.id}`);
-      const data = await response.json();
-      setExpiredMarkets(data);
-    } catch (err) {
-      console.error('Failed to fetch expired markets:', err);
+      console.log('Fetched markets:', data);
+      setMarkets(data);
+    } catch (error) {
+      console.error('Error fetching markets:', error);
     }
   };
 
   const fetchCategories = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/categories`);
+      const response = await fetch(`${API_URL}/categories`);
       const data = await response.json();
       setCategories(data);
-    } catch (err) {
-      console.error('Failed to fetch categories:', err);
-    }
-  };
-
-  const fetchMarketStats = async (marketId) => {
-    try {
-      const response = await fetch(`${API_URL}/api/markets/${marketId}/stats`);
-      const data = await response.json();
-      setMarketStats(prev => ({
-        ...prev,
-        [marketId]: data
-      }));
-    } catch (err) {
-      console.error('Failed to fetch market stats:', err);
-    }
-  };
-
-  const fetchUserBets = async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/users/${user.id}/bets`);
-      const data = await response.json();
-      
-      const parsedBets = data.map(bet => ({
-        ...bet,
-        amount: parseFloat(bet.amount),
-        odds: parseFloat(bet.odds),
-        potentialWin: parseFloat(bet.potential_win || bet.potentialWin),
-        marketId: bet.market_id || bet.marketId
-      }));
-      
-      setBets(parsedBets);
-    } catch (err) {
-      console.error('Failed to fetch user bets:', err);
-    }
-  };
-
-  const fetchUserBalance = async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/users/${user.id}/balance`);
-      const data = await response.json();
-      setBalance(parseFloat(data.balance));
-    } catch (err) {
-      console.error('Failed to fetch balance:', err);
-    }
-  };
-
-  const fetchUserStats = async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/users/${user.id}/stats`);
-      const data = await response.json();
-      
-      const parsedStats = {
-        totalBets: parseInt(data.totalBets || 0),
-        totalWagered: parseFloat(data.totalWagered || 0),
-        winRate: parseFloat(data.winRate || 0),
-        totalWinnings: parseFloat(data.totalWinnings || 0),
-        favoriteCategory: data.favoriteCategory || 'None',
-        avgBetAmount: parseFloat(data.avgBetAmount || 0),
-        avgBetsPerUser: parseFloat(data.avgBetsPerUser || 0)
-      };
-      
-      setUserStats(parsedStats);
-    } catch (err) {
-      console.error('Failed to fetch user stats:', err);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
     }
   };
 
   const fetchLeaderboard = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/leaderboard`);
+      const response = await fetch(`${API_URL}/leaderboard`);
       const data = await response.json();
-      
-      const parsedLeaderboard = data.map(player => ({
-        ...player,
-        totalWinnings: parseFloat(player.total_winnings || player.totalWinnings),
-        balance: parseFloat(player.balance)
-      }));
-      
-      setLeaderboard(parsedLeaderboard);
-    } catch (err) {
-      console.error('Failed to fetch leaderboard:', err);
+      setLeaderboard(data);
+      setShowLeaderboard(true);
+    } catch (error) {
+      console.error('Error fetching leaderboard:', error);
     }
   };
 
-  const handleAuth = async (e) => {
-    e.preventDefault();
-    const endpoint = authMode === 'login' ? 'login' : 'register';
-    
+  const fetchUserStats = async () => {
+    if (!user) return;
     try {
-      const response = await fetch(`${API_URL}/api/auth/${endpoint}`, {
+      const response = await fetch(`${API_URL}/users/${user.id}/stats`);
+      const data = await response.json();
+      setUserStats(data);
+    } catch (error) {
+      console.error('Error fetching user stats:', error);
+    }
+  };
+
+  const fetchUserBets = async () => {
+    if (!user) return;
+    try {
+      const response = await fetch(`${API_URL}/users/${user.id}/bets`);
+      const data = await response.json();
+      setUserBets(data);
+    } catch (error) {
+      console.error('Error fetching user bets:', error);
+    }
+  };
+
+  const fetchExpiredMarkets = async () => {
+    if (!user?.is_admin) return;
+    try {
+      const response = await fetch(`${API_URL}/markets/expired`);
+      const data = await response.json();
+      setExpiredMarkets(data);
+      setShowResolveModal(true);
+    } catch (error) {
+      console.error('Error fetching expired markets:', error);
+    }
+  };
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(authForm)
+        body: JSON.stringify(loginForm)
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        alert(error.error || 'Authentication failed');
-        return;
-      }
-
       const data = await response.json();
-      setUser(data);
-      setBalance(parseFloat(data.balance));
-      setShowAuth(false);
-      setAuthForm({ name: '', email: '', password: '' });
-    } catch (err) {
-      console.error('Auth error:', err);
-      alert('Authentication failed');
+      if (data.user) {
+        setUser(data.user);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        setShowAuthModal(false);
+        setLoginForm({ email: '', password: '' });
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      alert('Login failed');
+    }
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await fetch(`${API_URL}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(registerForm)
+      });
+      const data = await response.json();
+      if (data.user) {
+        setUser(data.user);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        setShowAuthModal(false);
+        setRegisterForm({ name: '', email: '', password: '' });
+      }
+    } catch (error) {
+      console.error('Register error:', error);
+      alert('Registration failed');
     }
   };
 
   const handleLogout = () => {
     setUser(null);
-    setBets([]);
-    setBalance(10000);
-    setUserStats(null);
+    localStorage.removeItem('user');
   };
 
-  const createCategory = async () => {
-    if (!newCategory.trim()) {
-      alert('Please enter a category name');
-      return;
-    }
-
-    try {
-      const response = await fetch(`${API_URL}/api/categories`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newCategory, userId: user.id })
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        alert(error.error || 'Failed to create category');
-        return;
-      }
-
-      await fetchCategories();
-      setNewCategory('');
-      alert('Category created successfully!');
-    } catch (err) {
-      console.error('Category creation error:', err);
-      alert('Failed to create category');
-    }
-  };
-
-  const deleteCategory = async (categoryId) => {
-    if (!confirm('Are you sure you want to delete this category?')) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`${API_URL}/api/categories/${categoryId}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id })
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        alert(error.error || 'Failed to delete category');
-        return;
-      }
-
-      await fetchCategories();
-      alert('Category deleted successfully!');
-    } catch (err) {
-      console.error('Category deletion error:', err);
-      alert('Failed to delete category');
-    }
-  };
-
-  const createMarket = async (e) => {
-    e.preventDefault();
-    
-    try {
-      const payload = {
-        question: newMarket.question,
-        marketType: marketType,
-        categoryId: parseInt(newMarket.categoryId),
-        deadline: newMarket.deadline,
-        userId: user.id
-      };
-
-      if (marketType === 'binary') {
-        payload.yesOdds = parseFloat(newMarket.yesOdds);
-        payload.noOdds = parseFloat(newMarket.noOdds);
-      } else {
-        const validOptions = newMarket.options.filter(opt => opt.text.trim() && opt.odds);
-        if (validOptions.length < 2) {
-          alert('Please add at least 2 options');
-          return;
-        }
-        payload.options = validOptions.map(opt => ({
-          text: opt.text,
-          odds: parseFloat(opt.odds)
-        }));
-      }
-
-      const response = await fetch(`${API_URL}/api/markets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        alert(error.error || 'Failed to create market');
-        return;
-      }
-
-      await fetchMarkets();
-      setShowAdminPanel(false);
-      setNewMarket({ 
-        question: '', 
-        yesOdds: '', 
-        noOdds: '', 
-        categoryId: '', 
-        deadline: '',
-        options: [{ text: '', odds: '' }, { text: '', odds: '' }]
-      });
-      setMarketType('binary');
-      alert('Market created successfully!');
-    } catch (err) {
-      console.error('Market creation error:', err);
-      alert('Failed to create market');
-    }
-  };
-
-  const resolveMarket = async (marketId, outcome, winningOptionId = null) => {
-    try {
-      const response = await fetch(`${API_URL}/api/markets/${marketId}/resolve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          outcome,
-          winningOptionId
-        })
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        alert(error.error || 'Failed to resolve market');
-        return;
-      }
-
-      alert('Market resolved successfully! Payouts processed.');
-      await fetchExpiredMarkets();
-      await fetchMarkets();
-    } catch (err) {
-      console.error('Market resolution error:', err);
-      alert('Failed to resolve market');
-    }
-  };
-
-  const hasActiveBetOnMarket = (marketId) => {
-    return bets.some(bet => (bet.marketId || bet.market_id) === marketId && bet.status === 'pending');
-  };
-
-  const placeBet = (market, choice, optionId = null, odds = null) => {
-    if (!isLoggedIn) {
-      setShowAuth(true);
-      return;
-    }
-    
-    if (hasActiveBetOnMarket(market.id)) {
-      alert('You already have an active bet on this market. Cancel your existing bet first if you want to place a new one.');
-      return;
-    }
-    
-    setActiveBet({ 
-      market, 
-      choice, 
-      optionId,
-      odds: odds || (choice === 'yes' ? market.yesOdds : market.noOdds)
-    });
+  const handleBet = (market, choice = null, option = null) => {
+    setSelectedMarket(market);
+    setSelectedChoice(choice);
+    setSelectedOption(option);
+    setShowBetModal(true);
   };
 
   const confirmBet = async () => {
-    const amount = parseFloat(betAmount);
-    if (amount <= 0 || amount > balance) {
-      alert('Invalid bet amount');
+    if (!user || !selectedMarket || !betAmount || parseFloat(betAmount) <= 0) {
+      alert('Please enter a valid bet amount');
       return;
     }
 
-    const potentialWin = amount * activeBet.odds;
+    const amount = parseFloat(betAmount);
+    if (amount > parseFloat(user.balance)) {
+      alert('Insufficient balance');
+      return;
+    }
 
     try {
-      const response = await fetch(`${API_URL}/api/bets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          marketId: activeBet.market.id,
-          choice: activeBet.choice,
-          marketOptionId: activeBet.optionId,
-          amount,
-          odds: activeBet.odds,
-          potentialWin
-        })
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        alert(error.error || 'Failed to place bet');
-        return;
+      let odds, potentialWin;
+      
+      if (selectedMarket.market_type === 'multi-choice') {
+        odds = parseFloat(selectedOption.odds);
+        potentialWin = amount * odds;
+      } else {
+        odds = selectedChoice === 'yes' ? parseFloat(selectedMarket.yes_odds) : parseFloat(selectedMarket.no_odds);
+        potentialWin = amount * odds;
       }
 
-      const result = await response.json();
-      alert(result.message);
+      const betData = {
+        userId: user.id,
+        marketId: selectedMarket.id,
+        choice: selectedMarket.market_type === 'binary' ? selectedChoice : null,
+        marketOptionId: selectedMarket.market_type === 'multi-choice' ? selectedOption.id : null,
+        amount,
+        odds,
+        potentialWin
+      };
+
+      const response = await fetch(`${API_URL}/bets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(betData)
+      });
+
+      const data = await response.json();
       
-      await fetchUserBets();
-      await fetchUserBalance();
-      await fetchUserStats();
-      await fetchMarkets();
-      
-      setActiveBet(null);
-      setBetAmount('');
-    } catch (err) {
-      console.error('Bet error:', err);
+      if (response.ok) {
+        setUser({ ...user, balance: (parseFloat(user.balance) - amount).toFixed(2) });
+        localStorage.setItem('user', JSON.stringify({ ...user, balance: (parseFloat(user.balance) - amount).toFixed(2) }));
+        setShowBetModal(false);
+        setBetAmount('');
+        fetchMarkets();
+        fetchUserBets();
+        alert('Bet placed successfully!');
+      } else {
+        alert(data.error || 'Failed to place bet');
+      }
+    } catch (error) {
+      console.error('Bet error:', error);
       alert('Failed to place bet');
     }
   };
 
-  const cancelBet = async (betId) => {
-    if (!confirm('Are you sure you want to cancel this bet? You will be charged a penalty fee if you rebet on this market within 5 minutes.')) {
-      return;
-    }
+  const handleCancelBet = async (betId) => {
+    if (!window.confirm('Are you sure you want to cancel this bet?')) return;
 
     try {
-      const response = await fetch(`${API_URL}/api/bets/${betId}/cancel`, {
+      const response = await fetch(`${API_URL}/bets/${betId}/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id })
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        alert(error.error || 'Failed to cancel bet');
-        return;
-      }
-
       const data = await response.json();
-      alert(data.message);
       
-      await fetchUserBets();
-      await fetchUserBalance();
-      await fetchUserStats();
-      await fetchMarkets();
-    } catch (err) {
-      console.error('Cancel bet error:', err);
+      if (response.ok) {
+        setUser({ ...user, balance: parseFloat(data.newBalance).toFixed(2) });
+        localStorage.setItem('user', JSON.stringify({ ...user, balance: parseFloat(data.newBalance).toFixed(2) }));
+        fetchUserBets();
+        alert('Bet cancelled successfully!');
+      } else {
+        alert(data.error || 'Failed to cancel bet');
+      }
+    } catch (error) {
+      console.error('Cancel bet error:', error);
       alert('Failed to cancel bet');
     }
   };
 
-  const updateProfile = async () => {
+  const handleUpdateProfile = async (field, value) => {
     try {
-      const response = await fetch(`${API_URL}/api/users/${user.id}/profile`, {
+      const response = await fetch(`${API_URL}/users/${user.id}/profile`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: editProfile.email || user.email,
-          avatar: editProfile.avatar || user.avatar
-        })
+        body: JSON.stringify({ [field]: value })
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        alert(error.error || 'Failed to update profile');
-        return;
+      const data = await response.json();
+      
+      if (response.ok) {
+        setUser(data.user);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        if (field === 'avatar') setEditAvatar('');
+        if (field === 'email') setEditEmail('');
+        alert('Profile updated successfully!');
+      } else {
+        alert(data.error || 'Failed to update profile');
       }
-
-      const updatedUser = await response.json();
-      setUser(updatedUser);
-      setEditProfile({ email: '', avatar: '' });
-      alert('Profile updated successfully!');
-    } catch (err) {
-      console.error('Profile update error:', err);
+    } catch (error) {
+      console.error('Update profile error:', error);
       alert('Failed to update profile');
     }
   };
 
-  const getMarketStatsPercentages = (marketId) => {
-    const stats = marketStats[marketId];
-    if (!stats) return { yesPercent: 0, noPercent: 0 };
+  const handleCreateCategory = async (e) => {
+    e.preventDefault();
+    if (!newCategory.trim()) return;
 
-    const totalBets = parseInt(stats.yes_bets || 0) + parseInt(stats.no_bets || 0);
-    if (totalBets === 0) return { yesPercent: 0, noPercent: 0 };
+    try {
+      const response = await fetch(`${API_URL}/categories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newCategory.trim() })
+      });
 
-    return {
-      yesPercent: Math.round((parseInt(stats.yes_bets || 0) / totalBets) * 100),
-      noPercent: Math.round((parseInt(stats.no_bets || 0) / totalBets) * 100)
-    };
+      if (response.ok) {
+        setNewCategory('');
+        fetchCategories();
+        alert('Category created!');
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to create category');
+      }
+    } catch (error) {
+      console.error('Create category error:', error);
+      alert('Failed to create category');
+    }
   };
 
-  const getOptionPercentage = (option, allOptions) => {
-    const totalBets = allOptions.reduce((sum, opt) => sum + opt.totalBets, 0);
-    if (totalBets === 0) return 0;
-    return Math.round((option.totalBets / totalBets) * 100);
+  const handleDeleteCategory = async (categoryId) => {
+    if (!window.confirm('Delete this category? Markets using it will have no category.')) return;
+
+    try {
+      const response = await fetch(`${API_URL}/categories/${categoryId}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        fetchCategories();
+        alert('Category deleted!');
+      }
+    } catch (error) {
+      console.error('Delete category error:', error);
+      alert('Failed to delete category');
+    }
   };
 
-  const addMarketOption = () => {
-    if (newMarket.options.length >= 4) {
-      alert('Maximum 4 options allowed');
+  const handleCreateMarket = async (e) => {
+    e.preventDefault();
+    
+    if (!marketForm.question || !marketForm.categoryId || !marketForm.deadline) {
+      alert('Please fill in all required fields');
       return;
     }
-    setNewMarket({
-      ...newMarket,
-      options: [...newMarket.options, { text: '', odds: '' }]
-    });
-  };
 
-  const removeMarketOption = (index) => {
-    if (newMarket.options.length <= 2) {
-      alert('Minimum 2 options required');
-      return;
+    try {
+      let marketData;
+      
+      if (marketForm.marketType === 'binary') {
+        if (!marketForm.yesOdds || !marketForm.noOdds) {
+          alert('Please provide odds for both YES and NO');
+          return;
+        }
+        
+        marketData = {
+          question: marketForm.question,
+          categoryId: parseInt(marketForm.categoryId),
+          marketType: 'binary',
+          yesOdds: parseFloat(marketForm.yesOdds),
+          noOdds: parseFloat(marketForm.noOdds),
+          deadline: marketForm.deadline
+        };
+      } else {
+        const validOptions = marketForm.options.filter(opt => opt.text.trim() && opt.odds);
+        
+        if (validOptions.length < 2) {
+          alert('Please provide at least 2 options with odds');
+          return;
+        }
+        
+        marketData = {
+          question: marketForm.question,
+          categoryId: parseInt(marketForm.categoryId),
+          marketType: 'multi-choice',
+          deadline: marketForm.deadline,
+          options: validOptions.map((opt, index) => ({
+            text: opt.text.trim(),
+            odds: parseFloat(opt.odds),
+            order: index + 1
+          }))
+        };
+      }
+
+      const response = await fetch(`${API_URL}/markets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(marketData)
+      });
+
+      if (response.ok) {
+        setShowAdminPanel(false);
+        setMarketForm({
+          question: '',
+          categoryId: '',
+          marketType: 'binary',
+          yesOdds: '',
+          noOdds: '',
+          deadline: '',
+          options: [
+            { text: '', odds: '' },
+            { text: '', odds: '' }
+          ]
+        });
+        fetchMarkets();
+        alert('Market created successfully!');
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to create market');
+      }
+    } catch (error) {
+      console.error('Create market error:', error);
+      alert('Failed to create market');
     }
-    setNewMarket({
-      ...newMarket,
-      options: newMarket.options.filter((_, i) => i !== index)
-    });
   };
 
-  const filteredMarkets = selectedCategory === 'all' 
-    ? markets 
-    : markets.filter(m => m.category_id === parseInt(selectedCategory) || m.categoryId === parseInt(selectedCategory));
+  const handleResolveMarket = async (marketId, winningOptionId) => {
+    if (!window.confirm('Are you sure? This will payout winners and cannot be undone.')) return;
+
+    try {
+      const response = await fetch(`${API_URL}/markets/${marketId}/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ winningOptionId })
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        alert(`Market resolved! ${data.winnersCount} winners paid out $${parseFloat(data.totalPayout).toFixed(2)}`);
+        fetchExpiredMarkets();
+        fetchMarkets();
+      } else {
+        alert(data.error || 'Failed to resolve market');
+      }
+    } catch (error) {
+      console.error('Resolve market error:', error);
+      alert('Failed to resolve market');
+    }
+  };
+
+  const addOption = () => {
+    if (marketForm.options.length < 4) {
+      setMarketForm({
+        ...marketForm,
+        options: [...marketForm.options, { text: '', odds: '' }]
+      });
+    }
+  };
+
+  const removeOption = (index) => {
+    if (marketForm.options.length > 2) {
+      const newOptions = marketForm.options.filter((_, i) => i !== index);
+      setMarketForm({ ...marketForm, options: newOptions });
+    }
+  };
+
+  const updateOption = (index, field, value) => {
+    const newOptions = [...marketForm.options];
+    newOptions[index][field] = value;
+    setMarketForm({ ...marketForm, options: newOptions });
+  };
+
+  // Filter markets by category
+  const filteredMarkets = selectedCategory === 'all'
+    ? markets
+    : markets.filter(m => m.category_id === parseInt(selectedCategory));
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       {/* Header */}
-      <header className="bg-slate-800 bg-opacity-50 backdrop-blur-md border-b border-purple-500 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center space-x-2">
-            <TrendingUp className="text-purple-400" size={32} />
-            <h1 className="text-2xl font-bold text-white">BinaryBets</h1>
-          </div>
-          
-          <div className="flex items-center space-x-4">
-            {isLoggedIn && (
-              <>
-                <div className="flex items-center space-x-2 bg-slate-700 px-4 py-2 rounded-lg">
-                  <DollarSign className="text-green-400" size={20} />
-                  <span className="text-white font-semibold">${parseFloat(balance).toFixed(2)}</span>
-                </div>
-                
-                <button
-                  onClick={() => setShowUserAccount(true)}
-                  className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg flex items-center space-x-2 transition"
-                >
-                  <User size={20} />
-                  <span>My Account</span>
-                </button>
-
-                {!isAdmin && (
-                  <button
-                    onClick={() => {
-                      fetchUserStats();
-                      setShowUserStats(true);
-                    }}
-                    className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg flex items-center space-x-2 transition"
-                  >
-                    <BarChart3 size={20} />
-                    <span>My Stats</span>
-                  </button>
-                )}
-                
-                <button
-                  onClick={() => {
-                    fetchLeaderboard();
-                    setShowLeaderboard(true);
-                  }}
-                  className="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded-lg flex items-center space-x-2 transition"
-                >
-                  <Award size={20} />
-                  <span>Leaderboard</span>
-                </button>
-              </>
-            )}
-
-            {isAdmin && (
-              <>
-                <button
-                  onClick={() => setShowCategoryManager(true)}
-                  className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg transition"
-                >
-                  Manage Categories
-                </button>
-                <button
-                  onClick={() => setShowAdminPanel(true)}
-                  className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg flex items-center space-x-2 transition"
-                >
-                  <Plus size={20} />
-                  <span>Create Market</span>
-                </button>
-                <button
-                  onClick={() => {
-                    fetchExpiredMarkets();
-                    setShowResolvePanel(true);
-                  }}
-                  className="bg-orange-600 hover:bg-orange-700 px-4 py-2 rounded-lg flex items-center space-x-2 transition"
-                >
-                  <CheckCircle size={20} />
-                  <span>Resolve Markets</span>
-                </button>
-              </>
-            )}
+      <header className="bg-slate-900/50 backdrop-blur-sm border-b border-purple-500/20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <TrendingUp className="w-8 h-8 text-purple-400" />
+              <h1 className="text-2xl font-bold text-white">BinaryBets</h1>
+            </div>
             
-            {isLoggedIn ? (
-              <div className="flex items-center space-x-3">
-                {isAdmin && <Shield className="text-red-400" size={20} />}
-                <img 
-                  src={user.avatar} 
-                  alt={user.name}
-                  className="w-10 h-10 rounded-full border-2 border-purple-400"
-                />
-                <span className="text-white">{user.name}</span>
+            <div className="flex items-center space-x-4">
+              {user ? (
+                <>
+                  <button
+                    onClick={fetchLeaderboard}
+                    className="flex items-center space-x-2 px-4 py-2 bg-yellow-500/20 text-yellow-300 rounded-lg hover:bg-yellow-500/30 transition-colors"
+                  >
+                    <Trophy className="w-5 h-5" />
+                    <span>Leaderboard</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => setShowAccountModal(true)}
+                    className="flex items-center space-x-2 px-4 py-2 bg-purple-500/20 text-purple-300 rounded-lg hover:bg-purple-500/30 transition-colors"
+                  >
+                    <User className="w-5 h-5" />
+                    <span>My Account</span>
+                  </button>
+                  
+                  <div className="flex items-center space-x-2 px-4 py-2 bg-green-500/20 text-green-300 rounded-lg">
+                    <DollarSign className="w-5 h-5" />
+                    <span className="font-semibold">${parseFloat(user.balance).toFixed(2)}</span>
+                  </div>
+                  
+                  {user.is_admin && (
+                    <>
+                      <button
+                        onClick={() => setShowCategoryManager(true)}
+                        className="p-2 bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 transition-colors"
+                      >
+                        <Settings className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => setShowAdminPanel(true)}
+                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                      >
+                        Create Market
+                      </button>
+                      <button
+                        onClick={fetchExpiredMarkets}
+                        className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+                      >
+                        Resolve Markets
+                      </button>
+                    </>
+                  )}
+                  
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center space-x-2 px-4 py-2 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30 transition-colors"
+                  >
+                    <LogOut className="w-5 h-5" />
+                    <span>Logout</span>
+                  </button>
+                </>
+              ) : (
                 <button
-                  onClick={handleLogout}
-                  className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg transition"
+                  onClick={() => setShowAuthModal(true)}
+                  className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-semibold"
                 >
-                  Logout
+                  Sign In
                 </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowAuth(true)}
-                className="bg-purple-600 hover:bg-purple-700 px-6 py-2 rounded-lg font-semibold transition"
-              >
-                Sign In
-              </button>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h2 className="text-4xl font-bold text-white mb-2">Live Betting Markets</h2>
-          <p className="text-purple-300">Place your bets on future events and outcomes</p>
-        </div>
-
-        {/* Category Filter */}
-        <div className="mb-6 flex items-center space-x-4">
-          <label className="text-white font-semibold">Filter by Category:</label>
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="bg-slate-700 text-white px-4 py-2 rounded-lg border border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-400"
+      {/* Category Filter */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="flex space-x-2 overflow-x-auto pb-2">
+          <button
+            onClick={() => setSelectedCategory('all')}
+            className={`px-4 py-2 rounded-lg whitespace-nowrap transition-colors ${
+              selectedCategory === 'all'
+                ? 'bg-purple-600 text-white'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
           >
-            <option value="all">All Categories</option>
-            {categories.map(cat => (
-              <option key={cat.id} value={cat.id}>{cat.name}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Markets Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredMarkets.map((market) => (
-            <div
-              key={market.id}
-              className="bg-slate-800 bg-opacity-50 rounded-xl p-6 border border-purple-500 backdrop-blur-sm hover:border-purple-400 transition"
+            All Markets
+          </button>
+          {categories.map(category => (
+            <button
+              key={category.id}
+              onClick={() => setSelectedCategory(category.id.toString())}
+              className={`px-4 py-2 rounded-lg whitespace-nowrap transition-colors ${
+                selectedCategory === category.id.toString()
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
             >
-              <div className="mb-4 flex justify-between items-center">
-                <span className="text-xs bg-purple-600 text-white px-2 py-1 rounded">
-                  {market.category_name || market.categoryName || 'Uncategorized'}
-                </span>
-                <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded">
-                  {market.market_type === 'multi-choice' ? 'Multi-Choice' : 'Binary'}
-                </span>
-              </div>
-              
-              <h3 className="text-xl font-bold text-white mb-4">{market.question}</h3>
-              
-              {market.market_type === 'binary' ? (
-                <>
-                  {market.stats && parseInt(market.stats.total_bets) > 0 && (
-                    <div className="mb-4 p-3 bg-slate-700 bg-opacity-50 rounded-lg">
-                      <p className="text-xs text-purple-300 mb-2">{market.stats.total_bets} bets placed</p>
-                      <div className="flex items-center space-x-2 mb-1">
-                        <div className="flex-1 bg-slate-600 rounded-full h-2 overflow-hidden">
-                          <div 
-                            className="bg-green-500 h-full transition-all duration-500"
-                            style={{ width: `${getMarketStatsPercentages(market.id).yesPercent || 0}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-green-400 font-semibold w-12 text-right">
-                          {getMarketStatsPercentages(market.id).yesPercent || 0}%
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <div className="flex-1 bg-slate-600 rounded-full h-2 overflow-hidden">
-                          <div 
-                            className="bg-red-500 h-full transition-all duration-500"
-                            style={{ width: `${getMarketStatsPercentages(market.id).noPercent || 0}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-red-400 font-semibold w-12 text-right">
-                          {getMarketStatsPercentages(market.id).noPercent || 0}%
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <button
-                      onClick={() => placeBet(market, 'yes')}
-                      className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition transform hover:scale-105"
-                    >
-                      <div className="text-sm">YES</div>
-                      <div className="text-xs opacity-75">{market.yesOdds}x</div>
-                    </button>
-                    <button
-                      onClick={() => placeBet(market, 'no')}
-                      className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg transition transform hover:scale-105"
-                    >
-                      <div className="text-sm">NO</div>
-                      <div className="text-xs opacity-75">{market.noOdds}x</div>
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="space-y-2 mb-4">
-                    {market.options && market.options.map((option) => {
-                      const percentage = getOptionPercentage(option, market.options);
-                      return (
-                        <div key={option.id} className="bg-slate-700 bg-opacity-50 rounded-lg p-3">
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="text-white font-semibold text-sm">{option.option_text || option.optionText}</span>
-                            <span className="text-purple-300 text-xs">{option.odds}x</span>
-                          </div>
-                          {option.totalBets > 0 && (
-                            <div className="flex items-center space-x-2">
-                              <div className="flex-1 bg-slate-600 rounded-full h-1.5 overflow-hidden">
-                                <div 
-                                  className="bg-purple-500 h-full transition-all duration-500"
-                                  style={{ width: `${percentage}%` }}
-                                />
-                              </div>
-                              <span className="text-xs text-purple-400 w-8 text-right">{percentage}%</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  
-                  <div className="space-y-2">
-                    {market.options && market.options.map((option) => (
-                      <button
-                        key={option.id}
-                        onClick={() => placeBet(market, option.option_text || option.optionText, option.id, option.odds)}
-                        className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-bold py-2 rounded-lg transition transform hover:scale-105"
-                      >
-                        Bet on {option.option_text || option.optionText}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-              
-              <p className="text-purple-300 text-sm mt-4">
-                Closes: {new Date(market.deadline).toLocaleDateString()}
-              </p>
-            </div>
+              {category.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Markets Grid */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredMarkets.map(market => (
+            <MarketCard 
+              key={market.id} 
+              market={market} 
+              user={user} 
+              handleBet={handleBet}
+            />
           ))}
         </div>
       </main>
 
       {/* Auth Modal */}
-      {showAuth && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl p-8 max-w-md w-full">
-            <h2 className="text-2xl font-bold text-white mb-6">
-              {authMode === 'login' ? 'Sign In' : 'Create Account'}
-            </h2>
-            
-            <form onSubmit={handleAuth} className="space-y-4">
-              {authMode === 'register' && (
-                <input
-                  type="text"
-                  placeholder="Name"
-                  value={authForm.name}
-                  onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })}
-                  className="w-full bg-slate-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                  required
-                />
-              )}
+      {showAuthModal && (
+        <Modal onClose={() => setShowAuthModal(false)} title={authMode === 'login' ? 'Sign In' : 'Create Account'}>
+          {authMode === 'login' ? (
+            <form onSubmit={handleLogin} className="space-y-4">
               <input
                 type="email"
                 placeholder="Email"
-                value={authForm.email}
-                onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
-                className="w-full bg-slate-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
+                value={loginForm.email}
+                onChange={(e) => setLoginForm({...loginForm, email: e.target.value})}
+                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
                 required
               />
               <input
                 type="password"
                 placeholder="Password"
-                value={authForm.password}
-                onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
-                className="w-full bg-slate-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
+                value={loginForm.password}
+                onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
+                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
                 required
               />
-              
-              {authMode === 'login' && (
-                <div className="bg-slate-700 p-3 rounded text-sm text-purple-300">
-                  <p className="font-semibold mb-1">Admin Login:</p>
-                  <p>Email: admin@binarybets.com</p>
-                  <p>Password: admin123</p>
-                </div>
-              )}
-
               <button
                 type="submit"
-                className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg transition"
+                className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
               >
-                {authMode === 'login' ? 'Sign In' : 'Create Account'}
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthMode('register')}
+                className="w-full text-purple-400 hover:text-purple-300"
+              >
+                Need an account? Register
               </button>
             </form>
-
-            <p className="text-purple-300 text-center mt-4">
-              {authMode === 'login' ? "Don't have an account? " : 'Already have an account? '}
+          ) : (
+            <form onSubmit={handleRegister} className="space-y-4">
+              <input
+                type="text"
+                placeholder="Name"
+                value={registerForm.name}
+                onChange={(e) => setRegisterForm({...registerForm, name: e.target.value})}
+                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
+                required
+              />
+              <input
+                type="email"
+                placeholder="Email"
+                value={registerForm.email}
+                onChange={(e) => setRegisterForm({...registerForm, email: e.target.value})}
+                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
+                required
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={registerForm.password}
+                onChange={(e) => setRegisterForm({...registerForm, password: e.target.value})}
+                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
+                required
+              />
               <button
-                onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-                className="text-purple-400 hover:underline"
+                type="submit"
+                className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
               >
-                {authMode === 'login' ? 'Sign up' : 'Sign in'}
+                Create Account
               </button>
-            </p>
-
-            <button
-              onClick={() => setShowAuth(false)}
-              className="w-full mt-4 bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg transition"
-            >
-              Close
-            </button>
-          </div>
-        </div>
+              <button
+                type="button"
+                onClick={() => setAuthMode('login')}
+                className="w-full text-purple-400 hover:text-purple-300"
+              >
+                Already have an account? Sign in
+              </button>
+            </form>
+          )}
+        </Modal>
       )}
 
       {/* Bet Confirmation Modal */}
-      {activeBet && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl p-8 max-w-md w-full">
-            <h2 className="text-2xl font-bold text-white mb-4">Confirm Bet</h2>
-            <p className="text-purple-300 mb-4">{activeBet.market.question}</p>
-            
-            <div className="bg-slate-700 p-4 rounded-lg mb-4">
-              <p className="text-white mb-2">
-                Betting: <span className={`font-bold ${activeBet.choice === 'yes' ? 'text-green-400' : activeBet.choice === 'no' ? 'text-red-400' : 'text-purple-400'}`}>
-                  {activeBet.choice ? activeBet.choice.toUpperCase() : 'OPTION'}
-                </span>
+      {showBetModal && selectedMarket && (
+        <Modal onClose={() => setShowBetModal(false)} title="Confirm Your Bet">
+          <div className="space-y-4">
+            <div className="bg-slate-800 p-4 rounded-lg">
+              <p className="text-white font-semibold mb-2">{selectedMarket.question}</p>
+              <p className="text-purple-400">
+                {selectedMarket.market_type === 'binary' 
+                  ? `Betting on: ${selectedChoice.toUpperCase()}`
+                  : `Betting on: ${selectedOption.option_text}`
+                }
               </p>
-              <p className="text-purple-300 mb-2">
-                Odds: {activeBet.odds}x
+              <p className="text-green-400">
+                Odds: {selectedMarket.market_type === 'binary'
+                  ? (selectedChoice === 'yes' ? selectedMarket.yes_odds : selectedMarket.no_odds)
+                  : selectedOption.odds}x
               </p>
             </div>
-
+            
             <input
               type="number"
-              placeholder="Enter bet amount"
+              step="0.01"
+              min="0.01"
+              placeholder="Bet amount"
               value={betAmount}
               onChange={(e) => setBetAmount(e.target.value)}
-              className="w-full bg-slate-700 text-white px-4 py-2 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-purple-400"
+              className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
             />
             
-            {betAmount && (
-              <p className="text-green-400 mb-4">
-                Potential Win: ${(parseFloat(betAmount) * activeBet.odds).toFixed(2)}
-              </p>
+            {betAmount && parseFloat(betAmount) > 0 && (
+              <div className="bg-green-500/20 border border-green-500/50 rounded-lg p-3">
+                <p className="text-green-300">
+                  Potential Win: ${(
+                    parseFloat(betAmount) * 
+                    (selectedMarket.market_type === 'binary'
+                      ? (selectedChoice === 'yes' ? parseFloat(selectedMarket.yes_odds) : parseFloat(selectedMarket.no_odds))
+                      : parseFloat(selectedOption.odds))
+                  ).toFixed(2)}
+                </p>
+              </div>
             )}
-
-            <div className="flex space-x-4">
-              <button
-                onClick={confirmBet}
-                className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition"
-              >
-                Confirm Bet
-              </button>
-              <button
-                onClick={() => {
-                  setActiveBet(null);
-                  setBetAmount('');
-                }}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg transition"
-              >
-                Cancel
-              </button>
-            </div>
+            
+            <button
+              onClick={confirmBet}
+              className="w-full px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-semibold"
+            >
+              Confirm Bet
+            </button>
           </div>
-        </div>
+        </Modal>
       )}
 
-      {/* User Account Modal */}
-      {showUserAccount && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-slate-800 rounded-xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-3xl font-bold text-white">My Account</h2>
-              <button onClick={() => setShowUserAccount(false)} className="text-white hover:text-red-400">
-                <X size={24} />
-              </button>
-            </div>
-
-            <div className="bg-slate-700 rounded-lg p-6 mb-6">
-              <h3 className="text-xl font-bold text-white mb-4">Profile</h3>
+      {/* Account Modal */}
+      {showAccountModal && user && (
+        <Modal onClose={() => setShowAccountModal(false)} title="My Account" size="large">
+          <div className="space-y-6">
+            {/* Profile Section */}
+            <div className="bg-slate-800 rounded-lg p-6">
+              <h3 className="text-xl font-semibold text-white mb-4">Profile</h3>
+              <div className="flex items-center space-x-4 mb-4">
+                <img src={user.avatar} alt="Avatar" className="w-16 h-16 rounded-full" />
+                <div>
+                  <p className="text-white font-semibold">{user.name}</p>
+                  <p className="text-slate-400">{user.email}</p>
+                </div>
+              </div>
               
-              <div className="flex items-center space-x-4 mb-6">
-                <img 
-                  src={user.avatar} 
-                  alt={user.name}
-                  className="w-20 h-20 rounded-full border-4 border-purple-400"
-                />
+              <div className="space-y-3">
                 <div>
-                  <p className="text-2xl font-bold text-white">{user.name}</p>
-                  <p className="text-purple-300">{user.email}</p>
-                  {isAdmin && <span className="text-red-400 text-sm flex items-center mt-1"><Shield size={16} className="mr-1" /> Administrator</span>}
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="text-white text-sm mb-2 block">Avatar URL</label>
-                  <input
-                    type="text"
-                    placeholder={user.avatar}
-                    value={editProfile.avatar}
-                    onChange={(e) => setEditProfile({ ...editProfile, avatar: e.target.value })}
-                    className="w-full bg-slate-600 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-white text-sm mb-2 block">Email Address</label>
-                  <input
-                    type="email"
-                    placeholder={user.email}
-                    value={editProfile.email}
-                    onChange={(e) => setEditProfile({ ...editProfile, email: e.target.value })}
-                    className="w-full bg-slate-600 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                  />
-                </div>
-
-                <button
-                  onClick={updateProfile}
-                  className="bg-purple-600 hover:bg-purple-700 px-6 py-2 rounded-lg transition"
-                >
-                  Update Profile
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-slate-700 rounded-lg p-6 mb-6">
-              <h3 className="text-xl font-bold text-white mb-4">Account Stats</h3>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-slate-600 p-4 rounded-lg text-center">
-                  <p className="text-2xl font-bold text-green-400">${parseFloat(balance).toFixed(2)}</p>
-                  <p className="text-sm text-purple-300">Current Balance</p>
-                </div>
-                <div className="bg-slate-600 p-4 rounded-lg text-center">
-                  <p className="text-2xl font-bold text-blue-400">{bets.filter(b => b.status === 'pending').length}</p>
-                  <p className="text-sm text-purple-300">Active Bets</p>
-                </div>
-                <div className="bg-slate-600 p-4 rounded-lg text-center">
-                  <p className="text-2xl font-bold text-yellow-400">{bets.length}</p>
-                  <p className="text-sm text-purple-300">Total Bets</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-slate-700 rounded-lg p-6">
-              <h3 className="text-xl font-bold text-white mb-4">My Bets</h3>
-              
-              {bets.length === 0 ? (
-                <p className="text-purple-300 text-center py-4">No bets placed yet</p>
-              ) : (
-                <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {bets.map((bet) => (
-                    <div 
-                      key={bet.id} 
-                      className={`rounded-lg p-4 flex justify-between items-center ${
-                        bet.status === 'pending' ? 'bg-slate-600' : 'bg-slate-800 opacity-70'
-                      }`}
+                  <label className="text-slate-300 text-sm">Change Avatar URL</label>
+                  <div className="flex space-x-2">
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      value={editAvatar}
+                      onChange={(e) => setEditAvatar(e.target.value)}
+                      className="flex-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm"
+                    />
+                    <button
+                      onClick={() => handleUpdateProfile('avatar', editAvatar)}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
                     >
-                      <div className="flex-1">
-                        <p className="text-white font-semibold">{bet.market}</p>
-                        <p className="text-purple-300 text-sm">
-                          Bet: <span className="font-bold">{bet.option_name || bet.choice?.toUpperCase()}</span> at {bet.odds}x
-                          {bet.status === 'cancelled' && <span className="text-red-400 ml-2">(Cancelled)</span>}
-                          {bet.status === 'won' && <span className="text-green-400 ml-2">(Won!)</span>}
-                          {bet.status === 'lost' && <span className="text-gray-400 ml-2">(Lost)</span>}
-                        </p>
-                        <p className="text-xs text-purple-400">
-                          {new Date(bet.created_at || bet.createdAt).toLocaleString()}
-                        </p>
-                      </div>
-                      <div className="text-right flex items-center space-x-3">
+                      Update
+                    </button>
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="text-slate-300 text-sm">Change Email</label>
+                  <div className="flex space-x-2">
+                    <input
+                      type="email"
+                      placeholder="new@email.com"
+                      value={editEmail}
+                      onChange={(e) => setEditEmail(e.target.value)}
+                      className="flex-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm"
+                    />
+                    <button
+                      onClick={() => handleUpdateProfile('email', editEmail)}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
+                    >
+                      Update
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Account Stats */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-green-500/20 rounded-lg p-4">
+                <p className="text-green-300 text-sm">Balance</p>
+                <p className="text-white text-2xl font-bold">${parseFloat(user.balance).toFixed(2)}</p>
+              </div>
+              <div className="bg-blue-500/20 rounded-lg p-4">
+                <p className="text-blue-300 text-sm">Active Bets</p>
+                <p className="text-white text-2xl font-bold">{userBets.filter(b => b.status === 'pending').length}</p>
+              </div>
+              <div className="bg-purple-500/20 rounded-lg p-4">
+                <p className="text-purple-300 text-sm">Total Bets</p>
+                <p className="text-white text-2xl font-bold">{userBets.length}</p>
+              </div>
+            </div>
+
+            {/* My Bets */}
+            <div className="bg-slate-800 rounded-lg p-6">
+              <h3 className="text-xl font-semibold text-white mb-4">My Bets</h3>
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {userBets.length === 0 ? (
+                  <p className="text-slate-400 text-center py-4">No bets placed yet</p>
+                ) : (
+                  userBets.map(bet => (
+                    <div key={bet.id} className="bg-slate-700 rounded-lg p-4">
+                      <p className="text-white font-semibold mb-1">{bet.market_question}</p>
+                      <div className="flex items-center justify-between text-sm">
                         <div>
-                          <p className="text-white font-bold">${parseFloat(bet.amount).toFixed(2)}</p>
+                          <p className="text-slate-300">
+                            Bet: {bet.choice ? bet.choice.toUpperCase() : bet.option_name} at {parseFloat(bet.odds).toFixed(2)}x
+                          </p>
+                          <p className="text-green-400">
+                            ${parseFloat(bet.amount).toFixed(2)} → Potential: ${parseFloat(bet.potential_win).toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                            bet.status === 'pending' ? 'bg-yellow-500/20 text-yellow-300' :
+                            bet.status === 'won' ? 'bg-green-500/20 text-green-300' :
+                            bet.status === 'lost' ? 'bg-red-500/20 text-red-300' :
+                            'bg-slate-500/20 text-slate-300'
+                          }`}>
+                            {bet.status}
+                          </span>
                           {bet.status === 'pending' && (
-                            <p className="text-green-400 text-sm">Potential: ${parseFloat(bet.potentialWin).toFixed(2)}</p>
+                            <button
+                              onClick={() => handleCancelBet(bet.id)}
+                              className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-xs"
+                            >
+                              Cancel
+                            </button>
                           )}
                         </div>
-                        {bet.status === 'pending' && (
-                          <button
-                            onClick={() => cancelBet(bet.id)}
-                            className="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm transition"
-                          >
-                            Cancel
-                          </button>
-                        )}
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                  ))
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Leaderboard Modal */}
       {showLeaderboard && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl p-8 max-w-2xl w-full">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-3xl font-bold text-white">🏆 Leaderboard</h2>
-              <button onClick={() => setShowLeaderboard(false)} className="text-white hover:text-red-400">
-                <X size={24} />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {leaderboard.map((player, index) => (
-                <div
-                  key={player.id}
-                  className={`rounded-lg p-4 flex items-center justify-between ${
-                    index < 3 ? 'bg-gradient-to-r from-yellow-600 to-yellow-800' : 'bg-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center space-x-4">
-                    <div className="text-3xl">
-                      {index === 0 && '🥇'}
-                      {index === 1 && '🥈'}
-                      {index === 2 && '🥉'}
-                      {index > 2 && <span className="text-white font-bold">#{index + 1}</span>}
-                    </div>
-                    <img 
-                      src={player.avatar} 
-                      alt={player.name}
-                      className="w-12 h-12 rounded-full border-2 border-purple-400"
-                    />
-                    <div>
-                      <p className="text-white font-bold">{player.name}</p>
-                      <p className="text-purple-300 text-sm">{player.bets_won || player.betsWon} bets won</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-green-400 font-bold text-xl">${parseFloat(player.totalWinnings).toFixed(2)}</p>
-                    <p className="text-purple-300 text-sm">Total Winnings</p>
+        <Modal onClose={() => setShowLeaderboard(false)} title="Leaderboard">
+          <div className="space-y-2">
+            {leaderboard.map((player, index) => (
+              <div
+                key={player.id}
+                className={`flex items-center justify-between p-4 rounded-lg ${
+                  index === 0 ? 'bg-yellow-500/20 border border-yellow-500/50' :
+                  index === 1 ? 'bg-slate-500/20 border border-slate-500/50' :
+                  index === 2 ? 'bg-orange-500/20 border border-orange-500/50' :
+                  'bg-slate-800'
+                }`}
+              >
+                <div className="flex items-center space-x-4">
+                  <span className="text-2xl font-bold text-white">#{index + 1}</span>
+                  <img src={player.avatar} alt={player.name} className="w-10 h-10 rounded-full" />
+                  <div>
+                    <p className="text-white font-semibold">{player.name}</p>
+                    <p className="text-slate-400 text-sm">{player.bets_won} wins</p>
                   </div>
                 </div>
-              ))}
-            </div>
+                <div className="text-right">
+                  <p className="text-green-400 font-bold">${parseFloat(player.total_winnings).toFixed(2)}</p>
+                  <p className="text-slate-400 text-sm">Balance: ${parseFloat(player.balance).toFixed(2)}</p>
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
-      )}
-
-      {/* User Stats Modal */}
-      {showUserStats && userStats && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl p-8 max-w-2xl w-full">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-3xl font-bold text-white">📊 My Statistics</h2>
-              <button onClick={() => setShowUserStats(false)} className="text-white hover:text-red-400">
-                <X size={24} />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="bg-slate-700 p-4 rounded-lg">
-                <p className="text-purple-300 text-sm mb-1">Total Bets Placed</p>
-                <p className="text-white text-2xl font-bold">{userStats.totalBets}</p>
-              </div>
-              <div className="bg-slate-700 p-4 rounded-lg">
-                <p className="text-purple-300 text-sm mb-1">Win Rate</p>
-                <p className="text-green-400 text-2xl font-bold">{userStats.winRate}%</p>
-              </div>
-              <div className="bg-slate-700 p-4 rounded-lg">
-                <p className="text-purple-300 text-sm mb-1">Total Wagered</p>
-                <p className="text-white text-2xl font-bold">${parseFloat(userStats.totalWagered).toFixed(2)}</p>
-              </div>
-              <div className="bg-slate-700 p-4 rounded-lg">
-                <p className="text-purple-300 text-sm mb-1">Total Winnings</p>
-                <p className="text-green-400 text-2xl font-bold">${parseFloat(userStats.totalWinnings).toFixed(2)}</p>
-              </div>
-            </div>
-
-            <div className="bg-slate-700 p-4 rounded-lg mb-4">
-              <p className="text-purple-300 text-sm mb-1">Favorite Category</p>
-              <p className="text-white text-xl font-bold">{userStats.favoriteCategory}</p>
-            </div>
-
-            <div className="bg-slate-700 p-4 rounded-lg">
-              <p className="text-white font-bold mb-2">Compared to Others:</p>
-              <p className="text-purple-300 text-sm">
-                Your avg bet: <span className="text-white font-semibold">${(parseFloat(userStats.totalWagered) / Math.max(userStats.totalBets, 1)).toFixed(2)}</span>
-              </p>
-              <p className="text-purple-300 text-sm">
-                Community avg: <span className="text-white font-semibold">${parseFloat(userStats.avgBetAmount).toFixed(2)}</span>
-              </p>
-            </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* Category Manager Modal */}
-      {showCategoryManager && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl p-8 max-w-2xl w-full">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-3xl font-bold text-white">Manage Categories</h2>
-              <button onClick={() => setShowCategoryManager(false)} className="text-white hover:text-red-400">
-                <X size={24} />
+      {showCategoryManager && user?.is_admin && (
+        <Modal onClose={() => setShowCategoryManager(false)} title="Manage Categories">
+          <div className="space-y-4">
+            <form onSubmit={handleCreateCategory} className="flex space-x-2">
+              <input
+                type="text"
+                placeholder="New category name"
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value)}
+                className="flex-1 px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+              >
+                Add
               </button>
-            </div>
-
-            <div className="mb-6">
-              <div className="flex space-x-2">
-                <input
-                  type="text"
-                  placeholder="New category name"
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  className="flex-1 bg-slate-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                />
-                <button
-                  onClick={createCategory}
-                  className="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-lg transition"
-                >
-                  Add
-                </button>
-              </div>
-            </div>
-
+            </form>
+            
             <div className="space-y-2">
-              {categories.map(cat => (
-                <div key={cat.id} className="bg-slate-700 p-4 rounded-lg flex justify-between items-center">
-                  <span className="text-white font-semibold">{cat.name}</span>
+              {categories.map(category => (
+                <div key={category.id} className="flex items-center justify-between p-3 bg-slate-800 rounded-lg">
+                  <span className="text-white">{category.name}</span>
                   <button
-                    onClick={() => deleteCategory(cat.id)}
-                    className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded transition text-sm"
+                    onClick={() => handleDeleteCategory(category.id)}
+                    className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
                   >
                     Delete
                   </button>
@@ -1162,232 +904,334 @@ function App() {
               ))}
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Admin Panel Modal */}
-      {showAdminPanel && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-slate-800 rounded-xl p-8 max-w-2xl w-full my-8">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-3xl font-bold text-white">Create New Market</h2>
-              <button onClick={() => setShowAdminPanel(false)} className="text-white hover:text-red-400">
-                <X size={24} />
-              </button>
-            </div>
+      {showAdminPanel && user?.is_admin && (
+        <Modal onClose={() => setShowAdminPanel(false)} title="Create Market" size="large">
+          <form onSubmit={handleCreateMarket} className="space-y-4">
+            <input
+              type="text"
+              placeholder="Market question"
+              value={marketForm.question}
+              onChange={(e) => setMarketForm({...marketForm, question: e.target.value})}
+              className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
+              required
+            />
+            
+            <select
+              value={marketForm.categoryId}
+              onChange={(e) => setMarketForm({...marketForm, categoryId: e.target.value})}
+              className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
+              required
+            >
+              <option value="">Select category</option>
+              {categories.map(cat => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </select>
 
-            <div className="mb-6">
-              <label className="text-white text-sm mb-2 block">Market Type</label>
-              <div className="flex space-x-4">
-                <button
-                  onClick={() => setMarketType('binary')}
-                  className={`flex-1 py-2 rounded-lg transition ${
-                    marketType === 'binary' ? 'bg-purple-600' : 'bg-slate-700 hover:bg-slate-600'
-                  }`}
-                >
-                  Binary (Yes/No)
-                </button>
-                <button
-                  onClick={() => setMarketType('multi-choice')}
-                  className={`flex-1 py-2 rounded-lg transition ${
-                    marketType === 'multi-choice' ? 'bg-purple-600' : 'bg-slate-700 hover:bg-slate-600'
-                  }`}
-                >
-                  Multi-Choice
-                </button>
-              </div>
-            </div>
-
-            <form onSubmit={createMarket} className="space-y-4">
-              <div>
-                <label className="text-white text-sm mb-2 block">Question</label>
+            <div className="flex space-x-4">
+              <label className="flex items-center space-x-2 text-white">
                 <input
-                  type="text"
-                  placeholder="e.g., Will Bitcoin reach $100k by 2025?"
-                  value={newMarket.question}
-                  onChange={(e) => setNewMarket({ ...newMarket, question: e.target.value })}
-                  className="w-full bg-slate-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  type="radio"
+                  value="binary"
+                  checked={marketForm.marketType === 'binary'}
+                  onChange={(e) => setMarketForm({...marketForm, marketType: e.target.value})}
+                />
+                <span>Binary (Yes/No)</span>
+              </label>
+              <label className="flex items-center space-x-2 text-white">
+                <input
+                  type="radio"
+                  value="multi-choice"
+                  checked={marketForm.marketType === 'multi-choice'}
+                  onChange={(e) => setMarketForm({...marketForm, marketType: e.target.value})}
+                />
+                <span>Multi-Choice (2-4 options)</span>
+              </label>
+            </div>
+
+            {marketForm.marketType === 'binary' ? (
+              <div className="grid grid-cols-2 gap-4">
+                <input
+                  type="number"
+                  step="0.1"
+                  min="1.1"
+                  placeholder="YES odds (e.g., 2.5)"
+                  value={marketForm.yesOdds}
+                  onChange={(e) => setMarketForm({...marketForm, yesOdds: e.target.value})}
+                  className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
+                  required
+                />
+                <input
+                  type="number"
+                  step="0.1"
+                  min="1.1"
+                  placeholder="NO odds (e.g., 1.5)"
+                  value={marketForm.noOdds}
+                  onChange={(e) => setMarketForm({...marketForm, noOdds: e.target.value})}
+                  className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
                   required
                 />
               </div>
-
-              {marketType === 'binary' ? (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-white text-sm mb-2 block">YES Odds</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      placeholder="2.5"
-                      value={newMarket.yesOdds}
-                      onChange={(e) => setNewMarket({ ...newMarket, yesOdds: e.target.value })}
-                      className="w-full bg-slate-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="text-white text-sm mb-2 block">NO Odds</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      placeholder="1.5"
-                      value={newMarket.noOdds}
-                      onChange={(e) => setNewMarket({ ...newMarket, noOdds: e.target.value })}
-                      className="w-full bg-slate-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                      required
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <label className="text-white text-sm mb-2 block">Options (2-4)</label>
-                  {newMarket.options.map((option, index) => (
-                    <div key={index} className="flex space-x-2 mb-2">
-                      <input
-                        type="text"
-                        placeholder="Option name (e.g., California)"
-                        value={option.text}
-                        onChange={(e) => {
-                          const newOptions = [...newMarket.options];
-                          newOptions[index].text = e.target.value;
-                          setNewMarket({ ...newMarket, options: newOptions });
-                        }}
-                        className="flex-1 bg-slate-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                      />
-                      <input
-                        type="number"
-                        step="0.1"
-                        placeholder="Odds"
-                        value={option.odds}
-                        onChange={(e) => {
-                          const newOptions = [...newMarket.options];
-                          newOptions[index].odds = e.target.value;
-                          setNewMarket({ ...newMarket, options: newOptions });
-                        }}
-                        className="w-24 bg-slate-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                      />
-                      {newMarket.options.length > 2 && (
-                        <button
-                          type="button"
-                          onClick={() => removeMarketOption(index)}
-                          className="bg-red-600 hover:bg-red-700 px-3 py-2 rounded-lg"
-                        >
-                          <X size={16} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  {newMarket.options.length < 4 && (
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-white font-semibold">Options (2-4 required)</label>
+                  {marketForm.options.length < 4 && (
                     <button
                       type="button"
-                      onClick={addMarketOption}
-                      className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm"
+                      onClick={addOption}
+                      className="flex items-center space-x-1 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
                     >
-                      + Add Option
+                      <PlusCircle className="w-4 h-4" />
+                      <span>Add Option</span>
                     </button>
                   )}
                 </div>
-              )}
-
-              <div>
-                <label className="text-white text-sm mb-2 block">Category</label>
-                <select
-                  value={newMarket.categoryId}
-                  onChange={(e) => setNewMarket({ ...newMarket, categoryId: e.target.value })}
-                  className="w-full bg-slate-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                  required
-                >
-                  <option value="">Select a category</option>
-                  {categories.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-white text-sm mb-2 block">Deadline</label>
-                <input
-                  type="datetime-local"
-                  value={newMarket.deadline}
-                  onChange={(e) => setNewMarket({ ...newMarket, deadline: e.target.value })}
-                  className="w-full bg-slate-700 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
-                  required
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition"
-              >
-                Create Market
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Resolve Markets Modal */}
-      {showResolvePanel && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-slate-800 rounded-xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto my-8">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-3xl font-bold text-white">Resolve Expired Markets</h2>
-              <button onClick={() => setShowResolvePanel(false)} className="text-white hover:text-red-400">
-                <X size={24} />
-              </button>
-            </div>
-
-            {expiredMarkets.length === 0 ? (
-              <p className="text-purple-300 text-center py-8">No markets pending resolution</p>
-            ) : (
-              <div className="space-y-6">
-                {expiredMarkets.map((market) => (
-                  <div key={market.id} className="bg-slate-700 rounded-lg p-6">
-                    <h3 className="text-xl font-bold text-white mb-2">{market.question}</h3>
-                    <p className="text-purple-300 text-sm mb-4">
-                      Deadline: {new Date(market.deadline).toLocaleString()} | 
-                      Total Bets: {market.total_bets || 0}
-                    </p>
-                    
-                    {market.market_type === 'binary' ? (
-                      <div className="flex space-x-4">
-                        <button
-                          onClick={() => resolveMarket(market.id, 'yes')}
-                          className="flex-1 bg-green-600 hover:bg-green-700 px-4 py-3 rounded-lg transition font-bold"
-                        >
-                          Resolve as YES
-                        </button>
-                        <button
-                          onClick={() => resolveMarket(market.id, 'no')}
-                          className="flex-1 bg-red-600 hover:bg-red-700 px-4 py-3 rounded-lg transition font-bold"
-                        >
-                          Resolve as NO
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <p className="text-white font-semibold mb-2">Select Winning Option:</p>
-                        {market.options && market.options.map((option) => (
-                          <button
-                            key={option.id}
-                            onClick={() => resolveMarket(market.id, null, option.id)}
-                            className="w-full bg-purple-600 hover:bg-purple-700 px-4 py-3 rounded-lg transition text-left"
-                          >
-                            <span className="font-bold">{option.option_text || option.optionText}</span>
-                            <span className="text-sm opacity-75 ml-2">({option.odds}x odds)</span>
-                          </button>
-                        ))}
-                      </div>
+                {marketForm.options.map((option, index) => (
+                  <div key={index} className="flex space-x-2">
+                    <input
+                      type="text"
+                      placeholder={`Option ${index + 1} (e.g., California)`}
+                      value={option.text}
+                      onChange={(e) => updateOption(index, 'text', e.target.value)}
+                      className="flex-1 px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
+                      required
+                    />
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="1.1"
+                      placeholder="Odds"
+                      value={option.odds}
+                      onChange={(e) => updateOption(index, 'odds', e.target.value)}
+                      className="w-24 px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
+                      required
+                    />
+                    {marketForm.options.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={() => removeOption(index)}
+                        className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
                     )}
                   </div>
                 ))}
               </div>
             )}
+            
+            <input
+              type="datetime-local"
+              value={marketForm.deadline}
+              onChange={(e) => setMarketForm({...marketForm, deadline: e.target.value})}
+              className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
+              required
+            />
+            
+            <button
+              type="submit"
+              className="w-full px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold"
+            >
+              Create Market
+            </button>
+          </form>
+        </Modal>
+      )}
+
+      {/* Resolve Markets Modal */}
+      {showResolveModal && user?.is_admin && (
+        <Modal onClose={() => setShowResolveModal(false)} title="Resolve Expired Markets" size="large">
+          <div className="space-y-4">
+            {expiredMarkets.length === 0 ? (
+              <p className="text-slate-400 text-center py-8">No expired markets to resolve</p>
+            ) : (
+              expiredMarkets.map(market => (
+                <div key={market.id} className="bg-slate-800 rounded-lg p-4">
+                  <p className="text-white font-semibold mb-2">{market.question}</p>
+                  <p className="text-slate-400 text-sm mb-3">
+                    Expired: {new Date(market.deadline).toLocaleDateString()}
+                  </p>
+                  
+                  {market.market_type === 'binary' ? (
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleResolveMarket(market.id, 'yes')}
+                        className="flex-1 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                      >
+                        YES Won
+                      </button>
+                      <button
+                        onClick={() => handleResolveMarket(market.id, 'no')}
+                        className="flex-1 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                      >
+                        NO Won
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-slate-300 text-sm">Select winning option:</p>
+                      {market.options && market.options.map(option => (
+                        <button
+                          key={option.id}
+                          onClick={() => handleResolveMarket(market.id, option.id)}
+                          className="w-full px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-left"
+                        >
+                          {option.option_text}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// Market Card Component
+function MarketCard({ market, user, handleBet }) {
+  const deadline = new Date(market.deadline);
+  const isExpired = deadline < new Date();
+  
+  console.log('MarketCard rendering:', {
+    id: market.id,
+    question: market.question,
+    market_type: market.market_type,
+    options: market.options,
+    optionsLength: market.options?.length
+  });
+
+  return (
+    <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-6 border border-purple-500/20 hover:border-purple-500/40 transition-all">
+      <div className="flex items-start justify-between mb-4">
+        <span className="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-sm">
+          {market.category_name}
+        </span>
+        {market.market_type === 'multi-choice' && (
+          <span className="px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full text-sm">
+            Multi-Choice
+          </span>
+        )}
+      </div>
+      
+      <h3 className="text-xl font-semibold text-white mb-4">{market.question}</h3>
+      
+      <div className="flex items-center space-x-2 text-slate-400 text-sm mb-4">
+        <Calendar className="w-4 h-4" />
+        <span>{deadline.toLocaleDateString()}</span>
+      </div>
+
+      {market.market_type === 'binary' ? (
+        <>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <button
+              onClick={() => user && !isExpired && handleBet(market, 'yes')}
+              disabled={!user || isExpired}
+              className="px-4 py-3 bg-green-500/20 text-green-300 rounded-lg hover:bg-green-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="text-lg font-bold">YES</div>
+              <div className="text-sm">{parseFloat(market.yes_odds).toFixed(2)}x</div>
+            </button>
+            <button
+              onClick={() => user && !isExpired && handleBet(market, 'no')}
+              disabled={!user || isExpired}
+              className="px-4 py-3 bg-red-500/20 text-red-300 rounded-lg hover:bg-red-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="text-lg font-bold">NO</div>
+              <div className="text-sm">{parseFloat(market.no_odds).toFixed(2)}x</div>
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between text-sm text-slate-400">
+            <div className="flex items-center space-x-1">
+              <Users className="w-4 h-4" />
+              <span>{(market.total_bets || 0)} bets</span>
+            </div>
+            <div>
+              <span className="text-green-400">{(market.yes_bets || 0)} YES</span>
+              {' / '}
+              <span className="text-red-400">{(market.no_bets || 0)} NO</span>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="space-y-2">
+          {market.options && market.options.length > 0 ? (
+            // FIX: Use unique key and deduplicate options
+            market.options
+              .filter((option, index, self) => 
+                index === self.findIndex(o => o.id === option.id)
+              )
+              .map((option) => {
+                const totalBets = market.options.reduce((sum, opt) => sum + (opt.bet_count || 0), 0);
+                const optionPercentage = totalBets > 0 
+                  ? ((option.bet_count || 0) / totalBets * 100).toFixed(1)
+                  : '0.0';
+                
+                return (
+                  <div
+                    key={`market-${market.id}-option-${option.id}`}
+                    className="relative bg-slate-700/50 rounded-lg p-3 hover:bg-slate-700 transition-colors cursor-pointer"
+                    onClick={() => user && !isExpired && handleBet(market, null, option)}
+                  >
+                    <div className="relative z-10 flex items-center justify-between">
+                      <span className="text-white font-medium">{option.option_text}</span>
+                      <span className="text-purple-400 font-bold">{parseFloat(option.odds).toFixed(1)}x</span>
+                    </div>
+                    <div className="relative z-10 flex items-center justify-between mt-1 text-xs">
+                      <span className="text-slate-400">{option.bet_count || 0} bets</span>
+                      <span className="text-slate-400">{optionPercentage}%</span>
+                    </div>
+                    <div 
+                      className="absolute inset-0 bg-purple-500/20 rounded-lg"
+                      style={{ width: `${optionPercentage}%` }}
+                    />
+                  </div>
+                );
+              })
+          ) : (
+            <p className="text-slate-400 text-center py-4">No options available</p>
+          )}
+        </div>
+      )}
+
+      {isExpired && (
+        <div className="mt-4 px-3 py-2 bg-orange-500/20 border border-orange-500/50 rounded-lg text-orange-300 text-sm text-center">
+          Market Expired - Awaiting Resolution
         </div>
       )}
     </div>
   );
 }
 
-export default App;
+// Modal Component
+function Modal({ children, onClose, title, size = 'normal' }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className={`bg-slate-900 rounded-xl border border-purple-500/30 ${
+        size === 'large' ? 'max-w-4xl w-full' : 'max-w-md w-full'
+      } max-h-[90vh] overflow-hidden flex flex-col`}>
+        <div className="flex items-center justify-between p-6 border-b border-slate-800">
+          <h2 className="text-2xl font-bold text-white">{title}</h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
+          >
+            <X className="w-6 h-6 text-slate-400" />
+          </button>
+        </div>
+        <div className="p-6 overflow-y-auto flex-1">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
