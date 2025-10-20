@@ -1,6 +1,7 @@
--- Users table
+-- Create users table with username
 CREATE TABLE users (
   id SERIAL PRIMARY KEY,
+  username VARCHAR(50) UNIQUE NOT NULL,
   name VARCHAR(255) NOT NULL,
   email VARCHAR(255) UNIQUE NOT NULL,
   password VARCHAR(255) NOT NULL,
@@ -12,28 +13,28 @@ CREATE TABLE users (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Categories table
+-- Create categories table
 CREATE TABLE categories (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100) UNIQUE NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) UNIQUE NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Betting markets table (FIXED - added missing commas)
+-- Create markets table (supports both binary and multi-choice)
 CREATE TABLE markets (
-    id SERIAL PRIMARY KEY,
-    question TEXT NOT NULL,
-    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-    market_type VARCHAR(20) DEFAULT 'binary' CHECK (market_type IN ('binary', 'multi-choice')),
-    yes_odds DECIMAL(5, 2),
-    no_odds DECIMAL(5, 2),
-    deadline TIMESTAMP NOT NULL,
-    resolved BOOLEAN DEFAULT FALSE,
-    winning_option_id INTEGER,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  id SERIAL PRIMARY KEY,
+  question TEXT NOT NULL,
+  market_type VARCHAR(20) DEFAULT 'binary' CHECK (market_type IN ('binary', 'multi-choice')),
+  yes_odds DECIMAL(5, 2),
+  no_odds DECIMAL(5, 2),
+  category_id INTEGER REFERENCES categories(id),
+  deadline TIMESTAMP NOT NULL,
+  resolved BOOLEAN DEFAULT FALSE,
+  winning_option_id INTEGER,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Market options table (for multi-choice markets)
+-- Table for multi-choice market options
 CREATE TABLE market_options (
   id SERIAL PRIMARY KEY,
   market_id INTEGER REFERENCES markets(id) ON DELETE CASCADE,
@@ -43,63 +44,48 @@ CREATE TABLE market_options (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Bets table
+-- Create bets table
 CREATE TABLE bets (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    market_id INTEGER REFERENCES markets(id) ON DELETE CASCADE,
-    market_option_id INTEGER REFERENCES market_options(id),  
-    choice VARCHAR(10),
-    amount DECIMAL(10, 2) NOT NULL,
-    odds DECIMAL(5, 2) NOT NULL,
-    potential_win DECIMAL(10, 2) NOT NULL,
-    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'won', 'lost', 'cancelled')),
-    cancelled_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id),
+  market_id INTEGER REFERENCES markets(id),
+  choice VARCHAR(10),
+  market_option_id INTEGER REFERENCES market_options(id),
+  amount DECIMAL(10, 2) NOT NULL,
+  odds DECIMAL(5, 2) NOT NULL,
+  potential_win DECIMAL(10, 2) NOT NULL,
+  status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'won', 'lost', 'cancelled')),
+  cancelled_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Insert admin user
+INSERT INTO users (username, name, email, password, is_admin, balance) VALUES
+('admin', 'Administrator', 'admin@binarybets.com', 'admin123', TRUE, 50000.00);
 
 -- Insert default categories
 INSERT INTO categories (name) VALUES
 ('Finance'),
 ('Weather'),
-('Entertainment'),
-('Crypto'),
-('Sports'),
-('Economics'),
-('Politics'),
 ('Technology'),
 ('Science'),
-('Other');
+('Sports'),
+('Economics');
 
--- Insert default admin user (password: admin123)
-INSERT INTO users (name, email, password, is_admin, balance) 
-VALUES ('Administrator', 'admin@binarybets.com', 'admin123', TRUE, 50000.00);
+-- Insert sample binary markets
+INSERT INTO markets (question, market_type, yes_odds, no_odds, category_id, deadline) VALUES
+('Will Bitcoin reach $100,000 by end of 2025?', 'binary', 2.5, 1.5, 1, '2025-12-31 23:59:59'),
+('Will it snow in Miami this winter?', 'binary', 10.0, 1.1, 2, '2025-03-20 23:59:59'),
+('Will the next iPhone have a foldable screen?', 'binary', 3.0, 1.4, 3, '2025-09-30 23:59:59'),
+('Will Ethereum surpass $5,000 in 2025?', 'binary', 2.2, 1.6, 1, '2025-12-31 23:59:59'),
+('Will NASA announce a manned Mars mission date?', 'binary', 4.0, 1.25, 4, '2025-12-31 23:59:59'),
+('Will unemployment rate drop below 3% in US?', 'binary', 3.5, 1.3, 6, '2025-12-31 23:59:59');
 
--- Insert some demo users for leaderboard
-INSERT INTO users (name, email, password, balance, total_winnings, bets_won) VALUES
-('Sarah Chen', 'sarah@example.com', 'password123', 57850.00, 47850.00, 32),
-('Marcus Rivera', 'marcus@example.com', 'password123', 53200.00, 43200.00, 28),
-('Alex Thompson', 'alex@example.com', 'password123', 49500.00, 39500.00, 25),
-('Jamie Liu', 'jamie@example.com', 'password123', 45700.00, 35700.00, 22),
-('Taylor Brooks', 'taylor@example.com', 'password123', 41200.00, 31200.00, 19),
-('Jordan Martinez', 'jordan@example.com', 'password123', 38900.00, 28900.00, 17),
-('Casey Anderson', 'casey@example.com', 'password123', 35600.00, 25600.00, 15),
-('Riley Johnson', 'riley@example.com', 'password123', 32100.00, 22100.00, 13);
-
--- Insert binary betting markets (FIXED - proper TIMESTAMP format)
-INSERT INTO markets (question, category_id, market_type, yes_odds, no_odds, deadline) VALUES
-('Will the S&P 500 close above 6000 by end of 2025?', 1, 'binary', 1.85, 2.10, '2025-12-31 23:59:59'),
-('Will it snow in New York City this December?', 2, 'binary', 1.50, 2.75, '2025-12-31 23:59:59'),
-('Will a new Star Wars movie be announced in 2025?', 3, 'binary', 2.20, 1.70, '2025-12-31 23:59:59'),
-('Will Bitcoin reach $150,000 by end of Q1 2026?', 4, 'binary', 3.50, 1.35, '2026-03-31 23:59:59'),
-('Will the Lakers make the NBA playoffs this season?', 5, 'binary', 1.65, 2.40, '2026-04-15 23:59:59'),
-('Will unemployment rate in US be below 4% in December 2025?', 6, 'binary', 1.90, 2.00, '2025-12-31 23:59:59');
-
--- Insert multi-choice betting markets
-INSERT INTO markets (question, category_id, market_type, deadline) VALUES
-('Where will the next major US meteor impact be reported?', 9, 'multi-choice', '2026-06-30 23:59:59'),
-('Which US state will experience the strongest earthquake in 2025?', 9, 'multi-choice', '2025-12-31 23:59:59'),
-('Which company will reach $4 trillion market cap first?', 1, 'multi-choice', '2026-12-31 23:59:59');
+-- Insert sample multi-choice markets
+INSERT INTO markets (question, market_type, category_id, deadline) VALUES
+('Where will the next major US meteor impact be reported?', 'multi-choice', 4, '2026-06-30 23:59:59'),
+('Which US state will experience the strongest earthquake in 2025?', 'multi-choice', 4, '2025-12-31 23:59:59'),
+('Which company will reach $4 trillion market cap first?', 'multi-choice', 1, '2026-12-31 23:59:59');
 
 -- Insert options for multi-choice market 7 (meteor impact)
 INSERT INTO market_options (market_id, option_text, odds, option_order) VALUES
@@ -122,9 +108,21 @@ INSERT INTO market_options (market_id, option_text, odds, option_order) VALUES
 (9, 'NVIDIA', 3.5, 3),
 (9, 'Amazon', 4.0, 4);
 
+-- Insert demo users for leaderboard
+INSERT INTO users (username, name, email, password, balance, total_winnings, bets_won) VALUES
+('cryptoqueen', 'Sarah Chen', 'sarah@example.com', 'password123', 57850.00, 47850.00, 32),
+('betmaster', 'Marcus Rivera', 'marcus@example.com', 'password123', 53200.00, 43200.00, 28),
+('alexthegreat', 'Alex Thompson', 'alex@example.com', 'password123', 49500.00, 39500.00, 25),
+('jamieliu', 'Jamie Liu', 'jamie@example.com', 'password123', 45700.00, 35700.00, 22),
+('taylorwins', 'Taylor Brooks', 'taylor@example.com', 'password123', 41200.00, 31200.00, 19),
+('jordanbet', 'Jordan Martinez', 'jordan@example.com', 'password123', 38900.00, 28900.00, 17),
+('caseyace', 'Casey Anderson', 'casey@example.com', 'password123', 35600.00, 25600.00, 15),
+('rileypro', 'Riley Johnson', 'riley@example.com', 'password123', 32100.00, 22100.00, 13);
+
 -- Create indexes for performance
 CREATE INDEX idx_bets_user_id ON bets(user_id);
 CREATE INDEX idx_bets_market_id ON bets(market_id);
 CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_markets_category_id ON markets(category_id);
 CREATE INDEX idx_markets_deadline ON markets(deadline);
