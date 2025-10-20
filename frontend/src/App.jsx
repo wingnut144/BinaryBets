@@ -157,7 +157,7 @@ export default function App() {
     
     setCalculatingOdds(true);
     try {
-      const response = await fetch(`${API_URL}/calculate-odds`, {
+      const response = await fetch(`${API_URL}/markets/calculate-odds`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -230,9 +230,8 @@ export default function App() {
       });
       const data = await response.json();
       if (data.user) {
-        setUser(data.user);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        setShowAuthModal(false);
+        alert(data.message || 'Account created! Please check your email to verify your account.');
+        setAuthMode('login');
         setRegisterForm({ username: '', name: '', email: '', password: '' });
       } else {
         alert(data.error || 'Registration failed');
@@ -736,6 +735,9 @@ export default function App() {
               >
                 Create Account
               </button>
+              <p className="text-xs text-slate-400 text-center">
+                📧 You'll receive a verification email after registration
+              </p>
               <button
                 type="button"
                 onClick={() => setAuthMode('login')}
