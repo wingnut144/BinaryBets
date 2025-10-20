@@ -120,7 +120,8 @@ app.post('/api/markets', async (req, res) => {
   }
 });
 
-app.post('/api/calculate-odds', async (req, res) => {
+// Add this right after the existing /api/calculate-odds endpoint
+app.post('/api/markets/calculate-odds', async (req, res) => {
   const { question, options } = req.body;
   try {
     let calculatedOdds;
@@ -141,7 +142,6 @@ app.post('/api/calculate-odds', async (req, res) => {
     res.status(500).json({ error: 'Failed to calculate odds' });
   }
 });
-
 app.post('/api/markets/:marketId/resolve', async (req, res) => {
   const { marketId } = req.params;
   const { winning_option_id } = req.body;
