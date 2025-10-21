@@ -72,7 +72,7 @@ INSERT INTO categories (name, color) VALUES
 
 -- Create admin user
 INSERT INTO users (email, password, username, full_name, balance, is_admin, email_verified) VALUES
-('admin@binarybets.com', 'admin123', 'admin', 'Admin User', 10000, true, true);
+('admin@binarybets.com', '$2b$10$8wrFBTdi3EeQZqwJf5LjxeXwb9WkAZi7E7tCRjIPUblI9oDfxsqcW', 'admin', 'Admin User', 10000, true, true) ON CONFLICT (email) DO NOTHING;
 
 -- Create sample users
 INSERT INTO users (email, password, username, full_name, balance, email_verified) VALUES
