@@ -120,28 +120,6 @@ app.post('/api/markets', async (req, res) => {
   }
 });
 
-app.post('/api/calculate-odds', async (req, res) => {
-  const { question, options, marketType } = req.body;
-  try {
-    let calculatedOdds;
-    if (!options || options.length === 2 || marketType === 'binary') {
-      calculatedOdds = { yes: 2.0, no: 2.0 };
-    } else {
-      const baseOdds = options.length;
-      calculatedOdds = {
-        options: options.map(opt => ({
-          text: opt,
-          odds: parseFloat((baseOdds + Math.random() * 0.5).toFixed(2))
-        }))
-      };
-    }
-    res.json(calculatedOdds);
-  } catch (error) {
-    console.error('Error calculating odds:', error);
-    res.status(500).json({ error: 'Failed to calculate odds' });
-  }
-});
-
 app.post('/api/markets/calculate-odds', async (req, res) => {
   const { question, options, marketType } = req.body;
   try {
@@ -157,7 +135,8 @@ app.post('/api/markets/calculate-odds', async (req, res) => {
         }))
       };
     }
-    res.json(calculatedOdds);
+    // Fix: Wrap in "odds" object
+    res.json({ odds: calculatedOdds });  // ✅ Changed this line
   } catch (error) {
     console.error('Error calculating odds:', error);
     res.status(500).json({ error: 'Failed to calculate odds' });
