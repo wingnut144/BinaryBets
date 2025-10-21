@@ -120,17 +120,13 @@ app.post('/api/markets', async (req, res) => {
   }
 });
 
-// Add this right after the existing /api/calculate-odds endpoint
-app.post('/api/markets/calculate-odds', async (req, res) => {
+app.post('/api/calculate-odds', async (req, res) => {
   const { question, options, marketType } = req.body;
   try {
     let calculatedOdds;
-    
-    // Handle binary bets (options might be null)
     if (!options || options.length === 2 || marketType === 'binary') {
       calculatedOdds = { yes: 2.0, no: 2.0 };
     } else {
-      // Multi-choice
       const baseOdds = options.length;
       calculatedOdds = {
         options: options.map(opt => ({
@@ -139,7 +135,28 @@ app.post('/api/markets/calculate-odds', async (req, res) => {
         }))
       };
     }
-    
+    res.json(calculatedOdds);
+  } catch (error) {
+    console.error('Error calculating odds:', error);
+    res.status(500).json({ error: 'Failed to calculate odds' });
+  }
+});
+
+app.post('/api/markets/calculate-odds', async (req, res) => {
+  const { question, options, marketType } = req.body;
+  try {
+    let calculatedOdds;
+    if (!options || options.length === 2 || marketType === 'binary') {
+      calculatedOdds = { yes: 2.0, no: 2.0 };
+    } else {
+      const baseOdds = options.length;
+      calculatedOdds = {
+        options: options.map(opt => ({
+          text: opt,
+          odds: parseFloat((baseOdds + Math.random() * 0.5).toFixed(2))
+        }))
+      };
+    }
     res.json(calculatedOdds);
   } catch (error) {
     console.error('Error calculating odds:', error);
@@ -181,6 +198,36 @@ app.get('/api/markets/:marketId/verification-data', async (req, res) => {
   } catch (error) {
     console.error('Error fetching verification data:', error);
     res.status(500).json({ error: 'Failed to fetch verification data' });
+  }
+});
+
+// Get expired unresolved markets
+app.get('/api/markets/expired', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        m.*,
+        c.name as category_name,
+        c.color as category_color,
+        COALESCE(json_agg(
+          json_build_object(
+            'id', mo.id,
+            'option_text', mo.option_text,
+            'odds', mo.odds,
+            'option_order', mo.option_order
+          ) ORDER BY mo.option_order
+        ) FILTER (WHERE mo.id IS NOT NULL), '[]') as options
+      FROM markets m
+      LEFT JOIN categories c ON m.category_id = c.id
+      LEFT JOIN market_options mo ON m.id = mo.market_id
+      WHERE m.deadline < NOW() AND m.resolved = FALSE
+      GROUP BY m.id, c.name, c.color
+      ORDER BY m.deadline DESC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching expired markets:', error);
+    res.status(500).json({ error: 'Failed to fetch expired markets' });
   }
 });
 
