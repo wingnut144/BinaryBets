@@ -429,7 +429,7 @@ export default function App() {
                     onClick={() => setShowProfileModal(true)}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                   >
-                    @{user.username} - ${user.balance.toFixed(2)}
+                    @{user.username} - ${parseFloat(user.balance).toFixed(2)}
                   </button>
                   <button
                     onClick={handleLogout}
