@@ -27,18 +27,28 @@ pool.query('SELECT NOW()', (err, res) => {
 // AUTHENTICATION
 app.post('/api/auth/register', async (req, res) => {
   const { email, password, username, fullName } = req.body;
+  
   try {
+    // Check if user exists
     const existingUser = await pool.query(
       'SELECT * FROM users WHERE email = $1 OR username = $2',
       [email, username]
     );
+    
     if (existingUser.rows.length > 0) {
       return res.status(400).json({ error: 'User or username already exists' });
     }
+    
+    // Hash the password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    
+    // Insert user with hashed password
     const result = await pool.query(
       'INSERT INTO users (email, password, username, full_name, balance, email_verified) VALUES ($1, $2, $3, $4, 10000, true) RETURNING id, email, username, full_name, balance, is_admin',
-      [email, password, username, fullName]
+      [email, hashedPassword, username, fullName]
     );
+    
     res.json({ user: result.rows[0], message: 'Registration successful!' });
   } catch (error) {
     console.error('Registration error:', error);
@@ -48,15 +58,31 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
+  
   try {
+    // Get user with hashed password
     const result = await pool.query(
-      'SELECT id, email, username, full_name, balance, is_admin FROM users WHERE email = $1 AND password = $2',
-      [email, password]
+      'SELECT id, email, username, full_name, balance, is_admin, password FROM users WHERE email = $1',
+      [email]
     );
+    
     if (result.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    res.json({ user: result.rows[0] });
+    
+    const user = result.rows[0];
+    
+    // Compare hashed password
+    const passwordMatch = await bcrypt.compare(password, user.password);
+    
+    if (!passwordMatch) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    // Remove password from response
+    delete user.password;
+    
+    res.json({ user });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Login failed' });
