@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { TrendingUp, LogOut, Plus, CheckCircle, XCircle, DollarSign, Calendar, Award, Sparkles, X } from 'lucide-react';
+import { TrendingUp, LogOut, Plus, CheckCircle, Calendar, Award, Sparkles, X } from 'lucide-react';
 
 const API_URL = 'http://64.23.152.157:5000/api';
 
@@ -17,12 +17,12 @@ export default function App() {
   const [userBets, setUserBets] = useState([]);
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [calculatingOdds, setCalculatingOdds] = useState(false);
-  const [suggestedOdds, setSuggestedOdds] = useState(null);
   
-  // Error notification state
   const [errorNotification, setErrorNotification] = useState(null);
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [showBetHelp, setShowBetHelp] = useState(false);
   
-  // Show error function
   const showError = (message) => {
     setErrorNotification(message);
     setTimeout(() => setErrorNotification(null), 5000);
@@ -56,16 +56,19 @@ export default function App() {
     if (savedUser) {
       setUser(JSON.parse(savedUser));
     }
+    
+    const hasSeenDisclaimer = localStorage.getItem('hasSeenDisclaimer');
+    if (!hasSeenDisclaimer) {
+      setShowDisclaimer(true);
+    }
   }, []);
 
-  // Read category from URL after categories are loaded
   useEffect(() => {
     if (categories.length > 0) {
       const urlParams = new URLSearchParams(window.location.search);
       const categoryParam = urlParams.get('category');
       
       if (categoryParam) {
-        // Check if it's a category name (string) or ID (number)
         const categoryByName = categories.find(cat => 
           cat.name.toLowerCase() === categoryParam.toLowerCase()
         );
@@ -73,7 +76,6 @@ export default function App() {
         if (categoryByName) {
           setSelectedCategory(categoryByName.id.toString());
         } else if (!isNaN(categoryParam)) {
-          // It's a number, use as ID
           setSelectedCategory(categoryParam);
         }
       }
@@ -182,7 +184,6 @@ export default function App() {
       });
       
       const data = await response.json();
-      setSuggestedOdds(data.odds);
       
       if (marketForm.marketType === 'binary') {
         setMarketForm(prev => ({
@@ -264,11 +265,11 @@ export default function App() {
       const data = await response.json();
       
       if (response.ok) {
-        const updatedUser = { ...user, balance: user.balance - parseFloat(amount) };
+        const updatedUser = { ...user, balance: parseFloat(user.balance) - parseFloat(amount) };
         setUser(updatedUser);
         localStorage.setItem('user', JSON.stringify(updatedUser));
         fetchUserBets();
-        showError('Bet placed successfully!'); // Using as success notification
+        showError('Bet placed successfully!');
       } else {
         showError(data.error || 'Failed to place bet');
       }
@@ -289,7 +290,7 @@ export default function App() {
 
       if (response.ok) {
         const data = await response.json();
-        const updatedUser = { ...user, balance: user.balance + data.refund };
+        const updatedUser = { ...user, balance: parseFloat(user.balance) + parseFloat(data.refund) };
         setUser(updatedUser);
         localStorage.setItem('user', JSON.stringify(updatedUser));
         fetchUserBets();
@@ -326,11 +327,9 @@ export default function App() {
     ? markets
     : markets.filter(m => m.category_id === parseInt(selectedCategory));
 
-  // Function to handle category change and update URL
   const handleCategoryChange = (categoryValue) => {
     setSelectedCategory(categoryValue);
     
-    // Update URL without page reload
     const url = new URL(window.location);
     if (categoryValue === 'all') {
       url.searchParams.delete('category');
@@ -340,10 +339,14 @@ export default function App() {
     window.history.pushState({}, '', url);
   };
 
+  const acceptDisclaimer = () => {
+    localStorage.setItem('hasSeenDisclaimer', 'true');
+    setShowDisclaimer(false);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       
-      {/* Error Notification Box */}
       {errorNotification && (
         <div className="fixed top-4 right-4 z-50 animate-slide-in">
           <div className="bg-red-500 text-white px-6 py-4 rounded-lg shadow-2xl max-w-md flex items-start space-x-3 border-2 border-red-400">
@@ -353,7 +356,7 @@ export default function App() {
               </svg>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-lg">Error</p>
+              <p className="font-semibold text-lg">Notification</p>
               <p className="text-sm mt-1 break-words">{errorNotification}</p>
             </div>
             <button
@@ -367,7 +370,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Add animation styles */}
       <style>{`
         @keyframes slide-in {
           from {
@@ -384,13 +386,19 @@ export default function App() {
         }
       `}</style>
 
-      {/* Header */}
       <nav className="bg-slate-800/50 backdrop-blur-sm border-b border-slate-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-2">
               <TrendingUp className="w-8 h-8 text-purple-400" />
               <h1 className="text-2xl font-bold text-white">BinaryBets</h1>
+              <button
+                onClick={() => setShowWelcome(true)}
+                className="ml-4 text-sm text-purple-300 hover:text-purple-200 underline"
+                title="How it works"
+              >
+                Help
+              </button>
             </div>
             
             <div className="flex items-center space-x-4">
@@ -451,7 +459,6 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Category Filter */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex flex-wrap gap-2">
           <button
@@ -480,7 +487,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Markets Grid */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredMarkets.map(market => (
@@ -567,7 +573,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Auth Modal */}
       {showAuthModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-slate-800 rounded-lg p-8 max-w-md w-full">
@@ -634,11 +639,19 @@ export default function App() {
         </div>
       )}
 
-      {/* Create Market Modal */}
       {showCreateMarket && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-slate-800 rounded-lg p-8 max-w-2xl w-full my-8">
-            <h2 className="text-2xl font-bold text-white mb-6">Create Bet</h2>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-white">Create Bet</h2>
+              <button
+                onClick={() => setShowBetHelp(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center space-x-2"
+              >
+                <span>❓</span>
+                <span>Need Help?</span>
+              </button>
+            </div>
             <form onSubmit={handleCreateMarket} className="space-y-4">
               <input
                 type="text"
@@ -800,7 +813,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Profile Modal */}
       {showProfileModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-slate-800 rounded-lg p-8 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
@@ -844,7 +856,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Leaderboard Modal */}
       {showLeaderboard && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-slate-800 rounded-lg p-8 max-w-2xl w-full">
@@ -865,7 +876,7 @@ export default function App() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-xl font-bold text-green-400">${entry.balance}</div>
+                    <div className="text-xl font-bold text-green-400">${parseFloat(entry.balance).toFixed(2)}</div>
                   </div>
                 </div>
               ))}
@@ -880,7 +891,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Resolve Modal - For Admins */}
       {showResolveModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-slate-800 rounded-lg p-8 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
@@ -929,6 +939,278 @@ export default function App() {
               className="w-full mt-6 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600"
             >
               Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showDisclaimer && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-lg p-8 max-w-2xl w-full border-2 border-red-500">
+            <div className="flex items-center space-x-3 mb-6">
+              <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
+                <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold text-white">Important Disclaimer</h2>
+            </div>
+            
+            <div className="space-y-4 text-gray-300 mb-6">
+              <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-4">
+                <h3 className="font-bold text-red-400 mb-2">⚠️ ENTERTAINMENT ONLY - NO REAL MONEY</h3>
+                <p className="text-sm">
+                  This website is provided solely for entertainment and educational purposes. 
+                  All virtual currency, bets, and transactions on this platform are simulated and have no real-world monetary value.
+                </p>
+              </div>
+
+              <div className="space-y-2 text-sm">
+                <h4 className="font-semibold text-white">By using this site, you acknowledge that:</h4>
+                <ul className="list-disc list-inside space-y-1 ml-2">
+                  <li>All currency displayed is <strong>virtual and worthless</strong></li>
+                  <li>No real money can be deposited, withdrawn, or won</li>
+                  <li>This is not gambling and involves no financial risk</li>
+                  <li>You must be 18+ years old to use this site</li>
+                  <li>This site is for entertainment and skill-building only</li>
+                  <li>We do not facilitate or encourage real-money gambling</li>
+                </ul>
+              </div>
+
+              <div className="bg-blue-900/20 border border-blue-500/50 rounded-lg p-4">
+                <h4 className="font-semibold text-blue-400 mb-2">📚 Educational Purpose</h4>
+                <p className="text-sm">
+                  BinaryBets is designed to help users learn about prediction markets, probability, and decision-making 
+                  in a safe, risk-free environment. All outcomes and payouts are simulated.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={acceptDisclaimer}
+              className="w-full py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-semibold"
+            >
+              I Understand - Continue to BinaryBets
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showWelcome && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-lg p-8 max-w-3xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-3xl font-bold text-white">Welcome to BinaryBets! 🎯</h2>
+              <button onClick={() => setShowWelcome(false)} className="text-gray-400 hover:text-white">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="space-y-6 text-gray-300">
+              <div className="bg-purple-900/30 border border-purple-500/50 rounded-lg p-6">
+                <h3 className="text-xl font-bold text-purple-400 mb-3">What is BinaryBets?</h3>
+                <p>
+                  BinaryBets is a <strong>virtual prediction market</strong> where you can place bets on future events 
+                  using play money. Test your forecasting skills, learn about probability, and compete with others!
+                </p>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="bg-slate-700/50 rounded-lg p-4">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <span className="text-2xl">💰</span>
+                    <h4 className="font-bold text-white">Virtual Currency</h4>
+                  </div>
+                  <p className="text-sm">
+                    Start with <strong>$10,000 play money</strong>. Place bets on events to grow your balance. 
+                    Remember: it's all virtual and for fun!
+                  </p>
+                </div>
+
+                <div className="bg-slate-700/50 rounded-lg p-4">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <span className="text-2xl">📊</span>
+                    <h4 className="font-bold text-white">Two Bet Types</h4>
+                  </div>
+                  <p className="text-sm">
+                    <strong>Binary:</strong> YES or NO questions<br/>
+                    <strong>Multi-choice:</strong> Pick from multiple outcomes
+                  </p>
+                </div>
+
+                <div className="bg-slate-700/50 rounded-lg p-4">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <span className="text-2xl">🎲</span>
+                    <h4 className="font-bold text-white">How Odds Work</h4>
+                  </div>
+                  <p className="text-sm">
+                    <strong>2.5x odds:</strong> Win $250 on a $100 bet<br/>
+                    <strong>1.5x odds:</strong> Win $150 on a $100 bet<br/>
+                    Higher odds = less likely outcome
+                  </p>
+                </div>
+
+                <div className="bg-slate-700/50 rounded-lg p-4">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <span className="text-2xl">🏆</span>
+                    <h4 className="font-bold text-white">Compete & Win</h4>
+                  </div>
+                  <p className="text-sm">
+                    Check the <strong>Leaderboard</strong> to see top predictors. 
+                    Build your balance and climb the ranks!
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-green-900/20 border border-green-500/50 rounded-lg p-6">
+                <h3 className="text-xl font-bold text-green-400 mb-3">How to Play</h3>
+                <ol className="space-y-2 ml-4 list-decimal">
+                  <li><strong>Browse bets</strong> - Look through available prediction markets</li>
+                  <li><strong>Choose your outcome</strong> - Click YES/NO or select an option</li>
+                  <li><strong>Enter bet amount</strong> - Decide how much play money to risk</li>
+                  <li><strong>Wait for resolution</strong> - Admin resolves bets after deadline</li>
+                  <li><strong>Collect winnings</strong> - If you were right, your balance increases!</li>
+                </ol>
+              </div>
+
+              <div className="bg-yellow-900/20 border border-yellow-500/50 rounded-lg p-4">
+                <h4 className="font-semibold text-yellow-400 mb-2">💡 Pro Tips</h4>
+                <ul className="space-y-1 text-sm">
+                  <li>• You can cancel bets before deadline (95% refund)</li>
+                  <li>• Filter by category to find bets you know about</li>
+                  <li>• Check "Your Bets" to track active predictions</li>
+                  <li>• Study odds carefully - they reflect probability</li>
+                </ul>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowWelcome(false)}
+              className="w-full mt-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-semibold"
+            >
+              Got It - Start Betting!
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showBetHelp && user && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-lg p-8 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-white">📚 How to Create a Bet</h2>
+              <button onClick={() => setShowBetHelp(false)} className="text-gray-400 hover:text-white">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="space-y-6 text-gray-300">
+              <div className="bg-blue-900/20 border border-blue-500/50 rounded-lg p-4">
+                <p className="text-sm">
+                  Follow these steps to create an engaging prediction market. Good bets are clear, 
+                  have a definite resolution date, and are about verifiable future events.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-start space-x-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center font-bold">
+                    1
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white mb-1">Write a Clear Question</h3>
+                    <p className="text-sm">
+                      <strong>Good:</strong> "Will Bitcoin reach $100,000 by end of 2025?"<br/>
+                      <strong>Bad:</strong> "Will crypto do well?"
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start space-x-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center font-bold">
+                    2
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white mb-1">Select Category</h3>
+                    <p className="text-sm">
+                      Choose the category that best fits your bet (Finance, Weather, Technology, etc.)
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start space-x-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center font-bold">
+                    3
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white mb-1">Choose Bet Type</h3>
+                    <p className="text-sm">
+                      <strong>Binary (YES/NO):</strong> Simple yes or no questions<br/>
+                      <strong>Multi-Choice:</strong> Multiple possible outcomes (2-4 options)
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start space-x-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center font-bold">
+                    4
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white mb-1">🤖 Use AI Odds Calculator</h3>
+                    <p className="text-sm mb-2">
+                      Click "Calculate AI Odds" to automatically generate fair odds based on your question. 
+                      The AI analyzes the question and suggests appropriate multipliers.
+                    </p>
+                    <div className="bg-green-900/20 border border-green-500/30 rounded p-2 text-xs">
+                      💡 <strong>Tip:</strong> You can edit AI-suggested odds if you have better information!
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-start space-x-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center font-bold">
+                    5
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white mb-1">Set Odds Manually (Optional)</h3>
+                    <p className="text-sm">
+                      <strong>Lower odds (1.2x-1.8x):</strong> Very likely to happen<br/>
+                      <strong>Medium odds (2.0x-3.0x):</strong> Moderate probability<br/>
+                      <strong>High odds (4.0x+):</strong> Unlikely but possible
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start space-x-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center font-bold">
+                    6
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white mb-1">Set Deadline</h3>
+                    <p className="text-sm">
+                      Choose when the outcome will be known. The bet closes at this time and awaits resolution.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-yellow-900/20 border border-yellow-500/50 rounded-lg p-4">
+                <h4 className="font-semibold text-yellow-400 mb-2">⚠️ Best Practices</h4>
+                <ul className="space-y-1 text-sm">
+                  <li>✓ Make questions specific and unambiguous</li>
+                  <li>✓ Set realistic deadlines (not too far in future)</li>
+                  <li>✓ Ensure outcome can be objectively verified</li>
+                  <li>✓ Balance odds to make all options attractive</li>
+                  <li>✗ Avoid subjective questions ("Will X be good?")</li>
+                </ul>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowBetHelp(false)}
+              className="w-full mt-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-semibold"
+            >
+              Close Help
             </button>
           </div>
         </div>
