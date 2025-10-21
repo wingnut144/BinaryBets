@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import pg from 'pg';
 import fetch from 'node-fetch';
+import bcrypt from 'bcrypt';
 
 const { Pool } = pg;
 const app = express();
