@@ -129,15 +129,7 @@ export default function App() {
     }
   };
 
-  const [authForm, setAuthForm] = useState({
-  email: '',
-  password: '',
-  confirmPassword: '',  // ADD THIS LINE
-  username: '',
-  fullName: ''
-});
-
-// In handleAuth function, add password validation BEFORE the fetch:
+ // In handleAuth function, add password validation BEFORE the fetch:
 const handleAuth = async (e) => {
   e.preventDefault();
   
