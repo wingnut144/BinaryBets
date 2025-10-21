@@ -328,6 +328,28 @@ app.get('/api/users/:userId', async (req, res) => {
   }
 });
 
+// Get user stats
+app.get('/api/users/:userId/stats', async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const stats = await pool.query(`
+      SELECT 
+        (SELECT COUNT(*) FROM bets WHERE user_id = $1) as total_bets,
+        (SELECT COUNT(*) FROM bets b 
+         JOIN markets m ON b.market_id = m.id 
+         WHERE b.user_id = $1 AND m.resolved = true 
+         AND m.winning_option_id = b.market_option_id) as wins,
+        (SELECT COUNT(*) FROM bets b 
+         JOIN markets m ON b.market_id = m.id 
+         WHERE b.user_id = $1 AND m.resolved = true) as resolved_bets
+    `, [userId]);
+    res.json(stats.rows[0] || { total_bets: 0, wins: 0, resolved_bets: 0 });
+  } catch (error) {
+    console.error('Error fetching user stats:', error);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
 app.get('/api/leaderboard', async (req, res) => {
   try {
     const result = await pool.query(`
