@@ -31,6 +31,7 @@ export default function App() {
   const [authForm, setAuthForm] = useState({
     email: '',
     password: '',
+    confirmPassword: '',
     username: '',
     fullName: ''
   });
@@ -128,35 +129,62 @@ export default function App() {
     }
   };
 
-  const handleAuth = async (e) => {
-    e.preventDefault();
-    const endpoint = isRegister ? '/auth/register' : '/auth/login';
+  const [authForm, setAuthForm] = useState({
+  email: '',
+  password: '',
+  confirmPassword: '',  // ADD THIS LINE
+  username: '',
+  fullName: ''
+});
+
+// In handleAuth function, add password validation BEFORE the fetch:
+const handleAuth = async (e) => {
+  e.preventDefault();
+  
+  // Validate password confirmation for registration
+  if (isRegister && authForm.password !== authForm.confirmPassword) {
+    showError('Passwords do not match');
+    return;
+  }
+  
+  // Validate password strength
+  if (isRegister && authForm.password.length < 8) {
+    showError('Password must be at least 8 characters long');
+    return;
+  }
+  
+  const endpoint = isRegister ? '/auth/register' : '/auth/login';
+  
+  try {
+    const body = isRegister 
+      ? { 
+          email: authForm.email, 
+          password: authForm.password, 
+          username: authForm.username, 
+          fullName: authForm.fullName 
+        }
+      : { email: authForm.email, password: authForm.password };
+      
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
     
-    try {
-      const body = isRegister 
-        ? authForm 
-        : { email: authForm.email, password: authForm.password };
-        
-      const response = await fetch(`${API_URL}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok) {
-        setUser(data.user);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        setShowAuthModal(false);
-        setAuthForm({ email: '', password: '', username: '', fullName: '' });
-      } else {
-        showError(data.error || 'Authentication failed');
-      }
-    } catch (error) {
-      showError('Network error. Please try again.');
+    const data = await response.json();
+    
+    if (response.ok) {
+      setUser(data.user);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      setShowAuthModal(false);
+      setAuthForm({ email: '', password: '', confirmPassword: '', username: '', fullName: '' });
+    } else {
+      showError(data.error || 'Authentication failed');
     }
-  };
+  } catch (error) {
+    showError('Network error. Please try again.');
+  }
+};
 
   const handleLogout = () => {
     setUser(null);
@@ -616,6 +644,18 @@ export default function App() {
                 className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
                 required
               />
+              {/* ADD THIS PASSWORD CONFIRMATION FIELD */}
+              {isRegister && (
+                <input
+                  type="password"
+                  placeholder="Confirm Password"
+                  value={authForm.confirmPassword}
+                  onChange={(e) => setAuthForm({ ...authForm, confirmPassword: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
+                  required
+                  minLength={8}
+                  />
+                )}
               <button
                 type="submit"
                 className="w-full py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
