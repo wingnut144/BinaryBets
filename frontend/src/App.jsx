@@ -58,6 +58,28 @@ export default function App() {
     }
   }, []);
 
+  // Read category from URL after categories are loaded
+  useEffect(() => {
+    if (categories.length > 0) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const categoryParam = urlParams.get('category');
+      
+      if (categoryParam) {
+        // Check if it's a category name (string) or ID (number)
+        const categoryByName = categories.find(cat => 
+          cat.name.toLowerCase() === categoryParam.toLowerCase()
+        );
+        
+        if (categoryByName) {
+          setSelectedCategory(categoryByName.id.toString());
+        } else if (!isNaN(categoryParam)) {
+          // It's a number, use as ID
+          setSelectedCategory(categoryParam);
+        }
+      }
+    }
+  }, [categories]);
+
   useEffect(() => {
     if (user) {
       fetchUserBets();
@@ -304,6 +326,20 @@ export default function App() {
     ? markets
     : markets.filter(m => m.category_id === parseInt(selectedCategory));
 
+  // Function to handle category change and update URL
+  const handleCategoryChange = (categoryValue) => {
+    setSelectedCategory(categoryValue);
+    
+    // Update URL without page reload
+    const url = new URL(window.location);
+    if (categoryValue === 'all') {
+      url.searchParams.delete('category');
+    } else {
+      url.searchParams.set('category', categoryValue);
+    }
+    window.history.pushState({}, '', url);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       
@@ -419,7 +455,7 @@ export default function App() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => setSelectedCategory('all')}
+            onClick={() => handleCategoryChange('all')}
             className={`px-4 py-2 rounded-lg transition-colors ${
               selectedCategory === 'all'
                 ? 'bg-purple-600 text-white'
@@ -431,7 +467,7 @@ export default function App() {
           {categories.map(category => (
             <button
               key={category.id}
-              onClick={() => setSelectedCategory(category.id.toString())}
+              onClick={() => handleCategoryChange(category.id.toString())}
               className={`px-4 py-2 rounded-lg transition-colors ${
                 selectedCategory === category.id.toString()
                   ? 'bg-purple-600 text-white'
