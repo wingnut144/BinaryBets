@@ -1,0 +1,5 @@
+/* BinaryBets Styles - Most styling is done via Tailwind in App.jsx */
+body {
+  margin: 0;
+  padding: 0;
+}
