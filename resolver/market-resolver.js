@@ -111,11 +111,12 @@ async function resolveMarket(market) {
     }
     
     // Call the resolve endpoint
-    const response = await fetch(`${API_URL}/markets/${market.id}/resolve`, {
+   // Call the resolve endpoint with retry logic
+    const response = await fetchWithRetry(`${API_URL}/markets/${market.id}/resolve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ winning_option_id: winningOptionId })
-    });
+    }, 3, 5000);
     
     const data = await response.json();
     
