@@ -1,6 +1,19 @@
 import fetch from 'node-fetch';
 import pg from 'pg';
 
+// Retry helper function
+async function fetchWithRetry(url, options, maxRetries = 3, delay = 5000) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await fetch(url, options);
+      return response;
+    } catch (error) {
+      if (i === maxRetries - 1) throw error;
+      console.log(`   ⚠️  Connection failed, retrying in ${delay/1000}s... (attempt ${i + 2}/${maxRetries})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
 const { Pool } = pg;
 
 const pool = new Pool({
