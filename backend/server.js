@@ -149,9 +149,48 @@ app.post('/api/markets', async (req, res) => {
 
 app.post('/api/markets/calculate-odds', async (req, res) => {
   const { question, options, marketType } = req.body;
+  
   try {
+    // Use Claude API to generate odds
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 1024,
+        messages: [{
+          role: 'user',
+          content: `As a probability expert, analyze this betting market and provide realistic odds.
+
+Question: ${question}
+Market Type: ${marketType}
+${options ? `Options: ${options.join(', ')}` : ''}
+
+Respond with ONLY a JSON object in this format:
+For binary: {"yes": 2.5, "no": 1.6, "reasoning": "brief explanation"}
+For multi-choice: {"options": [{"text": "option1", "odds": 2.5}, ...], "reasoning": "brief explanation"}
+
+Base odds on: historical data, current events, probability theory, and market sentiment.`
+        }]
+      })
+    });
+
+    const data = await response.json();
+    const aiResponse = JSON.parse(data.content[0].text);
+    
+    console.log('🤖 AI-generated odds:', aiResponse);
+    
+    res.json({ odds: aiResponse });
+    
+  } catch (error) {
+    console.error('❌ AI odds generation failed:', error);
+    // Fallback to simple calculation
     let calculatedOdds;
-    if (!options || options.length === 2 || marketType === 'binary') {
+    if (marketType === 'binary') {
       calculatedOdds = { yes: 2.0, no: 2.0 };
     } else {
       const baseOdds = options.length;
@@ -162,11 +201,7 @@ app.post('/api/markets/calculate-odds', async (req, res) => {
         }))
       };
     }
-    // Fix: Wrap in "odds" object
-    res.json({ odds: calculatedOdds });  // ✅ Changed this line
-  } catch (error) {
-    console.error('Error calculating odds:', error);
-    res.status(500).json({ error: 'Failed to calculate odds' });
+    res.json({ odds: calculatedOdds });
   }
 });
 
