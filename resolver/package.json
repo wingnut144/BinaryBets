@@ -1,0 +1,12 @@
+{
+  "name": "binarybets-resolver",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "resolve": "node market-resolver.js"
+  },
+  "dependencies": {
+    "node-fetch": "^2.7.0",
+    "pg": "^8.11.3"
+  }
+}
