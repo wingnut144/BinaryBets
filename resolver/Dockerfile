@@ -9,5 +9,5 @@ RUN npm install
 # Copy resolver script
 COPY market-resolver.js ./
 
-# Run resolver once on startup, then every 24 hours
-CMD sh -c "echo 'Starting market resolver service...' && while true; do node market-resolver.js; echo 'Sleeping for 24 hours...'; sleep 86400; done"
+# Wait for backend to be ready, then run resolver
+CMD ["sh", "-c", "echo 'Waiting for backend to be ready...' && sleep 60 && echo 'Starting market resolver service...' && while true; do node market-resolver.js; echo 'Sleeping for 24 hours...'; sleep 86400; done"]
