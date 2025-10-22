@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { TrendingUp, LogOut, Plus, CheckCircle, Calendar, Award, Sparkles, X } from 'lucide-react';
 
-const API_URL = 'https://https://binary-bets.com/api';
+const API_URL = 'https://api.binary-bets.com';
 
 export default function App() {
   const [user, setUser] = useState(null);
