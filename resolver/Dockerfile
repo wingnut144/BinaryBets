@@ -1,6 +1,6 @@
 FROM node:18-alpine
 
-# Install cron
+# Install dcron and required tools
 RUN apk add --no-cache dcron
 
 WORKDIR /app
@@ -12,10 +12,11 @@ RUN npm install
 # Copy resolver script
 COPY market-resolver.js ./
 
-# Create cron job (runs daily at 2 AM)
-RUN echo "0 2 * * * cd /app && node market-resolver.js >> /var/log/resolver.log 2>&1" > /etc/crontabs/root
+# Create cron job file (runs daily at 2 AM UTC)
+RUN echo "0 2 * * * cd /app && /usr/local/bin/node market-resolver.js >> /var/log/resolver.log 2>&1" > /etc/crontabs/root
 
-# Create log file
-RUN touch /var/log/resolver.log
+# Create log file and set permissions
+RUN touch /var/log/resolver.log && chmod 666 /var/log/resolver.log
 
-CMD crond -f -l 2
+# Start cron in foreground
+CMD ["crond", "-f", "-d", "8"]
