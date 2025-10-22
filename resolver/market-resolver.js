@@ -52,6 +52,15 @@ async function resolveExpiredMarkets() {
   }
 }
 
+// Helper function to clean AI response
+function cleanJsonResponse(text) {
+  // Remove markdown code blocks
+  let cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+  // Remove leading/trailing whitespace
+  cleaned = cleaned.trim();
+  return cleaned;
+}
+
 async function resolveMarket(market) {
   console.log(`\n🔍 Resolving: "${market.question}"`);
   console.log(`   Type: ${market.market_type}`);
@@ -68,6 +77,7 @@ async function resolveMarket(market) {
     
     console.log(`✅ AI Determined Outcome: ${outcome.answer}`);
     console.log(`   Reasoning: ${outcome.reasoning}`);
+    console.log(`   Confidence: ${outcome.confidence}`);
     
     // Resolve the market
     let winningOptionId = null;
@@ -118,7 +128,7 @@ Current Date: ${new Date().toISOString()}
 
 Research and determine the actual outcome of this prediction. Use your knowledge and reasoning.
 
-Respond with ONLY a JSON object in this format:
+Respond with ONLY a JSON object (no markdown, no code blocks) in this format:
 {
   "answer": "Yes" or "No" for binary, or the exact option text for multi-choice,
   "reasoning": "Brief explanation of why this is the correct outcome",
@@ -135,11 +145,11 @@ Respond with ONLY a JSON object in this format:
         'Authorization': `Bearer ${OPENAI_KEY}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
-            content: 'You are a factual analyst determining prediction market outcomes. Respond only with valid JSON.'
+            content: 'You are a factual analyst determining prediction market outcomes. Respond ONLY with valid JSON, no markdown code blocks or extra text.'
           },
           {
             role: 'user',
@@ -157,7 +167,8 @@ Respond with ONLY a JSON object in this format:
       throw new Error(`OpenAI Error: ${openaiData.error.message}`);
     }
     
-    const aiText = openaiData.choices[0].message.content.trim();
+    const aiText = cleanJsonResponse(openaiData.choices[0].message.content);
+    console.log('   Raw OpenAI response:', aiText.substring(0, 100));
     const outcome = JSON.parse(aiText);
     
     return outcome;
@@ -174,7 +185,7 @@ Respond with ONLY a JSON object in this format:
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'claude-3-5-sonnet-20241022',
+          model: 'claude-sonnet-4-20250514',
           max_tokens: 1024,
           messages: [{
             role: 'user',
@@ -186,10 +197,11 @@ Respond with ONLY a JSON object in this format:
       const anthropicData = await anthropicResponse.json();
       
       if (anthropicData.error) {
-        throw new Error(`Anthropic Error: ${anthropicData.error.message}`);
+        throw new Error(`Anthropic Error: ${anthropicData.error.message || JSON.stringify(anthropicData.error)}`);
       }
       
-      const aiText = anthropicData.content[0].text.trim();
+      const aiText = cleanJsonResponse(anthropicData.content[0].text);
+      console.log('   Raw Anthropic response:', aiText.substring(0, 100));
       const outcome = JSON.parse(aiText);
       
       return outcome;
