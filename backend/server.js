@@ -151,6 +151,8 @@ app.post('/api/markets/calculate-odds', async (req, res) => {
   const { question, options, marketType } = req.body;
   
   try {
+    console.log('🤖 Requesting AI odds for:', question);
+    
     // Use Claude API to generate odds
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -170,37 +172,45 @@ Question: ${question}
 Market Type: ${marketType}
 ${options ? `Options: ${options.join(', ')}` : ''}
 
-Respond with ONLY a JSON object in this format:
-For binary: {"yes": 2.5, "no": 1.6, "reasoning": "brief explanation"}
-For multi-choice: {"options": [{"text": "option1", "odds": 2.5}, ...], "reasoning": "brief explanation"}
+Respond with ONLY a JSON object in this exact format (no markdown, no extra text):
+For binary markets: {"yes": 2.5, "no": 1.6}
+For multi-choice markets: {"options": [{"text": "Option1", "odds": 2.5}, {"text": "Option2", "odds": 3.0}]}
 
-Base odds on: historical data, current events, probability theory, and market sentiment.`
+Base odds on: historical data, current events, probability theory, and market sentiment.
+Make sure odds are realistic (typically between 1.1 and 10.0).`
         }]
       })
     });
 
     const data = await response.json();
-    const aiResponse = JSON.parse(data.content[0].text);
     
-    console.log('🤖 AI-generated odds:', aiResponse);
+    if (data.error) {
+      throw new Error(data.error.message);
+    }
+    
+    const aiText = data.content[0].text.trim();
+    console.log('🤖 AI Response:', aiText);
+    
+    const aiResponse = JSON.parse(aiText);
     
     res.json({ odds: aiResponse });
     
   } catch (error) {
-    console.error('❌ AI odds generation failed:', error);
+    console.error('❌ AI odds generation failed:', error.message);
     // Fallback to simple calculation
     let calculatedOdds;
     if (marketType === 'binary') {
       calculatedOdds = { yes: 2.0, no: 2.0 };
     } else {
-      const baseOdds = options.length;
+      const baseOdds = options ? options.length : 3;
       calculatedOdds = {
-        options: options.map(opt => ({
+        options: (options || ['Option 1', 'Option 2', 'Option 3']).map(opt => ({
           text: opt,
           odds: parseFloat((baseOdds + Math.random() * 0.5).toFixed(2))
         }))
       };
     }
+    console.log('⚠️  Using fallback odds:', calculatedOdds);
     res.json({ odds: calculatedOdds });
   }
 });
