@@ -1,8 +1,9 @@
-const express = require('express');
-const cors = require('cors');
-const bcrypt = require('bcrypt');
-const { Pool } = require('pg');
-const OpenAI = require('openai');
+import express from 'express';
+import cors from 'cors';
+import bcrypt from 'bcrypt';
+import pkg from 'pg';
+const { Pool } = pkg;
+import OpenAI from 'openai';
 
 const app = express();
 const port = process.env.PORT || 3000;
