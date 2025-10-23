@@ -38,6 +38,45 @@ body {
   color: #3b82f6;
 }
 
+/* Category Navigation */
+.category-nav {
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
+  padding: 1rem 2rem;
+  overflow-x: auto;
+}
+
+.category-nav-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.category-btn {
+  padding: 0.5rem 1.5rem;
+  border: 2px solid transparent;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.category-btn:hover {
+  color: #e2e8f0;
+  border-color: #475569;
+}
+
+.category-btn.active {
+  color: white;
+  border-color: currentColor;
+}
+
 .user-info {
   display: flex;
   align-items: center;
