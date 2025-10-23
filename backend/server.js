@@ -567,6 +567,67 @@ app.get('/api/users/:userId/bets', async (req, res) => {
   }
 });
 
+// Get bet results for a resolved market
+app.get('/api/markets/:marketId/results', async (req, res) => {
+  try {
+    const { marketId } = req.params;
+
+    // Check if market is resolved
+    const marketResult = await pool.query(
+      'SELECT resolved FROM markets WHERE id = $1',
+      [marketId]
+    );
+
+    if (marketResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Market not found' });
+    }
+
+    if (!marketResult.rows[0].resolved) {
+      return res.status(400).json({ error: 'Market not yet resolved' });
+    }
+
+    // Get all bets with user info
+    const result = await pool.query(`
+      SELECT 
+        b.id,
+        b.amount,
+        b.odds,
+        b.won,
+        b.bet_type,
+        u.username,
+        u.full_name,
+        mo.option_text,
+        CASE 
+          WHEN b.won = true THEN b.amount * b.odds
+          ELSE 0
+        END as winnings,
+        CASE 
+          WHEN b.won = false THEN b.amount
+          ELSE 0
+        END as losses
+      FROM bets b
+      JOIN users u ON b.user_id = u.id
+      LEFT JOIN market_options mo ON b.market_option_id = mo.id
+      WHERE b.market_id = $1
+      ORDER BY 
+        CASE WHEN b.won = true THEN b.amount * b.odds ELSE 0 END DESC,
+        b.amount DESC
+    `, [marketId]);
+
+    // Separate winners and losers
+    const winners = result.rows.filter(bet => bet.won === true);
+    const losers = result.rows.filter(bet => bet.won === false);
+
+    res.json({
+      winners,
+      losers
+    });
+  } catch (error) {
+    console.error('Error fetching market results:', error);
+    res.status(500).json({ error: 'Failed to fetch market results' });
+  }
+});
+
 // ============================================
 // LEADERBOARD ENDPOINT
 // ============================================
