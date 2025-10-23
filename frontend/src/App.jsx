@@ -14,6 +14,9 @@ export default function App() {
   const [subcategories, setSubcategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedSubcategory, setSelectedSubcategory] = useState('all');
+  const [showResolved, setShowResolved] = useState('all'); // 'all', 'active', 'completed'
+  const [showResultsModal, setShowResultsModal] = useState(false);
+  const [marketResults, setMarketResults] = useState(null);
   const [user, setUser] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
@@ -122,6 +125,18 @@ export default function App() {
       setLeaderboardData(data);
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
+    }
+  };
+
+  const fetchMarketResults = async (marketId) => {
+    try {
+      const response = await fetch(`${API_URL}/markets/${marketId}/results`);
+      const data = await response.json();
+      setMarketResults(data);
+      setShowResultsModal(true);
+    } catch (error) {
+      console.error('Error fetching market results:', error);
+      showError('Failed to fetch market results');
     }
   };
 
@@ -403,6 +418,8 @@ export default function App() {
   const filteredMarkets = markets.filter(m => {
     if (selectedCategory !== 'all' && m.category_id !== parseInt(selectedCategory)) return false;
     if (selectedSubcategory !== 'all' && m.subcategory_id !== parseInt(selectedSubcategory)) return false;
+    if (showResolved === 'active' && m.resolved) return false;
+    if (showResolved === 'completed' && !m.resolved) return false;
     return true;
   });
 
@@ -498,6 +515,40 @@ export default function App() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
+        {/* Status Filter */}
+        <div className="mb-4 flex gap-2">
+          <button
+            onClick={() => setShowResolved('all')}
+            className={`px-4 py-2 rounded-lg font-semibold transition ${
+              showResolved === 'all'
+                ? 'bg-purple-600 text-white'
+                : 'bg-slate-800 text-gray-300 hover:bg-slate-700'
+            }`}
+          >
+            All Markets
+          </button>
+          <button
+            onClick={() => setShowResolved('active')}
+            className={`px-4 py-2 rounded-lg font-semibold transition ${
+              showResolved === 'active'
+                ? 'bg-green-600 text-white'
+                : 'bg-slate-800 text-gray-300 hover:bg-slate-700'
+            }`}
+          >
+            Active
+          </button>
+          <button
+            onClick={() => setShowResolved('completed')}
+            className={`px-4 py-2 rounded-lg font-semibold transition ${
+              showResolved === 'completed'
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-800 text-gray-300 hover:bg-slate-700'
+            }`}
+          >
+            🏁 Completed
+          </button>
+        </div>
+
         {/* Category Filter */}
         <div className="mb-4">
           <div className="flex gap-2 overflow-x-auto pb-2">
@@ -565,61 +616,75 @@ export default function App() {
           {filteredMarkets.map((market) => (
             <div
               key={market.id}
-              className="bg-slate-800 rounded-xl p-6 border border-purple-500/20 hover:border-purple-500/50 transition cursor-pointer"
-              onClick={() => setSelectedMarket(market)}
+              className="bg-slate-800 rounded-xl p-6 border border-purple-500/20 hover:border-purple-500/50 transition"
             >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="px-3 py-1 rounded-full text-xs font-semibold"
-                    style={{ backgroundColor: market.category_color + '40', color: market.category_color }}
-                  >
-                    {market.category_name}
-                  </span>
-                  {market.subcategory_name && (
-                    <span className="px-2 py-1 bg-slate-700 text-gray-300 rounded-full text-xs">
-                      {market.subcategory_name}
+              <div 
+                className={!market.resolved ? "cursor-pointer" : ""}
+                onClick={() => !market.resolved && setSelectedMarket(market)}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="px-3 py-1 rounded-full text-xs font-semibold"
+                      style={{ backgroundColor: market.category_color + '40', color: market.category_color }}
+                    >
+                      {market.category_name}
+                    </span>
+                    {market.subcategory_name && (
+                      <span className="px-2 py-1 bg-slate-700 text-gray-300 rounded-full text-xs">
+                        {market.subcategory_name}
+                      </span>
+                    )}
+                  </div>
+                  {market.resolved && (
+                    <span className="px-2 py-1 bg-green-900/30 text-green-400 rounded-full text-xs font-semibold">
+                      Resolved
                     </span>
                   )}
                 </div>
-                {market.resolved && (
-                  <span className="px-2 py-1 bg-green-900/30 text-green-400 rounded-full text-xs font-semibold">
-                    Resolved
-                  </span>
-                )}
-              </div>
 
-              <h3 className="text-white font-semibold text-lg mb-4">{market.question}</h3>
+                <h3 className="text-white font-semibold text-lg mb-4">{market.question}</h3>
 
-              {market.market_type === 'binary' ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-3">
-                    <p className="text-green-400 text-sm font-semibold">Yes</p>
-                    <p className="text-white text-xl font-bold">{market.yes_odds}x</p>
-                  </div>
-                  <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-3">
-                    <p className="text-red-400 text-sm font-semibold">No</p>
-                    <p className="text-white text-xl font-bold">{market.no_odds}x</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {market.options?.slice(0, 3).map((opt) => (
-                    <div key={opt.id} className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-2 flex justify-between items-center">
-                      <span className="text-white text-sm">{opt.option_text}</span>
-                      <span className="text-purple-400 font-bold">{opt.odds}x</span>
+                {market.market_type === 'binary' ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-3">
+                      <p className="text-green-400 text-sm font-semibold">Yes</p>
+                      <p className="text-white text-xl font-bold">{market.yes_odds}x</p>
                     </div>
-                  ))}
-                  {market.options?.length > 3 && (
-                    <p className="text-gray-400 text-xs text-center">+{market.options.length - 3} more</p>
-                  )}
-                </div>
-              )}
+                    <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-3">
+                      <p className="text-red-400 text-sm font-semibold">No</p>
+                      <p className="text-white text-xl font-bold">{market.no_odds}x</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {market.options?.slice(0, 3).map((opt) => (
+                      <div key={opt.id} className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-2 flex justify-between items-center">
+                        <span className="text-white text-sm">{opt.option_text}</span>
+                        <span className="text-purple-400 font-bold">{opt.odds}x</span>
+                      </div>
+                    ))}
+                    {market.options?.length > 3 && (
+                      <p className="text-gray-400 text-xs text-center">+{market.options.length - 3} more</p>
+                    )}
+                  </div>
+                )}
 
-              <div className="mt-4 pt-4 border-t border-slate-700 flex justify-between text-sm text-gray-400">
-                <span>Ends: {new Date(market.deadline).toLocaleDateString()}</span>
-                <span>{market.bet_count || 0} bets</span>
+                <div className="mt-4 pt-4 border-t border-slate-700 flex justify-between text-sm text-gray-400">
+                  <span>Ends: {new Date(market.deadline).toLocaleDateString()}</span>
+                  <span>{market.bet_count || 0} bets</span>
+                </div>
               </div>
+
+              {/* View Results Button for Completed Markets */}
+              {market.resolved && (
+                <button
+                  onClick={() => fetchMarketResults(market.id)}
+                  className="w-full mt-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-lg font-semibold transition"
+                >
+                  📊 View Results
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -1233,6 +1298,113 @@ export default function App() {
             
             <button
               onClick={() => setShowLeaderboard(false)}
+              className="w-full mt-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-semibold transition"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Market Results Modal */}
+      {showResultsModal && marketResults && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-xl p-8 max-w-6xl w-full border border-purple-500/20 max-h-[85vh] overflow-y-auto">
+            <h2 className="text-2xl font-bold text-white mb-6">Market Results</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Winners Column */}
+              <div>
+                <h3 className="text-xl font-semibold text-green-400 mb-4 flex items-center gap-2">
+                  <span>🎉</span>
+                  Winners ({marketResults.winners.length})
+                </h3>
+                <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+                  {marketResults.winners.length === 0 ? (
+                    <p className="text-gray-400 text-center py-4">No winners</p>
+                  ) : (
+                    marketResults.winners.map((bet, index) => (
+                      <div
+                        key={bet.id}
+                        className="bg-green-900/20 border border-green-500/30 rounded-lg p-4"
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1">
+                            <p className={`font-semibold ${user ? 'text-white' : 'text-transparent bg-gradient-to-r from-gray-400 to-gray-600 bg-clip-text blur-sm select-none'}`}>
+                              {user ? bet.username : '████████'}
+                            </p>
+                            <p className="text-xs text-green-400">
+                              {bet.bet_type || bet.option_text}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-green-400 font-bold text-lg">
+                              +${formatCurrency(bet.winnings)}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              Bet: ${formatCurrency(bet.amount)} @ {bet.odds}x
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Losers Column */}
+              <div>
+                <h3 className="text-xl font-semibold text-red-400 mb-4 flex items-center gap-2">
+                  <span>😔</span>
+                  Losers ({marketResults.losers.length})
+                </h3>
+                <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+                  {marketResults.losers.length === 0 ? (
+                    <p className="text-gray-400 text-center py-4">No losers</p>
+                  ) : (
+                    marketResults.losers.map((bet, index) => (
+                      <div
+                        key={bet.id}
+                        className="bg-red-900/20 border border-red-500/30 rounded-lg p-4"
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1">
+                            <p className={`font-semibold ${user ? 'text-white' : 'text-transparent bg-gradient-to-r from-gray-400 to-gray-600 bg-clip-text blur-sm select-none'}`}>
+                              {user ? bet.username : '████████'}
+                            </p>
+                            <p className="text-xs text-red-400">
+                              {bet.bet_type || bet.option_text}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-red-400 font-bold text-lg">
+                              -${formatCurrency(bet.losses)}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              Bet: ${formatCurrency(bet.amount)} @ {bet.odds}x
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {!user && (
+              <div className="mt-6 p-4 bg-yellow-900/30 border border-yellow-500/50 rounded-lg">
+                <p className="text-yellow-200 text-sm text-center">
+                  🔒 Sign in to see usernames
+                </p>
+              </div>
+            )}
+
+            <button
+              onClick={() => {
+                setShowResultsModal(false);
+                setMarketResults(null);
+              }}
               className="w-full mt-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-semibold transition"
             >
               Close
