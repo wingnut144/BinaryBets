@@ -11,7 +11,9 @@ const formatCurrency = (value) => {
 export default function App() {
   const [markets, setMarkets] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [subcategories, setSubcategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedSubcategory, setSelectedSubcategory] = useState('all');
   const [user, setUser] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
@@ -23,9 +25,11 @@ export default function App() {
     fullName: ''
   });
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [newMarket, setNewMarket] = useState({
     question: '',
     categoryId: '',
+    subcategoryId: '',
     marketType: 'binary',
     yesOdds: '',
     noOdds: '',
@@ -42,6 +46,10 @@ export default function App() {
   const [success, setSuccess] = useState('');
   const [calculatingOdds, setCalculatingOdds] = useState(false);
 
+  // Admin category management
+  const [newCategory, setNewCategory] = useState({ name: '', color: '#8B5CF6', icon: '' });
+  const [newSubcategory, setNewSubcategory] = useState({ categoryId: '', name: '' });
+
   useEffect(() => {
     fetchMarkets();
     fetchCategories();
@@ -56,6 +64,15 @@ export default function App() {
       fetchUserBets();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (selectedCategory !== 'all') {
+      fetchSubcategories(selectedCategory);
+    } else {
+      setSubcategories([]);
+    }
+    setSelectedSubcategory('all');
+  }, [selectedCategory]);
 
   const fetchMarkets = async () => {
     try {
@@ -74,6 +91,16 @@ export default function App() {
       setCategories(data);
     } catch (error) {
       console.error('Error fetching categories:', error);
+    }
+  };
+
+  const fetchSubcategories = async (categoryId) => {
+    try {
+      const response = await fetch(`${API_URL}/categories/${categoryId}/subcategories`);
+      const data = await response.json();
+      setSubcategories(data);
+    } catch (error) {
+      console.error('Error fetching subcategories:', error);
     }
   };
 
@@ -161,6 +188,55 @@ export default function App() {
     showSuccess('Logged out successfully');
   };
 
+  const handleCreateCategory = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await fetch(`${API_URL}/categories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCategory)
+      });
+
+      if (response.ok) {
+        showSuccess('Category created successfully!');
+        setNewCategory({ name: '', color: '#8B5CF6', icon: '' });
+        fetchCategories();
+      } else {
+        const data = await response.json();
+        showError(data.error || 'Failed to create category');
+      }
+    } catch (error) {
+      showError('Network error. Please try again.');
+    }
+  };
+
+  const handleCreateSubcategory = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await fetch(`${API_URL}/subcategories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          categoryId: parseInt(newSubcategory.categoryId),
+          name: newSubcategory.name
+        })
+      });
+
+      if (response.ok) {
+        showSuccess('Subcategory created successfully!');
+        setNewSubcategory({ categoryId: '', name: '' });
+        if (selectedCategory !== 'all') {
+          fetchSubcategories(selectedCategory);
+        }
+      } else {
+        const data = await response.json();
+        showError(data.error || 'Failed to create subcategory');
+      }
+    } catch (error) {
+      showError('Network error. Please try again.');
+    }
+  };
+
   const calculateAIOdds = async () => {
     setCalculatingOdds(true);
     try {
@@ -207,6 +283,7 @@ export default function App() {
       const marketData = {
         question: newMarket.question,
         categoryId: parseInt(newMarket.categoryId),
+        subcategoryId: newMarket.subcategoryId ? parseInt(newMarket.subcategoryId) : null,
         marketType: newMarket.marketType,
         deadline: newMarket.deadline,
         createdBy: user.id
@@ -234,6 +311,7 @@ export default function App() {
         setNewMarket({
           question: '',
           categoryId: '',
+          subcategoryId: '',
           marketType: 'binary',
           yesOdds: '',
           noOdds: '',
@@ -322,9 +400,15 @@ export default function App() {
     }
   };
 
-  const filteredMarkets = selectedCategory === 'all' 
-    ? markets 
-    : markets.filter(m => m.category_id === parseInt(selectedCategory));
+  const filteredMarkets = markets.filter(m => {
+    if (selectedCategory !== 'all' && m.category_id !== parseInt(selectedCategory)) return false;
+    if (selectedSubcategory !== 'all' && m.subcategory_id !== parseInt(selectedSubcategory)) return false;
+    return true;
+  });
+
+  const currentCategorySubcategories = selectedCategory !== 'all' && newMarket.categoryId
+    ? subcategories.filter(s => s.category_id === parseInt(newMarket.categoryId))
+    : [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -368,12 +452,20 @@ export default function App() {
                     🏆 Leaderboard
                   </button>
                   {user.is_admin && (
-                    <button
-                      onClick={() => setShowCreateModal(true)}
-                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition"
-                    >
-                      Create Market
-                    </button>
+                    <>
+                      <button
+                        onClick={() => setShowAdminPanel(true)}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition"
+                      >
+                        ⚙️ Admin
+                      </button>
+                      <button
+                        onClick={() => setShowCreateModal(true)}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition"
+                      >
+                        Create Market
+                      </button>
+                    </>
                   )}
                 </>
               )}
@@ -407,32 +499,66 @@ export default function App() {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
         {/* Category Filter */}
-        <div className="mb-8 flex gap-2 overflow-x-auto pb-2">
-          <button
-            onClick={() => setSelectedCategory('all')}
-            className={`px-4 py-2 rounded-lg font-semibold transition whitespace-nowrap ${
-              selectedCategory === 'all'
-                ? 'bg-purple-600 text-white'
-                : 'bg-slate-800 text-gray-300 hover:bg-slate-700'
-            }`}
-          >
-            All Markets
-          </button>
-          {categories.map((cat) => (
+        <div className="mb-4">
+          <div className="flex gap-2 overflow-x-auto pb-2">
             <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.id.toString())}
+              onClick={() => setSelectedCategory('all')}
               className={`px-4 py-2 rounded-lg font-semibold transition whitespace-nowrap ${
-                selectedCategory === cat.id.toString()
-                  ? `bg-${cat.color}-600 text-white`
+                selectedCategory === 'all'
+                  ? 'bg-purple-600 text-white'
                   : 'bg-slate-800 text-gray-300 hover:bg-slate-700'
               }`}
-              style={selectedCategory === cat.id.toString() ? { backgroundColor: cat.color } : {}}
             >
-              {cat.name}
+              All Markets
             </button>
-          ))}
+            {categories.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedCategory(cat.id.toString())}
+                className={`px-4 py-2 rounded-lg font-semibold transition whitespace-nowrap flex items-center gap-2 ${
+                  selectedCategory === cat.id.toString()
+                    ? 'text-white'
+                    : 'bg-slate-800 text-gray-300 hover:bg-slate-700'
+                }`}
+                style={selectedCategory === cat.id.toString() ? { backgroundColor: cat.color } : {}}
+              >
+                {cat.icon && <span>{cat.icon}</span>}
+                {cat.name}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {/* Subcategory Filter */}
+        {selectedCategory !== 'all' && subcategories.length > 0 && (
+          <div className="mb-6">
+            <div className="flex gap-2 overflow-x-auto pb-2">
+              <button
+                onClick={() => setSelectedSubcategory('all')}
+                className={`px-3 py-1 rounded-md text-sm font-medium transition whitespace-nowrap ${
+                  selectedSubcategory === 'all'
+                    ? 'bg-purple-500 text-white'
+                    : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                }`}
+              >
+                All
+              </button>
+              {subcategories.map((sub) => (
+                <button
+                  key={sub.id}
+                  onClick={() => setSelectedSubcategory(sub.id.toString())}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition whitespace-nowrap ${
+                    selectedSubcategory === sub.id.toString()
+                      ? 'bg-purple-500 text-white'
+                      : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                  }`}
+                >
+                  {sub.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Markets Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -443,12 +569,19 @@ export default function App() {
               onClick={() => setSelectedMarket(market)}
             >
               <div className="flex items-start justify-between mb-3">
-                <span
-                  className="px-3 py-1 rounded-full text-xs font-semibold"
-                  style={{ backgroundColor: market.category_color + '40', color: market.category_color }}
-                >
-                  {market.category_name}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className="px-3 py-1 rounded-full text-xs font-semibold"
+                    style={{ backgroundColor: market.category_color + '40', color: market.category_color }}
+                  >
+                    {market.category_name}
+                  </span>
+                  {market.subcategory_name && (
+                    <span className="px-2 py-1 bg-slate-700 text-gray-300 rounded-full text-xs">
+                      {market.subcategory_name}
+                    </span>
+                  )}
+                </div>
                 {market.resolved && (
                   <span className="px-2 py-1 bg-green-900/30 text-green-400 rounded-full text-xs font-semibold">
                     Resolved
@@ -528,6 +661,90 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Admin Panel Modal */}
+      {showAdminPanel && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-slate-800 rounded-xl p-8 max-w-2xl w-full border border-purple-500/20 my-8">
+            <h2 className="text-2xl font-bold text-white mb-6">Admin Panel</h2>
+            
+            {/* Create Category */}
+            <div className="mb-8">
+              <h3 className="text-xl font-semibold text-white mb-4">Create New Category</h3>
+              <form onSubmit={handleCreateCategory} className="space-y-4">
+                <input
+                  type="text"
+                  placeholder="Category Name"
+                  value={newCategory.name}
+                  onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="Icon (emoji)"
+                  value={newCategory.icon}
+                  onChange={(e) => setNewCategory({ ...newCategory, icon: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
+                />
+                <div className="flex gap-4">
+                  <input
+                    type="color"
+                    value={newCategory.color}
+                    onChange={(e) => setNewCategory({ ...newCategory, color: e.target.value })}
+                    className="w-20 h-10 rounded cursor-pointer"
+                  />
+                  <button
+                    type="submit"
+                    className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold transition"
+                  >
+                    Create Category
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Create Subcategory */}
+            <div className="mb-8">
+              <h3 className="text-xl font-semibold text-white mb-4">Create New Subcategory</h3>
+              <form onSubmit={handleCreateSubcategory} className="space-y-4">
+                <select
+                  value={newSubcategory.categoryId}
+                  onChange={(e) => setNewSubcategory({ ...newSubcategory, categoryId: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
+                  required
+                >
+                  <option value="">Select Parent Category</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  placeholder="Subcategory Name"
+                  value={newSubcategory.name}
+                  onChange={(e) => setNewSubcategory({ ...newSubcategory, name: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
+                  required
+                />
+                <button
+                  type="submit"
+                  className="w-full py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold transition"
+                >
+                  Create Subcategory
+                </button>
+              </form>
+            </div>
+
+            <button
+              onClick={() => setShowAdminPanel(false)}
+              className="w-full py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-semibold transition"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Auth Modal */}
       {showAuthModal && (
@@ -615,7 +832,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Create Market Modal */}
+      {/* Create Market Modal - continued in next part due to length */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-slate-800 rounded-xl p-8 max-w-2xl w-full border border-purple-500/20 my-8">
@@ -636,21 +853,45 @@ export default function App() {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Category
-                </label>
-                <select
-                  value={newMarket.categoryId}
-                  onChange={(e) => setNewMarket({ ...newMarket, categoryId: e.target.value })}
-                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
-                  required
-                >
-                  <option value="">Select category</option>
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Category
+                  </label>
+                  <select
+                    value={newMarket.categoryId}
+                    onChange={(e) => {
+                      setNewMarket({ ...newMarket, categoryId: e.target.value, subcategoryId: '' });
+                      if (e.target.value) {
+                        fetchSubcategories(e.target.value);
+                      }
+                    }}
+                    className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
+                    required
+                  >
+                    <option value="">Select category</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Subcategory (Optional)
+                  </label>
+                  <select
+                    value={newMarket.subcategoryId}
+                    onChange={(e) => setNewMarket({ ...newMarket, subcategoryId: e.target.value })}
+                    className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
+                    disabled={!newMarket.categoryId || currentCategorySubcategories.length === 0}
+                  >
+                    <option value="">None</option>
+                    {currentCategorySubcategories.map((sub) => (
+                      <option key={sub.id} value={sub.id}>{sub.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div>
@@ -780,6 +1021,7 @@ export default function App() {
                     setNewMarket({
                       question: '',
                       categoryId: '',
+                      subcategoryId: '',
                       marketType: 'binary',
                       yesOdds: '',
                       noOdds: '',
