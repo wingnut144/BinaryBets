@@ -3,6 +3,11 @@ import './App.css';
 
 const API_URL = 'https://api.binary-bets.com/api';
 
+// Helper function to safely format currency values
+const formatCurrency = (value) => {
+  return parseFloat(value || 0).toFixed(2);
+};
+
 export default function App() {
   const [markets, setMarkets] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -204,23 +209,25 @@ export default function App() {
         categoryId: parseInt(newMarket.categoryId),
         marketType: newMarket.marketType,
         deadline: newMarket.deadline,
-        ...(newMarket.marketType === 'binary' 
-          ? { 
-              yesOdds: parseFloat(newMarket.yesOdds), 
-              noOdds: parseFloat(newMarket.noOdds) 
-            }
-          : { options: newMarket.options.filter(opt => opt.trim() !== '') }
-        )
+        createdBy: user.id
       };
-      
+
+      if (newMarket.marketType === 'binary') {
+        marketData.yesOdds = parseFloat(newMarket.yesOdds);
+        marketData.noOdds = parseFloat(newMarket.noOdds);
+      } else {
+        marketData.options = newMarket.options.filter(opt => opt.trim());
+        if (newMarket.optionOdds) {
+          marketData.optionOdds = newMarket.optionOdds;
+        }
+      }
+
       const response = await fetch(`${API_URL}/markets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(marketData)
       });
-      
-      const data = await response.json();
-      
+
       if (response.ok) {
         showSuccess('Market created successfully!');
         setShowCreateModal(false);
@@ -235,6 +242,7 @@ export default function App() {
         });
         fetchMarkets();
       } else {
+        const data = await response.json();
         showError(data.error || 'Failed to create market');
       }
     } catch (error) {
@@ -249,30 +257,37 @@ export default function App() {
       showError('Please sign in to place bets');
       return;
     }
-    
+
     try {
+      const betData = {
+        userId: user.id,
+        marketId: selectedMarket.id,
+        amount: parseFloat(betAmount),
+        odds: selectedOption.odds
+      };
+
+      if (selectedMarket.market_type === 'binary') {
+        betData.betType = selectedOption.option_text;
+      } else {
+        betData.marketOptionId = selectedOption.id;
+      }
+
       const response = await fetch(`${API_URL}/bets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          marketId: selectedMarket.id,
-          marketOptionId: selectedOption?.id || null,
-          amount: parseFloat(betAmount),
-          betType: selectedMarket.market_type === 'binary' ? selectedOption?.option_text : null,
-          odds: selectedOption?.odds || 0
-        })
+        body: JSON.stringify(betData)
       });
-      
+
       const data = await response.json();
-      
+
       if (response.ok) {
         showSuccess('Bet placed successfully!');
         setUser({ ...user, balance: data.newBalance });
         localStorage.setItem('user', JSON.stringify({ ...user, balance: data.newBalance }));
         setSelectedMarket(null);
-        setBetAmount('');
         setSelectedOption(null);
+        setBetAmount('');
+        fetchMarkets();
         fetchUserBets();
       } else {
         showError(data.error || 'Failed to place bet');
@@ -282,43 +297,24 @@ export default function App() {
     }
   };
 
-  const handleCancelBet = async (betId) => {
-    try {
-      const response = await fetch(`${API_URL}/bets/${betId}/cancel`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id })
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok) {
-        showSuccess('Bet cancelled successfully!');
-        setUser({ ...user, balance: data.newBalance });
-        localStorage.setItem('user', JSON.stringify({ ...user, balance: data.newBalance }));
-        fetchUserBets();
-      } else {
-        showError(data.error || 'Failed to cancel bet');
-      }
-    } catch (error) {
-      showError('Network error. Please try again.');
-    }
-  };
-
-  const handleResolveMarket = async (marketId, winningOptionId) => {
+  const handleResolveMarket = async (marketId, outcome) => {
     try {
       const response = await fetch(`${API_URL}/markets/${marketId}/resolve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ winning_option_id: winningOptionId })
+        body: JSON.stringify({ 
+          outcome,
+          resolvedBy: user.id 
+        })
       });
-      
-      const data = await response.json();
-      
+
       if (response.ok) {
-        showSuccess(`Market resolved! ${data.winners_count} winners paid out.`);
+        showSuccess('Market resolved successfully!');
+        setSelectedMarket(null);
         fetchMarkets();
+        fetchUserBets();
       } else {
+        const data = await response.json();
         showError(data.error || 'Failed to resolve market');
       }
     } catch (error) {
@@ -332,115 +328,106 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      {/* Error/Success Messages */}
+      {error && (
+        <div className="fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-slide-in">
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-slide-in">
+          {success}
+        </div>
+      )}
+
       {/* Header */}
-      <header className="bg-slate-800/50 backdrop-blur-sm border-b border-purple-500/20 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl">📈</span>
-            <h1 className="text-2xl font-bold text-white">BinaryBets</h1>
-            <a 
-              href="#" 
-              className="text-sm text-purple-300 hover:text-purple-200 ml-2"
-            >
-              Help
-            </a>
-          </div>
-          
-          <div className="flex items-center gap-4">
-            {user && (
-              <>
-                <div className="text-right">
-                  <p className="text-sm text-gray-400">Balance</p>
-                  <p className="text-lg font-bold text-green-400">${user.balance?.toFixed(2)}</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowLeaderboard(true);
-                    fetchLeaderboard();
-                  }}
-                  className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition"
-                >
-                  🏆 Leaderboard
-                </button>
-                {user.is_admin && (
+      <header className="bg-slate-900/50 backdrop-blur-md border-b border-purple-500/20 sticky top-0 z-40">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="text-3xl">🎲</div>
+              <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
+                BinaryBets
+              </h1>
+            </div>
+
+            <div className="flex items-center gap-4">
+              {user && (
+                <>
+                  <div className="text-right">
+                    <p className="text-sm text-gray-400">Balance</p>
+                    <p className="text-lg font-bold text-green-400">${formatCurrency(user.balance)}</p>
+                  </div>
                   <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition"
+                    onClick={() => {
+                      setShowLeaderboard(true);
+                      fetchLeaderboard();
+                    }}
+                    className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-semibold transition"
                   >
-                    ➕ Create Bet
+                    🏆 Leaderboard
                   </button>
-                )}
-              </>
-            )}
-            
-            {user ? (
-              <div className="flex items-center gap-3">
-                <div className="text-right">
-                  <p className="text-sm text-gray-400">{user.username}</p>
-                  <p className="text-xs text-gray-500">{user.email}</p>
+                  {user.is_admin && (
+                    <button
+                      onClick={() => setShowCreateModal(true)}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition"
+                    >
+                      Create Market
+                    </button>
+                  )}
+                </>
+              )}
+              
+              {user ? (
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <p className="text-white font-semibold">{user.username}</p>
+                    <p className="text-xs text-gray-400">{user.email}</p>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition"
+                  >
+                    Logout
+                  </button>
                 </div>
+              ) : (
                 <button
-                  onClick={handleLogout}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition"
+                  onClick={() => setShowAuthModal(true)}
+                  className="px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-semibold transition"
                 >
-                  Sign Out
+                  Sign In
                 </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => {
-                  setShowAuthModal(true);
-                  setIsRegister(false);
-                }}
-                className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition"
-              >
-                Sign In
-              </button>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Error/Success Messages */}
-      {error && (
-        <div className="max-w-7xl mx-auto px-4 py-2">
-          <div className="bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-lg">
-            {error}
-          </div>
-        </div>
-      )}
-      
-      {success && (
-        <div className="max-w-7xl mx-auto px-4 py-2">
-          <div className="bg-green-500/20 border border-green-500 text-green-200 px-4 py-3 rounded-lg">
-            {success}
-          </div>
-        </div>
-      )}
-
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="container mx-auto px-4 py-8">
         {/* Category Filter */}
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+        <div className="mb-8 flex gap-2 overflow-x-auto pb-2">
           <button
             onClick={() => setSelectedCategory('all')}
-            className={`px-4 py-2 rounded-lg whitespace-nowrap transition ${
+            className={`px-4 py-2 rounded-lg font-semibold transition whitespace-nowrap ${
               selectedCategory === 'all'
                 ? 'bg-purple-600 text-white'
-                : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                : 'bg-slate-800 text-gray-300 hover:bg-slate-700'
             }`}
           >
-            All Bets
+            All Markets
           </button>
           {categories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setSelectedCategory(cat.id.toString())}
-              className={`px-4 py-2 rounded-lg whitespace-nowrap transition ${
+              className={`px-4 py-2 rounded-lg font-semibold transition whitespace-nowrap ${
                 selectedCategory === cat.id.toString()
                   ? `bg-${cat.color}-600 text-white`
-                  : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                  : 'bg-slate-800 text-gray-300 hover:bg-slate-700'
               }`}
+              style={selectedCategory === cat.id.toString() ? { backgroundColor: cat.color } : {}}
             >
               {cat.name}
             </button>
@@ -452,47 +439,54 @@ export default function App() {
           {filteredMarkets.map((market) => (
             <div
               key={market.id}
-              className="bg-slate-800/50 backdrop-blur-sm border border-purple-500/20 rounded-xl p-6 hover:border-purple-500/40 transition cursor-pointer"
+              className="bg-slate-800 rounded-xl p-6 border border-purple-500/20 hover:border-purple-500/50 transition cursor-pointer"
               onClick={() => setSelectedMarket(market)}
             >
-              <div className="flex items-start justify-between mb-4">
-                <span className={`px-3 py-1 rounded-full text-xs font-semibold bg-${market.category_color}-600/20 text-${market.category_color}-300`}>
+              <div className="flex items-start justify-between mb-3">
+                <span
+                  className="px-3 py-1 rounded-full text-xs font-semibold"
+                  style={{ backgroundColor: market.category_color + '40', color: market.category_color }}
+                >
                   {market.category_name}
                 </span>
                 {market.resolved && (
-                  <span className="px-3 py-1 rounded-full text-xs font-semibold bg-green-600/20 text-green-300">
+                  <span className="px-2 py-1 bg-green-900/30 text-green-400 rounded-full text-xs font-semibold">
                     Resolved
                   </span>
                 )}
               </div>
-              
-              <h3 className="text-xl font-bold text-white mb-4">{market.question}</h3>
-              
+
+              <h3 className="text-white font-semibold text-lg mb-4">{market.question}</h3>
+
               {market.market_type === 'binary' ? (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-3">
-                    <p className="text-sm text-gray-400">Yes</p>
-                    <p className="text-2xl font-bold text-green-400">{market.yes_odds}x</p>
+                    <p className="text-green-400 text-sm font-semibold">Yes</p>
+                    <p className="text-white text-xl font-bold">{market.yes_odds}x</p>
                   </div>
                   <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-3">
-                    <p className="text-sm text-gray-400">No</p>
-                    <p className="text-2xl font-bold text-red-400">{market.no_odds}x</p>
+                    <p className="text-red-400 text-sm font-semibold">No</p>
+                    <p className="text-white text-xl font-bold">{market.no_odds}x</p>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {market.options?.map((opt) => (
-                    <div key={opt.id} className="bg-slate-700/50 rounded-lg p-3 flex justify-between items-center">
-                      <span className="text-white">{opt.option_text}</span>
+                  {market.options?.slice(0, 3).map((opt) => (
+                    <div key={opt.id} className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-2 flex justify-between items-center">
+                      <span className="text-white text-sm">{opt.option_text}</span>
                       <span className="text-purple-400 font-bold">{opt.odds}x</span>
                     </div>
                   ))}
+                  {market.options?.length > 3 && (
+                    <p className="text-gray-400 text-xs text-center">+{market.options.length - 3} more</p>
+                  )}
                 </div>
               )}
-              
-              <p className="text-sm text-gray-400 mt-4">
-                Deadline: {new Date(market.deadline).toLocaleDateString()}
-              </p>
+
+              <div className="mt-4 pt-4 border-t border-slate-700 flex justify-between text-sm text-gray-400">
+                <span>Deadline: {new Date(market.deadline).toLocaleDateString()}</span>
+                <span>{market.bet_count || 0} bets</span>
+              </div>
             </div>
           ))}
         </div>
@@ -503,27 +497,30 @@ export default function App() {
             <h2 className="text-2xl font-bold text-white mb-6">Your Bets</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {userBets.map((bet) => (
-                <div key={bet.id} className="bg-slate-800/50 border border-purple-500/20 rounded-lg p-4">
+                <div key={bet.id} className="bg-slate-800 rounded-lg p-4 border border-purple-500/20">
                   <p className="text-white font-semibold mb-2">{bet.market_question}</p>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-gray-400">Bet:</span>
-                    <span className="text-white">${bet.amount}</span>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-400">Your bet:</span>
+                    <span className="text-white">{bet.bet_type || bet.option_text}</span>
                   </div>
-                  <div className="flex justify-between text-sm mb-2">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-400">Amount:</span>
+                    <span className="text-white">${formatCurrency(bet.amount)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm mb-1">
                     <span className="text-gray-400">Odds:</span>
                     <span className="text-purple-400">{bet.odds}x</span>
                   </div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-gray-400">Potential Win:</span>
-                    <span className="text-green-400">${(bet.amount * bet.odds).toFixed(2)}</span>
+                  <div className="flex justify-between text-sm mt-2 pt-2 border-t border-slate-700">
+                    <span className="text-gray-400">Potential win:</span>
+                    <span className="text-green-400 font-bold">${formatCurrency(parseFloat(bet.amount) * parseFloat(bet.odds))}</span>
                   </div>
-                  {!bet.market_resolved && (
-                    <button
-                      onClick={() => handleCancelBet(bet.id)}
-                      className="w-full mt-3 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition text-sm"
-                    >
-                      Cancel Bet
-                    </button>
+                  {bet.resolved && (
+                    <div className={`mt-2 px-3 py-1 rounded text-center text-sm font-semibold ${
+                      bet.won ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
+                    }`}>
+                      {bet.won ? '✓ Won' : '✗ Lost'}
+                    </div>
                   )}
                 </div>
               ))}
@@ -545,7 +542,7 @@ export default function App() {
                 <>
                   <input
                     type="text"
-                    placeholder="Username (e.g., @cryptoking)"
+                    placeholder="Username"
                     value={authForm.username}
                     onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
                     className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
@@ -573,12 +570,11 @@ export default function App() {
               
               <input
                 type="password"
-                placeholder="Password (min 8 characters)"
+                placeholder="Password"
                 value={authForm.password}
                 onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
                 className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
                 required
-                minLength={8}
               />
               
               {isRegister && (
@@ -589,28 +585,29 @@ export default function App() {
                   onChange={(e) => setAuthForm({ ...authForm, confirmPassword: e.target.value })}
                   className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
                   required
-                  minLength={8}
                 />
               )}
               
               <button
                 type="submit"
-                className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition"
+                className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-semibold transition"
               >
                 {isRegister ? 'Create Account' : 'Sign In'}
               </button>
             </form>
             
-            <button
-              onClick={() => setIsRegister(!isRegister)}
-              className="w-full mt-4 text-purple-300 hover:text-purple-200 text-sm"
-            >
-              {isRegister ? 'Already have an account? Sign In' : "Don't have an account? Register"}
-            </button>
+            <div className="mt-4 text-center">
+              <button
+                onClick={() => setIsRegister(!isRegister)}
+                className="text-purple-400 hover:text-purple-300 text-sm"
+              >
+                {isRegister ? 'Already have an account? Sign in' : "Don't have an account? Register"}
+              </button>
+            </div>
             
             <button
               onClick={() => setShowAuthModal(false)}
-              className="w-full mt-2 text-gray-400 hover:text-gray-300 text-sm"
+              className="w-full mt-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition"
             >
               Cancel
             </button>
@@ -622,160 +619,174 @@ export default function App() {
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-slate-800 rounded-xl p-8 max-w-2xl w-full border border-purple-500/20 my-8">
-            <h2 className="text-2xl font-bold text-white mb-6">Create Bet</h2>
+            <h2 className="text-2xl font-bold text-white mb-6">Create New Market</h2>
             
-            <form onSubmit={handleCreateMarket} className="space-y-6">
-              <input
-                type="text"
-                placeholder="Question (e.g., Will it snow in Houston tomorrow?)"
-                value={newMarket.question}
-                onChange={(e) => setNewMarket({ ...newMarket, question: e.target.value })}
-                className="w-full px-4 py-3 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
-                required
-              />
-              
-              <select
-                value={newMarket.categoryId}
-                onChange={(e) => setNewMarket({ ...newMarket, categoryId: e.target.value })}
-                className="w-full px-4 py-3 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
-                required
-              >
-                <option value="">Select Category</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
-              </select>
-              
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 text-white cursor-pointer">
-                  <input
-                    type="radio"
-                    value="binary"
-                    checked={newMarket.marketType === 'binary'}
-                    onChange={(e) => setNewMarket({ ...newMarket, marketType: e.target.value })}
-                    className="w-5 h-5"
-                  />
-                  Binary (Yes/No)
+            <form onSubmit={handleCreateMarket} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Question
                 </label>
-                <label className="flex items-center gap-2 text-white cursor-pointer">
-                  <input
-                    type="radio"
-                    value="multi-choice"
-                    checked={newMarket.marketType === 'multi-choice'}
-                    onChange={(e) => setNewMarket({ ...newMarket, marketType: e.target.value })}
-                    className="w-5 h-5"
-                  />
-                  Multi-Choice (2-4 options)
-                </label>
+                <input
+                  type="text"
+                  value={newMarket.question}
+                  onChange={(e) => setNewMarket({ ...newMarket, question: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
+                  placeholder="Will X happen by Y date?"
+                  required
+                />
               </div>
-              
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Category
+                </label>
+                <select
+                  value={newMarket.categoryId}
+                  onChange={(e) => setNewMarket({ ...newMarket, categoryId: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
+                  required
+                >
+                  <option value="">Select category</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Market Type
+                </label>
+                <div className="flex gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setNewMarket({ ...newMarket, marketType: 'binary' })}
+                    className={`flex-1 py-2 rounded-lg font-semibold transition ${
+                      newMarket.marketType === 'binary'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    Binary (Yes/No)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewMarket({ ...newMarket, marketType: 'multi-choice' })}
+                    className={`flex-1 py-2 rounded-lg font-semibold transition ${
+                      newMarket.marketType === 'multi-choice'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    Multi-Choice
+                  </button>
+                </div>
+              </div>
+
+              {newMarket.marketType === 'binary' ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Yes Odds
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={newMarket.yesOdds}
+                      onChange={(e) => setNewMarket({ ...newMarket, yesOdds: e.target.value })}
+                      className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
+                      placeholder="1.5"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      No Odds
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={newMarket.noOdds}
+                      onChange={(e) => setNewMarket({ ...newMarket, noOdds: e.target.value })}
+                      className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
+                      placeholder="2.5"
+                      required
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Options
+                  </label>
+                  {newMarket.options.map((option, index) => (
+                    <input
+                      key={index}
+                      type="text"
+                      value={option}
+                      onChange={(e) => {
+                        const newOptions = [...newMarket.options];
+                        newOptions[index] = e.target.value;
+                        setNewMarket({ ...newMarket, options: newOptions });
+                      }}
+                      className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500 mb-2"
+                      placeholder={`Option ${index + 1}`}
+                      required
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setNewMarket({ ...newMarket, options: [...newMarket.options, ''] })}
+                    className="text-purple-400 hover:text-purple-300 text-sm"
+                  >
+                    + Add option
+                  </button>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Deadline
+                </label>
+                <input
+                  type="datetime-local"
+                  value={newMarket.deadline}
+                  onChange={(e) => setNewMarket({ ...newMarket, deadline: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
+                  required
+                />
+              </div>
+
               <button
                 type="button"
                 onClick={calculateAIOdds}
                 disabled={!newMarket.question || calculatingOdds}
-                className="w-full py-4 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <span>✨</span>
-                <span>🤖</span>
-                {calculatingOdds ? 'Calculating...' : 'Calculate AI Odds'}
+                {calculatingOdds ? 'Calculating...' : '🤖 Calculate Odds with AI'}
               </button>
-              
-              {/* ENHANCED ODDS SECTION */}
-              {newMarket.marketType === 'binary' && (
-                <>
-                  <div className="bg-blue-900/30 border border-blue-500/50 rounded-lg p-4">
-                    <p className="text-sm text-blue-200">
-                      <span className="font-semibold">💡 How odds work:</span> If someone bets $10 on "Yes" with odds of 4.0, they win $40 total ($30 profit). Lower odds = more likely outcome.
-                    </p>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Yes Odds
-                        <span className="text-xs text-gray-400 block mt-1">
-                          Payout multiplier for "Yes" bets
-                        </span>
-                      </label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={newMarket.yesOdds}
-                        onChange={(e) => setNewMarket({ ...newMarket, yesOdds: e.target.value })}
-                        className="w-full px-4 py-3 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500 text-lg"
-                        placeholder="e.g., 4.0"
-                        required
-                      />
-                      {newMarket.yesOdds && (
-                        <p className="text-xs text-gray-400 mt-2">
-                          💰 Bet $10 → Win ${(10 * parseFloat(newMarket.yesOdds || 0)).toFixed(2)}
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        No Odds
-                        <span className="text-xs text-gray-400 block mt-1">
-                          Payout multiplier for "No" bets
-                        </span>
-                      </label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={newMarket.noOdds}
-                        onChange={(e) => setNewMarket({ ...newMarket, noOdds: e.target.value })}
-                        className="w-full px-4 py-3 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500 text-lg"
-                        placeholder="e.g., 1.2"
-                        required
-                      />
-                      {newMarket.noOdds && (
-                        <p className="text-xs text-gray-400 mt-2">
-                          💰 Bet $10 → Win ${(10 * parseFloat(newMarket.noOdds || 0)).toFixed(2)}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-              
-              {newMarket.marketType === 'multi-choice' && (
-                <div className="space-y-3">
-                  {[0, 1, 2, 3].map((i) => (
-                    <input
-                      key={i}
-                      type="text"
-                      placeholder={`Option ${i + 1}${i < 2 ? ' (required)' : ' (optional)'}`}
-                      value={newMarket.options[i] || ''}
-                      onChange={(e) => {
-                        const newOptions = [...newMarket.options];
-                        newOptions[i] = e.target.value;
-                        setNewMarket({ ...newMarket, options: newOptions });
-                      }}
-                      className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
-                      required={i < 2}
-                    />
-                  ))}
-                </div>
-              )}
-              
-              <input
-                type="datetime-local"
-                value={newMarket.deadline}
-                onChange={(e) => setNewMarket({ ...newMarket, deadline: e.target.value })}
-                className="w-full px-4 py-3 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
-                required
-              />
-              
+
               <div className="flex gap-3">
                 <button
                   type="submit"
-                  className="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition"
+                  className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold transition"
                 >
-                  Create Bet
+                  Create Market
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setNewMarket({
+                      question: '',
+                      categoryId: '',
+                      marketType: 'binary',
+                      yesOdds: '',
+                      noOdds: '',
+                      options: ['', ''],
+                      deadline: ''
+                    });
+                  }}
                   className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-semibold transition"
                 >
                   Cancel
@@ -971,7 +982,7 @@ export default function App() {
                     <p className="text-sm text-gray-400">{player.full_name}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-green-400 font-bold text-lg">${player.balance?.toFixed(2)}</p>
+                    <p className="text-green-400 font-bold text-lg">${formatCurrency(player.balance)}</p>
                     <p className="text-xs text-gray-400">{player.total_bets} bets</p>
                   </div>
                 </div>
