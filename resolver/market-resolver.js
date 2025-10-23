@@ -9,231 +9,259 @@ async function fetchWithRetry(url, options, maxRetries = 3, delay = 5000) {
       return response;
     } catch (error) {
       if (i === maxRetries - 1) throw error;
-      console.log(`   ⚠️  Connection failed, retrying in ${delay/1000}s... (attempt ${i + 2}/${maxRetries})`);
+      console.log(`   ⚠️  Request failed, retrying in ${delay/1000}s... (attempt ${i + 1}/${maxRetries})`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
 }
-const { Pool } = pg;
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL
+// Wait for backend to be ready
+async function waitForBackend(url, maxRetries = 30, delay = 2000) {
+  console.log('Waiting for backend to be ready...');
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        console.log('Backend is ready!');
+        return true;
+      }
+    } catch (error) {
+      // Backend not ready yet
+    }
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+  throw new Error('Backend failed to become ready');
+}
+
+const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:3001';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+if (!OPENAI_API_KEY) {
+  console.error('❌ OPENAI_API_KEY environment variable is required');
+  process.exit(1);
+}
+
+// Database connection
+const pool = new pg.Pool({
+  host: process.env.POSTGRES_HOST || 'postgres',
+  port: process.env.POSTGRES_PORT || 5432,
+  database: process.env.POSTGRES_DB || 'binarybets',
+  user: process.env.POSTGRES_USER || 'binaryuser',
+  password: process.env.POSTGRES_PASSWORD || 'binarypassword',
 });
 
-const API_URL = process.env.API_URL || 'http://binarybets-backend:5000/api';
-const OPENAI_KEY = process.env.OPEN_AI_KEY;
-const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
-
-async function resolveExpiredMarkets() {
-  console.log(`\n🤖 [${new Date().toISOString()}] Starting market resolution check...`);
-  
-  try {
-    // Get all unresolved markets past their deadline
-    const result = await pool.query(`
-      SELECT m.*, c.name as category_name,
-        COALESCE(json_agg(
-          json_build_object(
-            'id', mo.id,
-            'option_text', mo.option_text,
-            'option_order', mo.option_order
-          ) ORDER BY mo.option_order
-        ) FILTER (WHERE mo.id IS NOT NULL), '[]') as options
-      FROM markets m
-      LEFT JOIN categories c ON m.category_id = c.id
-      LEFT JOIN market_options mo ON m.id = mo.market_id
-      WHERE m.resolved = false 
-        AND m.deadline < NOW()
-      GROUP BY m.id, c.name
-    `);
-    
-    const expiredMarkets = result.rows;
-    
-    if (expiredMarkets.length === 0) {
-      console.log('✅ No expired markets to resolve');
-      return;
-    }
-    
-    console.log(`📋 Found ${expiredMarkets.length} expired market(s) to resolve`);
-    
-    for (const market of expiredMarkets) {
-      await resolveMarket(market);
-    }
-    
-    console.log('✅ Market resolution check complete\n');
-  } catch (error) {
-    console.error('❌ Error in market resolution:', error);
-  }
-}
-
-// Helper function to clean AI response
-function cleanJsonResponse(text) {
-  // Remove markdown code blocks
-  let cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-  // Remove leading/trailing whitespace
-  cleaned = cleaned.trim();
-  return cleaned;
-}
-
-async function resolveMarket(market) {
-  console.log(`\n🔍 Resolving: "${market.question}"`);
-  console.log(`   Type: ${market.market_type}`);
-  console.log(`   Deadline: ${market.deadline}`);
-  
-  try {
-    // Use AI to determine the outcome
-    const outcome = await determineOutcome(market);
-    
-    if (!outcome) {
-      console.log('⚠️  Could not determine outcome, skipping...');
-      return;
-    }
-    
-    console.log(`✅ AI Determined Outcome: ${outcome.answer}`);
-    console.log(`   Reasoning: ${outcome.reasoning}`);
-    console.log(`   Confidence: ${outcome.confidence}`);
-    
-    // Resolve the market
-    let winningOptionId = null;
-    
-    if (market.market_type === 'binary') {
-      winningOptionId = outcome.answer.toLowerCase() === 'yes' ? 'yes' : 'no';
-    } else {
-      // Find matching option for multi-choice
-      const matchingOption = market.options.find(opt => 
-        opt.option_text.toLowerCase() === outcome.answer.toLowerCase()
-      );
-      winningOptionId = matchingOption?.id;
-    }
-    
-    if (!winningOptionId) {
-      console.log('⚠️  Could not match answer to option, skipping...');
-      return;
-    }
-    
-    // Call the resolve endpoint
-   // Call the resolve endpoint with retry logic
-    const response = await fetchWithRetry(`${API_URL}/markets/${market.id}/resolve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ winning_option_id: winningOptionId })
-    }, 3, 5000);
-    
-    const data = await response.json();
-    
-    if (response.ok) {
-      console.log(`💰 Market resolved! ${data.winners_count} winner(s) paid out`);
-    } else {
-      console.error(`❌ Failed to resolve market: ${data.error}`);
-    }
-    
-  } catch (error) {
-    console.error(`❌ Error resolving market ${market.id}:`, error.message);
-  }
+async function getExpiredMarkets() {
+  const result = await pool.query(
+    `SELECT m.*, 
+            COALESCE(
+              json_agg(
+                json_build_object('id', mo.id, 'name', mo.name)
+                ORDER BY mo.id
+              ) FILTER (WHERE mo.id IS NOT NULL),
+              '[]'
+            ) as options
+     FROM markets m
+     LEFT JOIN market_options mo ON m.id = mo.market_id
+     WHERE m.deadline < NOW() AND m.resolved = false
+     GROUP BY m.id
+     ORDER BY m.deadline ASC`
+  );
+  return result.rows;
 }
 
 async function determineOutcome(market) {
-  const prompt = `You are analyzing a prediction market to determine the actual outcome.
+  console.log(`📡 Asking OpenAI to determine outcome...`);
+  
+  let prompt;
+  if (market.type === 'binary') {
+    prompt = `You are analyzing a prediction market question to determine the outcome.
 
-Market Question: ${market.question}
-Market Type: ${market.market_type}
-${market.market_type === 'multi-choice' ? `Options: ${market.options.map(o => o.option_text).join(', ')}` : ''}
+Question: "${market.question}"
+Type: Binary (Yes/No)
 Deadline: ${market.deadline}
 Current Date: ${new Date().toISOString()}
 
-Research and determine the actual outcome of this prediction. Use your knowledge and reasoning.
+Based on factual information available, determine if the answer is "Yes" or "No".
 
-Respond with ONLY a JSON object (no markdown, no code blocks) in this format:
+Respond in JSON format:
 {
-  "answer": "Yes" or "No" for binary, or the exact option text for multi-choice,
-  "reasoning": "Brief explanation of why this is the correct outcome",
-  "confidence": "high", "medium", or "low"
+  "answer": "Yes" or "No",
+  "reasoning": "Brief explanation",
+  "confidence": "high" or "medium" or "low"
 }`;
+  } else {
+    const optionsList = market.options.map(opt => `- ${opt.name}`).join('\n');
+    prompt = `You are analyzing a prediction market question to determine the outcome.
 
-  try {
-    // Try OpenAI first
-    console.log('📡 Asking OpenAI to determine outcome...');
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+Question: "${market.question}"
+Type: Multiple Choice
+Options:
+${optionsList}
+Deadline: ${market.deadline}
+Current Date: ${new Date().toISOString()}
+
+Based on factual information available, determine which option is correct.
+
+Respond in JSON format:
+{
+  "answer": "Exact name of the winning option",
+  "reasoning": "Brief explanation",
+  "confidence": "high" or "medium" or "low"
+}`;
+  }
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${OPENAI_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: 'gpt-4',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a factual analyst that determines outcomes of prediction market questions based on real-world events and data. Always respond with valid JSON.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.1,
+      max_tokens: 500
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenAI API error: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices[0].message.content;
+  
+  // Try to extract JSON from markdown code blocks if present
+  let jsonStr = content;
+  const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+  if (jsonMatch) {
+    jsonStr = jsonMatch[1];
+  }
+  
+  console.log(`   Raw OpenAI response: ${jsonStr.substring(0, 100)}...`);
+  
+  const aiResponse = JSON.parse(jsonStr);
+  return aiResponse;
+}
+
+async function resolveMarket(market, outcome) {
+  // Convert outcome to lowercase for binary markets
+  const normalizedOutcome = market.type === 'binary' 
+    ? outcome.toLowerCase() 
+    : outcome;
+
+  console.log(`🔧 Resolving market with outcome: "${normalizedOutcome}"`);
+
+  const response = await fetchWithRetry(
+    `${BACKEND_URL}/api/markets/${market.id}/resolve`,
+    {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_KEY}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a factual analyst determining prediction market outcomes. Respond ONLY with valid JSON, no markdown code blocks or extra text.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.3,
-        max_tokens: 500
+        outcome: normalizedOutcome,
+        resolvedBy: 1  // Admin user ID
       })
-    });
-
-    const openaiData = await openaiResponse.json();
-    
-    if (openaiData.error) {
-      throw new Error(`OpenAI Error: ${openaiData.error.message}`);
     }
-    
-    const aiText = cleanJsonResponse(openaiData.choices[0].message.content);
-    console.log('   Raw OpenAI response:', aiText.substring(0, 100));
-    const outcome = JSON.parse(aiText);
-    
-    return outcome;
-    
-  } catch (openaiError) {
-    console.warn('⚠️  OpenAI failed, trying Anthropic...', openaiError.message);
-    
-    try {
-      const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': ANTHROPIC_KEY,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1024,
-          messages: [{
-            role: 'user',
-            content: prompt
-          }]
-        })
-      });
+  );
 
-      const anthropicData = await anthropicResponse.json();
-      
-      if (anthropicData.error) {
-        throw new Error(`Anthropic Error: ${anthropicData.error.message || JSON.stringify(anthropicData.error)}`);
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`   ❌ Backend error response:`, errorText);
+    throw new Error(`Failed to resolve market: ${response.status} - ${errorText}`);
+  }
+
+  return await response.json();
+}
+
+async function resolveExpiredMarkets() {
+  try {
+    console.log(`🤖 [${new Date().toISOString()}] Starting market resolution check...`);
+    
+    const markets = await getExpiredMarkets();
+    
+    if (markets.length === 0) {
+      console.log('✅ No expired markets to resolve');
+      return;
+    }
+
+    console.log(`📋 Found ${markets.length} expired market(s) to resolve`);
+
+    for (const market of markets) {
+      try {
+        console.log(`🔍 Resolving: "${market.question}"`);
+        console.log(`   Type: ${market.type}`);
+        console.log(`   Deadline: ${market.deadline}`);
+
+        const aiResponse = await determineOutcome(market);
+        
+        console.log(`✅ AI Determined Outcome: ${aiResponse.answer}`);
+        console.log(`   Reasoning: ${aiResponse.reasoning}`);
+        console.log(`   Confidence: ${aiResponse.confidence}`);
+
+        await resolveMarket(market, aiResponse.answer);
+        
+        console.log(`✅ Market resolved successfully!`);
+        
+      } catch (error) {
+        console.error(`❌ Failed to resolve market: ${error.message}`);
+        // Continue with next market
       }
-      
-      const aiText = cleanJsonResponse(anthropicData.content[0].text);
-      console.log('   Raw Anthropic response:', aiText.substring(0, 100));
-      const outcome = JSON.parse(aiText);
-      
-      return outcome;
-      
-    } catch (anthropicError) {
-      console.error('❌ Both AI providers failed:', anthropicError.message);
-      return null;
     }
+
+    console.log('✅ Market resolution check complete');
+    
+  } catch (error) {
+    console.error('❌ Error in market resolver:', error);
+    throw error;
   }
 }
 
-// Run the resolver
-resolveExpiredMarkets()
-  .then(() => {
+async function main() {
+  try {
+    // Wait for backend to be ready
+    await waitForBackend(`${BACKEND_URL}/api/health`);
+    
+    console.log('Starting market resolver service...');
+    
+    // Run immediately on startup
+    await resolveExpiredMarkets();
+    
+    // Then run every 24 hours
+    console.log('Sleeping for 24 hours...');
+    setInterval(async () => {
+      await resolveExpiredMarkets();
+    }, 24 * 60 * 60 * 1000);
+
     console.log('✅ Resolver completed successfully');
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error('❌ Resolver failed:', error);
+    
+  } catch (error) {
+    console.error('❌ Fatal error:', error);
     process.exit(1);
-  });
+  }
+}
+
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('Received SIGTERM, shutting down gracefully...');
+  pool.end();
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('Received SIGINT, shutting down gracefully...');
+  pool.end();
+  process.exit(0);
+});
+
+main();
