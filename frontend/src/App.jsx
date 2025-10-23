@@ -14,7 +14,7 @@ export default function App() {
   const [subcategories, setSubcategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedSubcategory, setSelectedSubcategory] = useState('all');
-  const [showResolved, setShowResolved] = useState('all'); // 'all', 'active', 'completed'
+  const [showResolved, setShowResolved] = useState('active'); // 'active' or 'completed'
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [marketResults, setMarketResults] = useState(null);
   const [user, setUser] = useState(null);
@@ -418,8 +418,8 @@ export default function App() {
   const filteredMarkets = markets.filter(m => {
     if (selectedCategory !== 'all' && m.category_id !== parseInt(selectedCategory)) return false;
     if (selectedSubcategory !== 'all' && m.subcategory_id !== parseInt(selectedSubcategory)) return false;
-    if (showResolved === 'active' && m.resolved) return false;
-    if (showResolved === 'completed' && !m.resolved) return false;
+    if (showResolved === 'active') return !m.resolved;
+    if (showResolved === 'completed') return m.resolved;
     return true;
   });
 
@@ -517,16 +517,6 @@ export default function App() {
       <main className="container mx-auto px-4 py-8">
         {/* Status Filter */}
         <div className="mb-4 flex gap-2">
-          <button
-            onClick={() => setShowResolved('all')}
-            className={`px-4 py-2 rounded-lg font-semibold transition ${
-              showResolved === 'all'
-                ? 'bg-purple-600 text-white'
-                : 'bg-slate-800 text-gray-300 hover:bg-slate-700'
-            }`}
-          >
-            All Markets
-          </button>
           <button
             onClick={() => setShowResolved('active')}
             className={`px-4 py-2 rounded-lg font-semibold transition ${
