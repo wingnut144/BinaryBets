@@ -13,18 +13,31 @@ app.use(cors());
 app.use(express.json());
 
 // Database connection
-const pool = new Pool({
-  host: process.env.DB_HOST || 'postgres',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'binarybets',
-  user: process.env.DB_USER || 'binaryuser',
-  password: process.env.DB_PASSWORD || 'binarypass',
-});
+const pool = new Pool(
+  process.env.DATABASE_URL 
+    ? {
+        connectionString: process.env.DATABASE_URL,
+      }
+    : {
+        host: process.env.DB_HOST || 'postgres',
+        port: process.env.DB_PORT || 5432,
+        database: process.env.DB_NAME || 'binarybets',
+        user: process.env.DB_USER || 'binaryuser',
+        password: process.env.DB_PASSWORD || 'binarypass',
+      }
+);
 
-// OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// OpenAI client (optional - only needed for AI odds calculation)
+let openai = null;
+const openaiKey = process.env.OPENAI_API_KEY || process.env.OPEN_AI_KEY;
+if (openaiKey) {
+  openai = new OpenAI({
+    apiKey: openaiKey,
+  });
+  console.log('✅ OpenAI client initialized');
+} else {
+  console.log('⚠️  OpenAI API key not found - AI odds calculation will be disabled');
+}
 
 // Test database connection
 pool.query('SELECT NOW()', (err, res) => {
@@ -316,6 +329,13 @@ app.post('/api/markets', async (req, res) => {
 // Calculate AI odds for a market
 app.post('/api/markets/calculate-odds', async (req, res) => {
   try {
+    // Check if OpenAI is available
+    if (!openai) {
+      return res.status(503).json({ 
+        error: 'AI odds calculation is not available. OpenAI API key not configured.' 
+      });
+    }
+
     const { question, marketType, options } = req.body;
 
     let prompt;
