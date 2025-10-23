@@ -372,26 +372,37 @@ app.get('/api/markets/expired', async (req, res) => {
 
 // BETS
 app.post('/api/bets', async (req, res) => {
-  const { user_id, market_id, market_option_id, amount, odds } = req.body;
+  const { userId, marketId, marketOptionId, amount, betType, odds } = req.body;
+  
   try {
-    const userResult = await pool.query('SELECT balance FROM users WHERE id = $1', [user_id]);
+    // Check user balance
+    const userResult = await pool.query('SELECT balance FROM users WHERE id = $1', [userId]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
-    const balance = parseFloat(userResult.rows[0].balance);
-    if (balance < amount) {
+    
+    const userBalance = parseFloat(userResult.rows[0].balance);
+    const betAmount = parseFloat(amount);
+    
+    if (userBalance < betAmount) {
       return res.status(400).json({ error: 'Insufficient balance' });
     }
-    await pool.query('BEGIN');
-    await pool.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [amount, user_id]);
-    const betResult = await pool.query(
-      'INSERT INTO bets (user_id, market_id, market_option_id, amount, odds) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [user_id, market_id, market_option_id, amount, odds]
+    
+    // Deduct bet amount from user balance
+    await pool.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [betAmount, userId]);
+    
+    // Insert bet (include bet_type for binary markets)
+    await pool.query(
+      'INSERT INTO bets (user_id, market_id, market_option_id, amount, odds, bet_type) VALUES ($1, $2, $3, $4, $5, $6)',
+      [userId, marketId, marketOptionId || null, betAmount, odds, betType || null]
     );
-    await pool.query('COMMIT');
-    res.json(betResult.rows[0]);
+    
+    // Get new balance
+    const newBalanceResult = await pool.query('SELECT balance FROM users WHERE id = $1', [userId]);
+    const newBalance = newBalanceResult.rows[0].balance;
+    
+    res.json({ message: 'Bet placed successfully', newBalance });
   } catch (error) {
-    await pool.query('ROLLBACK');
     console.error('Error placing bet:', error);
     res.status(500).json({ error: 'Failed to place bet' });
   }
