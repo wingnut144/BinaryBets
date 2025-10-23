@@ -12,12 +12,13 @@ function App() {
   const [user, setUser] = useState(null);
   const [markets, setMarkets] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [userBets, setUserBets] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [showLogin, setShowLogin] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [showCreateMarket, setShowCreateMarket] = useState(false);
-  const [showResolved, setShowResolved] = useState('active'); // 'active' or 'completed'
+  const [showResolved, setShowResolved] = useState('active');
   const [selectedMarket, setSelectedMarket] = useState(null);
   const [marketResults, setMarketResults] = useState(null);
   const [loginData, setLoginData] = useState({ email: '', password: '' });
@@ -90,7 +91,6 @@ function App() {
       const response = await fetch(`${API_URL}/markets/${marketId}/results`);
       const data = await response.json();
       
-      // Split into winners and losers
       const winners = data.filter(bet => parseFloat(bet.payout) > 0);
       const losers = data.filter(bet => parseFloat(bet.payout) === 0);
       
@@ -226,7 +226,6 @@ function App() {
         fetchMarkets();
         fetchUserBets(user.id);
         
-        // Update user balance
         const userResponse = await fetch(`${API_URL}/users/${user.id}`);
         const userData = await userResponse.json();
         setUser(userData);
@@ -255,9 +254,9 @@ function App() {
   };
 
   const filteredMarkets = markets.filter(m => {
-    if (showResolved === 'active') return !m.resolved;
-    if (showResolved === 'completed') return m.resolved;
-    return true;
+    const matchesResolved = showResolved === 'active' ? !m.resolved : m.resolved;
+    const matchesCategory = !selectedCategory || m.category_id === selectedCategory;
+    return matchesResolved && matchesCategory;
   });
 
   return (
@@ -279,6 +278,31 @@ function App() {
           )}
         </div>
       </header>
+
+      {/* Category Navigation */}
+      <nav className="category-nav">
+        <div className="category-nav-content">
+          <button
+            onClick={() => setSelectedCategory(null)}
+            className={!selectedCategory ? 'category-btn active' : 'category-btn'}
+          >
+            All Markets
+          </button>
+          {categories.map(category => (
+            <button
+              key={category.id}
+              onClick={() => setSelectedCategory(category.id)}
+              className={selectedCategory === category.id ? 'category-btn active' : 'category-btn'}
+              style={{
+                backgroundColor: selectedCategory === category.id ? category.color : 'transparent',
+                borderColor: category.color
+              }}
+            >
+              {category.name}
+            </button>
+          ))}
+        </div>
+      </nav>
 
       <main className="main-content">
         <div className="markets-section">
@@ -429,7 +453,7 @@ function App() {
         </aside>
       </main>
 
-      {/* Login Modal */}
+      {/* Modals remain the same... */}
       {showLogin && (
         <div className="modal-overlay" onClick={() => setShowLogin(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -455,7 +479,6 @@ function App() {
         </div>
       )}
 
-      {/* Register Modal */}
       {showRegister && (
         <div className="modal-overlay" onClick={() => setShowRegister(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -488,7 +511,6 @@ function App() {
         </div>
       )}
 
-      {/* Create Market Modal */}
       {showCreateMarket && (
         <div className="modal-overlay" onClick={() => setShowCreateMarket(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -552,7 +574,6 @@ function App() {
         </div>
       )}
 
-      {/* Results Modal */}
       {selectedMarket && marketResults && (
         <div className="modal-overlay" onClick={closeResults}>
           <div className="modal results-modal" onClick={(e) => e.stopPropagation()}>
@@ -610,4 +631,5 @@ function App() {
     </div>
   );
 }
+
 export default App;
