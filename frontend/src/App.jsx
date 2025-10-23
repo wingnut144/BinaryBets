@@ -617,7 +617,7 @@ export default function App() {
               )}
 
               <div className="mt-4 pt-4 border-t border-slate-700 flex justify-between text-sm text-gray-400">
-                <span>Deadline: {new Date(market.deadline).toLocaleDateString()}</span>
+                <span>Ends: {new Date(market.deadline).toLocaleDateString()}</span>
                 <span>{market.bet_count || 0} bets</span>
               </div>
             </div>
@@ -987,13 +987,13 @@ export default function App() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Deadline
+                  Betting Ends (Date)
                 </label>
                 <input
-                  type="datetime-local"
+                  type="date"
                   value={newMarket.deadline}
                   onChange={(e) => setNewMarket({ ...newMarket, deadline: e.target.value })}
-                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-purple-500"
+                  className="w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg focus:ring-2 focus:ring-purple-400 font-semibold cursor-pointer hover:from-purple-700 hover:to-pink-700 transition"
                   required
                 />
               </div>
