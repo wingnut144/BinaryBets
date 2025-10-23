@@ -268,20 +268,52 @@ Make sure odds are realistic (typically between 1.1 and 10.0).`
 app.post('/api/markets/:marketId/resolve', async (req, res) => {
   const { marketId } = req.params;
   const { winning_option_id } = req.body;
+  
   try {
+    // Get the market to check type
+    const marketResult = await pool.query(
+      'SELECT market_type FROM markets WHERE id = $1',
+      [marketId]
+    );
+    
+    if (marketResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Market not found' });
+    }
+    
+    const market = marketResult.rows[0];
+    
+    // Update market as resolved
     await pool.query(
       'UPDATE markets SET resolved = true, winning_option_id = $1 WHERE id = $2',
       [winning_option_id, marketId]
     );
-    const winningBets = await pool.query(
-      'SELECT b.*, u.email, u.username FROM bets b JOIN users u ON b.user_id = u.id WHERE b.market_id = $1 AND b.market_option_id = $2',
-      [marketId, winning_option_id]
-    );
+    
+    let winningBets;
+    
+    if (market.market_type === 'binary') {
+      // For binary markets, match based on bet_type (yes/no)
+      winningBets = await pool.query(
+        'SELECT b.*, u.email, u.username FROM bets b JOIN users u ON b.user_id = u.id WHERE b.market_id = $1 AND LOWER(b.bet_type) = LOWER($2)',
+        [marketId, winning_option_id]
+      );
+    } else {
+      // For multi-choice markets, match based on market_option_id
+      winningBets = await pool.query(
+        'SELECT b.*, u.email, u.username FROM bets b JOIN users u ON b.user_id = u.id WHERE b.market_id = $1 AND b.market_option_id = $2',
+        [marketId, winning_option_id]
+      );
+    }
+    
+    // Pay out winners
     for (const bet of winningBets.rows) {
       const winnings = bet.amount * bet.odds;
       await pool.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [winnings, bet.user_id]);
     }
-    res.json({ message: 'Market resolved successfully', winners_count: winningBets.rows.length });
+    
+    res.json({ 
+      message: 'Market resolved successfully', 
+      winners_count: winningBets.rows.length 
+    });
   } catch (error) {
     console.error('Error resolving market:', error);
     res.status(500).json({ error: 'Failed to resolve market' });
