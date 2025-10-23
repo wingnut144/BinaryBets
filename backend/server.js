@@ -181,6 +181,18 @@ app.post('/api/subcategories', async (req, res) => {
   try {
     const { categoryId, name } = req.body;
     
+    // Check if subcategory already exists
+    const existing = await pool.query(
+      'SELECT * FROM subcategories WHERE category_id = $1 AND LOWER(name) = LOWER($2)',
+      [categoryId, name]
+    );
+    
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ 
+        error: `Subcategory "${name}" already exists in this category` 
+      });
+    }
+    
     // Get the next display_order for this category
     const orderResult = await pool.query(
       'SELECT COALESCE(MAX(display_order), 0) + 1 as next_order FROM subcategories WHERE category_id = $1',
