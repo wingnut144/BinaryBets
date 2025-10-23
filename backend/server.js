@@ -270,20 +270,27 @@ app.post('/api/markets', async (req, res) => {
   try {
     const { question, categoryId, subcategoryId, marketType, yesOdds, noOdds, options, optionOdds, deadline, createdBy } = req.body;
 
+    // Convert date-only to end of day timestamp (23:59:59)
+    let deadlineTimestamp = deadline;
+    if (deadline && !deadline.includes('T')) {
+      // If it's just a date (YYYY-MM-DD), add end of day time
+      deadlineTimestamp = `${deadline}T23:59:59`;
+    }
+
     let marketResult;
     if (marketType === 'binary') {
       marketResult = await pool.query(
         `INSERT INTO markets (question, category_id, subcategory_id, market_type, yes_odds, no_odds, deadline, created_by) 
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
          RETURNING *`,
-        [question, categoryId, subcategoryId || null, marketType, yesOdds, noOdds, deadline, createdBy]
+        [question, categoryId, subcategoryId || null, marketType, yesOdds, noOdds, deadlineTimestamp, createdBy]
       );
     } else {
       marketResult = await pool.query(
         `INSERT INTO markets (question, category_id, subcategory_id, market_type, deadline, created_by) 
          VALUES ($1, $2, $3, $4, $5, $6) 
          RETURNING *`,
-        [question, categoryId, subcategoryId || null, marketType, deadline, createdBy]
+        [question, categoryId, subcategoryId || null, marketType, deadlineTimestamp, createdBy]
       );
 
       // Insert market options with odds
