@@ -251,7 +251,7 @@ function App() {
               <>
                 <div className="user-info">
                   <span className="username">{user.username}</span>
-                  <span className="balance">${user.balance.toFixed(2)}</span>
+                  <span className="balance">${parseFloat(user.balance || 0).toFixed(2)}</span>
                 </div>
                 <button onClick={handleLogout} className="btn btn-secondary">Logout</button>
               </>
@@ -417,9 +417,10 @@ function App() {
                     <tr>
                       <th>Market</th>
                       <th>Position</th>
-                      <th>Shares</th>
+                      <th>Amount</th>
+                      <th>Odds</th>
                       <th>Status</th>
-                      <th>Payout</th>
+                      <th>Result</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -427,17 +428,22 @@ function App() {
                       <tr key={bet.id}>
                         <td>{bet.question}</td>
                         <td>
-                          <span className={`position-badge position-${bet.position}`}>
-                            {bet.position.toUpperCase()}
+                          <span className={`position-badge position-${bet.bet_type?.toLowerCase()}`}>
+                            {bet.bet_type?.toUpperCase() || 'N/A'}
                           </span>
                         </td>
-                        <td>${bet.shares.toFixed(2)}</td>
+                        <td>${parseFloat(bet.amount || 0).toFixed(2)}</td>
+                        <td>{parseFloat(bet.odds || 0).toFixed(2)}x</td>
                         <td>
-                          <span className={`status-badge status-${bet.status}`}>
-                            {bet.status}
+                          <span className={`status-badge status-${
+                            bet.won === null ? 'active' : bet.won ? 'won' : 'lost'
+                          }`}>
+                            {bet.won === null ? 'active' : bet.won ? 'won' : 'lost'}
                           </span>
                         </td>
-                        <td>${bet.payout ? bet.payout.toFixed(2) : '-'}</td>
+                        <td>
+                          {bet.won ? `$${(parseFloat(bet.amount) * parseFloat(bet.odds)).toFixed(2)}` : '-'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -457,7 +463,7 @@ function App() {
                 <div key={player.id} className="leaderboard-item">
                   <span className="rank">{index + 1}</span>
                   <span className="player-name">{player.username}</span>
-                  <span className="player-balance">${player.balance.toFixed(2)}</span>
+                  <span className="player-balance">${parseFloat(player.balance || 0).toFixed(2)}</span>
                 </div>
               ))}
             </div>
