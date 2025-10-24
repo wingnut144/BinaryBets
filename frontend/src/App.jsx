@@ -208,9 +208,11 @@ function App() {
 
   // Calculate probability
   const calculateProbability = (market, position) => {
-    const total = market.yes_shares + market.no_shares;
+    const yesShares = parseFloat(market.yes_shares || 0);
+    const noShares = parseFloat(market.no_shares || 0);
+    const total = yesShares + noShares;
     if (total === 0) return 50;
-    const shares = position === 'yes' ? market.yes_shares : market.no_shares;
+    const shares = position === 'yes' ? yesShares : noShares;
     return Math.round((shares / total) * 100);
   };
 
@@ -396,7 +398,7 @@ function App() {
                     )}
 
                     <div className="market-footer">
-                      <span>Volume: ${(market.yes_shares + market.no_shares).toFixed(2)}</span>
+                      <span>Volume: ${(parseFloat(market.yes_shares || 0) + parseFloat(market.no_shares || 0)).toFixed(2)}</span>
                       <span>Closes: {new Date(market.close_date).toLocaleDateString()}</span>
                     </div>
                   </div>
