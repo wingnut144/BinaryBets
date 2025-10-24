@@ -455,22 +455,27 @@ app.post('/api/markets/:id/resolve', async (req, res) => {
         [normalizedOutcome, resolvedBy, id]
       );
 
+      // Get all unresolved bets for this market
       const betsResult = await client.query(
-        'SELECT * FROM bets WHERE market_id = $1 AND status = $2',
-        [id, 'active']
+        'SELECT * FROM bets WHERE market_id = $1 AND won IS NULL',
+        [id]
       );
 
       console.log(`   Processing ${betsResult.rows.length} bets`);
 
       for (const bet of betsResult.rows) {
-        const won = bet.position === normalizedOutcome;
-        const payout = won ? bet.shares * 2 : 0;
+        // Check if bet won (bet_type should match outcome: 'Yes'/'yes' or 'No'/'no')
+        const betTypeLower = (bet.bet_type || '').toLowerCase();
+        const won = betTypeLower === normalizedOutcome;
+        const payout = won ? parseFloat(bet.amount) * parseFloat(bet.odds) : 0;
 
+        // Update bet with result
         await client.query(
-          'UPDATE bets SET status = $1, payout = $2 WHERE id = $3',
-          [won ? 'won' : 'lost', payout, bet.id]
+          'UPDATE bets SET won = $1 WHERE id = $2',
+          [won, bet.id]
         );
 
+        // If won, add payout to user balance
         if (won && payout > 0) {
           await client.query(
             'UPDATE users SET balance = balance + $1 WHERE id = $2',
@@ -595,11 +600,16 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
         return res.status(400).json({ error: 'Market is already resolved' });
       }
 
+      // Get current odds
+      const currentOdds = position === 'yes' ? market.yes_odds : market.no_odds;
+      const oddsValue = parseFloat(currentOdds) || 2.0;
+
+      // Insert bet with actual schema columns
       const betResult = await client.query(
-        `INSERT INTO bets (user_id, market_id, position, shares, status) 
-         VALUES ($1, $2, $3, $4, 'active') 
+        `INSERT INTO bets (user_id, market_id, bet_type, amount, odds) 
+         VALUES ($1, $2, $3, $4, $5) 
          RETURNING *`,
-        [userId, market_id, position, shares]
+        [userId, market_id, position === 'yes' ? 'Yes' : 'No', shares, oddsValue]
       );
 
       await client.query(
@@ -644,7 +654,7 @@ app.get('/api/bets/user', authenticateToken, async (req, res) => {
       JOIN markets m ON b.market_id = m.id
       JOIN categories c ON m.category_id = c.id
       WHERE b.user_id = $1
-      ORDER BY b.created_at DESC`,
+      ORDER BY b.placed_at DESC`,
       [req.user.id]
     );
 
@@ -690,9 +700,9 @@ app.get('/api/leaderboard', async (req, res) => {
         u.username,
         u.balance,
         COUNT(b.id) as total_bets,
-        COUNT(CASE WHEN b.status = 'won' THEN 1 END) as wins,
-        COUNT(CASE WHEN b.status = 'lost' THEN 1 END) as losses,
-        COALESCE(SUM(CASE WHEN b.status = 'won' THEN b.payout ELSE 0 END), 0) as total_winnings
+        COUNT(CASE WHEN b.won = true THEN 1 END) as wins,
+        COUNT(CASE WHEN b.won = false THEN 1 END) as losses,
+        COALESCE(SUM(CASE WHEN b.won = true THEN b.amount * b.odds ELSE 0 END), 0) as total_winnings
       FROM users u
       LEFT JOIN bets b ON u.id = b.user_id
       GROUP BY u.id, u.username, u.balance
