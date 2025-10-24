@@ -424,9 +424,9 @@ function App() {
               return (
                 <div key={market.id} className="market-card">
                   <div className="market-header">
-                    <h3>{market.title}</h3>
-                    <span className={`status-badge ${market.status}`}>
-                      {market.status === 'active' ? '🟢 Active' : '🔵 Resolved'}
+                    <h3>{market.question}</h3>
+                    <span className={`status-badge ${market.resolved ? 'resolved' : 'active'}`}>
+                      {market.resolved ? '🔵 Resolved' : '🟢 Active'}
                     </span>
                   </div>
                   
@@ -440,11 +440,11 @@ function App() {
                       {market.subcategory_name && ` · ${market.subcategory_name}`}
                     </span>
                     <span className="date-badge">
-                      Closes: {new Date(market.close_date).toLocaleDateString()}
+                      Closes: {new Date(market.deadline).toLocaleDateString()}
                     </span>
                   </div>
 
-                  {market.status === 'active' && (
+                  {!market.resolved && (
                     <div className="betting-section">
                       <div className="odds-display">
                         <div className="odds-item">
@@ -483,9 +483,9 @@ function App() {
                     </div>
                   )}
 
-                  {market.status === 'resolved' && (
+                  {market.resolved && (
                     <div className="resolved-outcome">
-                      <strong>Winner:</strong> {market.winning_outcome?.toUpperCase() || 'N/A'}
+                      <strong>Winner:</strong> {market.outcome?.toUpperCase() || 'N/A'}
                     </div>
                   )}
 
