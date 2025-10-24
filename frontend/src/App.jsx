@@ -1,64 +1,81 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-
-// Helper function to format currency
-const formatCurrency = (value) => {
-  return parseFloat(value || 0).toFixed(2);
-};
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 function App() {
   const [user, setUser] = useState(null);
   const [markets, setMarkets] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState(null);
-  const [userBets, setUserBets] = useState([]);
+  const [subcategories, setSubcategories] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
-  const [showLogin, setShowLogin] = useState(false);
-  const [showRegister, setShowRegister] = useState(false);
-  const [showCreateMarket, setShowCreateMarket] = useState(false);
-  const [showResolved, setShowResolved] = useState('active');
-  const [selectedMarket, setSelectedMarket] = useState(null);
-  const [marketResults, setMarketResults] = useState(null);
-  const [loginData, setLoginData] = useState({ email: '', password: '' });
-  const [registerData, setRegisterData] = useState({ username: '', email: '', password: '' });
-  const [newMarket, setNewMarket] = useState({
-    question: '',
-    type: 'binary',
-    category_id: 1,
-    deadline: '',
-    options: ['', '']
-  });
-  const [betAmount, setBetAmount] = useState('');
-  const [betType, setBetType] = useState('yes');
-  const [selectedOption, setSelectedOption] = useState(null);
+  const [userBets, setUserBets] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [selectedSubcategory, setSelectedSubcategory] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('active');
+  const [showAuth, setShowAuth] = useState(false);
+  const [isLogin, setIsLogin] = useState(true);
+  const [authForm, setAuthForm] = useState({ username: '', email: '', password: '' });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
 
+  // Initialize
   useEffect(() => {
-    fetchMarkets();
+    checkAuth();
     fetchCategories();
+    fetchMarkets();
     fetchLeaderboard();
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      const parsedUser = JSON.parse(savedUser);
-      setUser(parsedUser);
-      fetchUserBets(parsedUser.id);
-    }
   }, []);
 
-  const fetchMarkets = async () => {
-    try {
-      const response = await fetch(`${API_URL}/markets`);
-      const data = await response.json();
-      setMarkets(data);
-    } catch (error) {
-      console.error('Error fetching markets:', error);
+  // Fetch subcategories when category changes
+  useEffect(() => {
+    if (selectedCategory) {
+      fetchSubcategories(selectedCategory);
+    } else {
+      setSubcategories([]);
+      setSelectedSubcategory(null);
+    }
+  }, [selectedCategory]);
+
+  // Refetch markets when filters change
+  useEffect(() => {
+    fetchMarkets();
+  }, [selectedCategory, selectedSubcategory, statusFilter]);
+
+  // Check authentication
+  const checkAuth = () => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      fetchUser(token);
+    } else {
+      setLoading(false);
     }
   };
 
+  // Fetch current user
+  const fetchUser = async (token) => {
+    try {
+      const response = await fetch(`${API_URL}/api/user`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const userData = await response.json();
+        setUser(userData);
+        fetchUserBets(token);
+      } else {
+        localStorage.removeItem('token');
+      }
+    } catch (error) {
+      console.error('Error fetching user:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch categories
   const fetchCategories = async () => {
     try {
-      const response = await fetch(`${API_URL}/categories`);
+      const response = await fetch(`${API_URL}/api/categories`);
       const data = await response.json();
       setCategories(data);
     } catch (error) {
@@ -66,19 +83,36 @@ function App() {
     }
   };
 
-  const fetchUserBets = async (userId) => {
+  // Fetch subcategories
+  const fetchSubcategories = async (categoryId) => {
     try {
-      const response = await fetch(`${API_URL}/users/${userId}/bets`);
+      const response = await fetch(`${API_URL}/api/subcategories?category_id=${categoryId}`);
       const data = await response.json();
-      setUserBets(data);
+      setSubcategories(data);
     } catch (error) {
-      console.error('Error fetching user bets:', error);
+      console.error('Error fetching subcategories:', error);
     }
   };
 
+  // Fetch markets
+  const fetchMarkets = async () => {
+    try {
+      let url = `${API_URL}/api/markets?status=${statusFilter}`;
+      if (selectedCategory) url += `&category_id=${selectedCategory}`;
+      if (selectedSubcategory) url += `&subcategory_id=${selectedSubcategory}`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+      setMarkets(data);
+    } catch (error) {
+      console.error('Error fetching markets:', error);
+    }
+  };
+
+  // Fetch leaderboard
   const fetchLeaderboard = async () => {
     try {
-      const response = await fetch(`${API_URL}/leaderboard`);
+      const response = await fetch(`${API_URL}/api/leaderboard`);
       const data = await response.json();
       setLeaderboard(data);
     } catch (error) {
@@ -86,545 +120,428 @@ function App() {
     }
   };
 
-  const fetchMarketResults = async (marketId) => {
+  // Fetch user bets
+  const fetchUserBets = async (token) => {
     try {
-      const response = await fetch(`${API_URL}/markets/${marketId}/results`);
-      const data = await response.json();
-      
-      const winners = data.filter(bet => parseFloat(bet.payout) > 0);
-      const losers = data.filter(bet => parseFloat(bet.payout) === 0);
-      
-      setMarketResults({ winners, losers });
-    } catch (error) {
-      console.error('Error fetching market results:', error);
-      setMarketResults({ winners: [], losers: [] });
-    }
-  };
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    try {
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(loginData),
+      const response = await fetch(`${API_URL}/api/bets/user`, {
+        headers: { 'Authorization': `Bearer ${token || localStorage.getItem('token')}` }
       });
       const data = await response.json();
-      if (response.ok) {
-        setUser(data);
-        localStorage.setItem('user', JSON.stringify(data));
-        fetchUserBets(data.id);
-        setShowLogin(false);
-        setLoginData({ email: '', password: '' });
-      } else {
-        alert(data.error || 'Login failed');
-      }
+      setUserBets(data);
     } catch (error) {
-      console.error('Login error:', error);
-      alert('Login failed');
+      console.error('Error fetching user bets:', error);
     }
   };
 
-  const handleRegister = async (e) => {
+  // Handle authentication
+  const handleAuth = async (e) => {
     e.preventDefault();
+    setError('');
+
     try {
-      const response = await fetch(`${API_URL}/auth/register`, {
+      const endpoint = isLogin ? '/api/login' : '/api/register';
+      const body = isLogin 
+        ? { username: authForm.username, password: authForm.password }
+        : authForm;
+
+      const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(registerData),
+        body: JSON.stringify(body)
       });
+
       const data = await response.json();
-      if (response.ok) {
-        setUser(data);
-        localStorage.setItem('user', JSON.stringify(data));
-        fetchUserBets(data.id);
-        setShowRegister(false);
-        setRegisterData({ username: '', email: '', password: '' });
-      } else {
-        alert(data.error || 'Registration failed');
+
+      if (!response.ok) {
+        setError(data.error || 'Authentication failed');
+        return;
       }
+
+      localStorage.setItem('token', data.token);
+      setUser(data.user);
+      setShowAuth(false);
+      setAuthForm({ username: '', email: '', password: '' });
+      fetchUserBets(data.token);
     } catch (error) {
-      console.error('Registration error:', error);
-      alert('Registration failed');
+      setError('Server error. Please try again.');
     }
   };
 
+  // Handle logout
   const handleLogout = () => {
+    localStorage.removeItem('token');
     setUser(null);
     setUserBets([]);
-    localStorage.removeItem('user');
   };
 
-  const handleCreateMarket = async (e) => {
-    e.preventDefault();
-    try {
-      const marketData = {
-        ...newMarket,
-        created_by: user.id,
-        options: newMarket.type === 'multiple' ? newMarket.options.filter(o => o.trim()) : undefined
-      };
-      
-      const response = await fetch(`${API_URL}/markets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(marketData),
-      });
-      
-      if (response.ok) {
-        fetchMarkets();
-        setShowCreateMarket(false);
-        setNewMarket({
-          question: '',
-          type: 'binary',
-          category_id: 1,
-          deadline: '',
-          options: ['', '']
-        });
-      } else {
-        const data = await response.json();
-        alert(data.error || 'Failed to create market');
-      }
-    } catch (error) {
-      console.error('Error creating market:', error);
-      alert('Failed to create market');
-    }
-  };
-
-  const handlePlaceBet = async (marketId, marketType) => {
+  // Place bet
+  const placeBet = async (marketId, position, shares) => {
     if (!user) {
-      alert('Please login to place a bet');
-      return;
-    }
-
-    if (!betAmount || parseFloat(betAmount) <= 0) {
-      alert('Please enter a valid bet amount');
-      return;
-    }
-
-    if (marketType === 'multiple' && !selectedOption) {
-      alert('Please select an option');
+      alert('Please login to place bets');
       return;
     }
 
     try {
-      const betData = {
-        user_id: user.id,
-        market_id: marketId,
-        amount: parseFloat(betAmount),
-        bet_type: marketType === 'binary' ? betType : null,
-        option_id: marketType === 'multiple' ? selectedOption : null
-      };
-
-      const response = await fetch(`${API_URL}/bets`, {
+      const response = await fetch(`${API_URL}/api/bets`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(betData),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ market_id: marketId, position, shares })
       });
 
-      if (response.ok) {
-        alert('Bet placed successfully!');
-        fetchMarkets();
-        fetchUserBets(user.id);
-        
-        const userResponse = await fetch(`${API_URL}/users/${user.id}`);
-        const userData = await userResponse.json();
-        setUser(userData);
-        localStorage.setItem('user', JSON.stringify(userData));
-        
-        setBetAmount('');
-        setSelectedOption(null);
-      } else {
+      if (!response.ok) {
         const data = await response.json();
         alert(data.error || 'Failed to place bet');
+        return;
       }
+
+      // Refresh data
+      fetchUser(localStorage.getItem('token'));
+      fetchMarkets();
+      alert('Bet placed successfully!');
     } catch (error) {
-      console.error('Error placing bet:', error);
-      alert('Failed to place bet');
+      alert('Error placing bet');
     }
   };
 
-  const viewResults = (market) => {
-    setSelectedMarket(market);
-    fetchMarketResults(market.id);
+  // Calculate probability
+  const calculateProbability = (market, position) => {
+    const total = market.yes_shares + market.no_shares;
+    if (total === 0) return 50;
+    const shares = position === 'yes' ? market.yes_shares : market.no_shares;
+    return Math.round((shares / total) * 100);
   };
 
-  const closeResults = () => {
-    setSelectedMarket(null);
-    setMarketResults(null);
+  // Handle category click
+  const handleCategoryClick = (categoryId) => {
+    if (selectedCategory === categoryId) {
+      setSelectedCategory(null);
+      setSelectedSubcategory(null);
+    } else {
+      setSelectedCategory(categoryId);
+      setSelectedSubcategory(null);
+    }
   };
 
-  const filteredMarkets = markets.filter(m => {
-    const matchesResolved = showResolved === 'active' ? !m.resolved : m.resolved;
-    const matchesCategory = !selectedCategory || m.category_id === selectedCategory;
-    return matchesResolved && matchesCategory;
-  });
+  // Handle subcategory click
+  const handleSubcategoryClick = (subcategoryId) => {
+    if (selectedSubcategory === subcategoryId) {
+      setSelectedSubcategory(null);
+    } else {
+      setSelectedSubcategory(subcategoryId);
+    }
+  };
+
+  if (loading) {
+    return <div className="loading">Loading...</div>;
+  }
 
   return (
-    <div className="app">
+    <div className="App">
+      {/* Header */}
       <header className="header">
         <div className="header-content">
-          <h1>🎲 BinaryBets</h1>
-          {user ? (
-            <div className="user-info">
-              <span>👤 {user.username}</span>
-              <span className="balance">${formatCurrency(user.balance)}</span>
-              <button onClick={handleLogout} className="btn-secondary">Logout</button>
-            </div>
-          ) : (
-            <div className="auth-buttons">
-              <button onClick={() => setShowLogin(true)} className="btn-primary">Login</button>
-              <button onClick={() => setShowRegister(true)} className="btn-secondary">Register</button>
-            </div>
-          )}
+          <h1 className="logo">🎲 BinaryBets</h1>
+          <div className="header-right">
+            {user ? (
+              <>
+                <div className="user-info">
+                  <span className="username">{user.username}</span>
+                  <span className="balance">${user.balance.toFixed(2)}</span>
+                </div>
+                <button onClick={handleLogout} className="btn btn-secondary">Logout</button>
+              </>
+            ) : (
+              <button onClick={() => setShowAuth(true)} className="btn btn-primary">Login / Sign Up</button>
+            )}
+          </div>
         </div>
       </header>
 
       {/* Category Navigation */}
-      <nav className="category-nav">
-        <div className="category-nav-content">
+      <div className="category-nav">
+        <button
+          className={`category-btn ${!selectedCategory ? 'active' : ''}`}
+          onClick={() => handleCategoryClick(null)}
+        >
+          All Markets
+        </button>
+        {categories.map(category => (
           <button
-            onClick={() => setSelectedCategory(null)}
-            className={!selectedCategory ? 'category-btn active' : 'category-btn'}
+            key={category.id}
+            className={`category-btn ${selectedCategory === category.id ? 'active' : ''}`}
+            style={selectedCategory === category.id ? { backgroundColor: category.color } : {}}
+            onClick={() => handleCategoryClick(category.id)}
           >
-            All Markets
+            {category.name}
           </button>
-          {categories.map(category => (
+        ))}
+      </div>
+
+      {/* Subcategory Navigation */}
+      {selectedCategory && subcategories.length > 0 && (
+        <div className="subcategory-nav">
+          <button
+            className={`subcategory-btn ${!selectedSubcategory ? 'active' : ''}`}
+            onClick={() => setSelectedSubcategory(null)}
+          >
+            All {categories.find(c => c.id === selectedCategory)?.name}
+          </button>
+          {subcategories.map(sub => (
             <button
-              key={category.id}
-              onClick={() => setSelectedCategory(category.id)}
-              className={selectedCategory === category.id ? 'category-btn active' : 'category-btn'}
-              style={{
-                backgroundColor: selectedCategory === category.id ? category.color : 'transparent',
-                borderColor: category.color
-              }}
+              key={sub.id}
+              className={`subcategory-btn ${selectedSubcategory === sub.id ? 'active' : ''}`}
+              onClick={() => handleSubcategoryClick(sub.id)}
             >
-              {category.name}
+              {sub.name}
             </button>
           ))}
         </div>
-      </nav>
+      )}
 
-      <main className="main-content">
-        <div className="markets-section">
-          <div className="section-header">
-            <h2>Markets</h2>
-            <div className="market-filters">
-              <button 
-                onClick={() => setShowResolved('active')}
-                className={showResolved === 'active' ? 'filter-active' : 'filter-inactive'}
-              >
-                Active
-              </button>
-              <button 
-                onClick={() => setShowResolved('completed')}
-                className={showResolved === 'completed' ? 'filter-active' : 'filter-inactive'}
-              >
-                🏁 Completed
-              </button>
-            </div>
-            {user && user.is_admin && (
-              <button onClick={() => setShowCreateMarket(true)} className="btn-primary">
-                Create Market
-              </button>
-            )}
-          </div>
+      {/* Status Filter */}
+      <div className="status-filter">
+        <button
+          className={`filter-btn ${statusFilter === 'active' ? 'active' : ''}`}
+          onClick={() => setStatusFilter('active')}
+        >
+          Active Markets
+        </button>
+        <button
+          className={`filter-btn ${statusFilter === 'resolved' ? 'active' : ''}`}
+          onClick={() => setStatusFilter('resolved')}
+        >
+          Completed Markets
+        </button>
+      </div>
 
-          <div className="markets-grid">
-            {filteredMarkets.map(market => (
-              <div key={market.id} className="market-card">
-                <div className="market-header">
-                  <span className="category-badge" style={{ backgroundColor: market.category_color }}>
-                    {market.category_name}
-                  </span>
-                  {market.resolved && <span className="resolved-badge">✅ Resolved</span>}
-                </div>
-                <h3>{market.question}</h3>
-                <div className="market-info">
-                  <p>Deadline: {new Date(market.deadline).toLocaleDateString()}</p>
-                  {market.type === 'binary' && (
-                    <div className="binary-odds">
-                      <div className="odds-item">
-                        <span>Yes: ${formatCurrency(market.yes_bets)}</span>
-                      </div>
-                      <div className="odds-item">
-                        <span>No: ${formatCurrency(market.no_bets)}</span>
-                      </div>
+      {/* Main Content */}
+      <div className="container">
+        <div className="main-content">
+          {/* Markets Section */}
+          <section className="section">
+            <h2>
+              {selectedSubcategory 
+                ? subcategories.find(s => s.id === selectedSubcategory)?.name + ' Markets'
+                : selectedCategory
+                ? categories.find(c => c.id === selectedCategory)?.name + ' Markets'
+                : 'All Markets'}
+            </h2>
+            <div className="markets-grid">
+              {markets.length === 0 ? (
+                <p className="no-data">No markets found</p>
+              ) : (
+                markets.map(market => (
+                  <div key={market.id} className="market-card">
+                    <div className="market-header">
+                      <span className="market-category" style={{ color: market.category_color }}>
+                        {market.category_name}
+                        {market.subcategory_name && ` • ${market.subcategory_name}`}
+                      </span>
+                      <span className={`market-status status-${market.status}`}>
+                        {market.status}
+                      </span>
                     </div>
-                  )}
-                </div>
+                    
+                    <h3 className="market-question">{market.question}</h3>
+                    
+                    {market.description && (
+                      <p className="market-description">{market.description}</p>
+                    )}
 
-                {!market.resolved && user && (
-                  <div className="bet-form">
-                    <input
-                      type="number"
-                      placeholder="Bet amount"
-                      value={betAmount}
-                      onChange={(e) => setBetAmount(e.target.value)}
-                      className="bet-input"
-                    />
-                    {market.type === 'binary' ? (
-                      <div className="bet-options">
-                        <button
-                          onClick={() => {
-                            setBetType('yes');
-                            handlePlaceBet(market.id, 'binary');
-                          }}
-                          className="btn-yes"
-                        >
-                          Bet Yes
-                        </button>
-                        <button
-                          onClick={() => {
-                            setBetType('no');
-                            handlePlaceBet(market.id, 'binary');
-                          }}
-                          className="btn-no"
-                        >
-                          Bet No
-                        </button>
+                    {market.status === 'resolved' ? (
+                      <div className="market-result">
+                        <strong>Result:</strong> {market.winning_outcome.toUpperCase()}
                       </div>
                     ) : (
-                      <div className="multi-options">
-                        {market.options.map(option => (
-                          <button
-                            key={option.id}
-                            onClick={() => {
-                              setSelectedOption(option.id);
-                              handlePlaceBet(market.id, 'multiple');
-                            }}
-                            className="btn-option"
-                          >
-                            {option.name} (${formatCurrency(option.total_bets)})
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                      <>
+                        <div className="market-probabilities">
+                          <div className="probability">
+                            <span className="prob-label">YES</span>
+                            <span className="prob-value">
+                              {calculateProbability(market, 'yes')}%
+                            </span>
+                          </div>
+                          <div className="probability">
+                            <span className="prob-label">NO</span>
+                            <span className="prob-value">
+                              {calculateProbability(market, 'no')}%
+                            </span>
+                          </div>
+                        </div>
 
-                {market.resolved && (
-                  <button 
-                    onClick={() => viewResults(market)} 
-                    className="btn-results"
-                  >
-                    📊 View Results
-                  </button>
-                )}
+                        <div className="market-actions">
+                          <button
+                            className="btn btn-yes"
+                            onClick={() => {
+                              const shares = prompt('How many shares to bet on YES?');
+                              if (shares) placeBet(market.id, 'yes', parseFloat(shares));
+                            }}
+                          >
+                            Bet YES
+                          </button>
+                          <button
+                            className="btn btn-no"
+                            onClick={() => {
+                              const shares = prompt('How many shares to bet on NO?');
+                              if (shares) placeBet(market.id, 'no', parseFloat(shares));
+                            }}
+                          >
+                            Bet NO
+                          </button>
+                        </div>
+                      </>
+                    )}
+
+                    <div className="market-footer">
+                      <span>Volume: ${(market.yes_shares + market.no_shares).toFixed(2)}</span>
+                      <span>Closes: {new Date(market.close_date).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          {/* User Bets Section */}
+          {user && userBets.length > 0 && (
+            <section className="section">
+              <h2>My Bets</h2>
+              <div className="bets-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Market</th>
+                      <th>Position</th>
+                      <th>Shares</th>
+                      <th>Status</th>
+                      <th>Payout</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {userBets.map(bet => (
+                      <tr key={bet.id}>
+                        <td>{bet.question}</td>
+                        <td>
+                          <span className={`position-badge position-${bet.position}`}>
+                            {bet.position.toUpperCase()}
+                          </span>
+                        </td>
+                        <td>${bet.shares.toFixed(2)}</td>
+                        <td>
+                          <span className={`status-badge status-${bet.status}`}>
+                            {bet.status}
+                          </span>
+                        </td>
+                        <td>${bet.payout ? bet.payout.toFixed(2) : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ))}
-          </div>
+            </section>
+          )}
         </div>
 
+        {/* Sidebar */}
         <aside className="sidebar">
-          <div className="leaderboard">
+          {/* Leaderboard */}
+          <div className="widget">
             <h3>🏆 Leaderboard</h3>
-            <div className="leaderboard-list">
-              {leaderboard.map((player, index) => (
+            <div className="leaderboard">
+              {leaderboard.slice(0, 10).map((player, index) => (
                 <div key={player.id} className="leaderboard-item">
-                  <span className="rank">#{index + 1}</span>
-                  <span className="username">{player.username}</span>
-                  <span className="balance">${formatCurrency(player.balance)}</span>
+                  <span className="rank">{index + 1}</span>
+                  <span className="player-name">{player.username}</span>
+                  <span className="player-balance">${player.balance.toFixed(2)}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          {user && userBets.length > 0 && (
-            <div className="user-bets">
-              <h3>Your Bets</h3>
-              <div className="bets-list">
-                {userBets.slice(0, 5).map(bet => (
-                  <div key={bet.id} className="bet-item">
-                    <p className="bet-question">{bet.question}</p>
-                    <div className="bet-details">
-                      <span>${formatCurrency(bet.amount)}</span>
-                      <span>{bet.bet_type || bet.option_name}</span>
-                      {bet.resolved && (
-                        <span className={parseFloat(bet.payout) > 0 ? 'won' : 'lost'}>
-                          {parseFloat(bet.payout) > 0 ? `+$${formatCurrency(bet.payout)}` : 'Lost'}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+          {/* Stats */}
+          <div className="widget">
+            <h3>📊 Stats</h3>
+            <div className="stats">
+              <div className="stat">
+                <span className="stat-label">Total Markets</span>
+                <span className="stat-value">{markets.length}</span>
+              </div>
+              <div className="stat">
+                <span className="stat-label">Active</span>
+                <span className="stat-value">
+                  {markets.filter(m => m.status === 'active').length}
+                </span>
+              </div>
+              <div className="stat">
+                <span className="stat-label">Total Users</span>
+                <span className="stat-value">{leaderboard.length}</span>
               </div>
             </div>
-          )}
+          </div>
         </aside>
-      </main>
+      </div>
 
-      {/* Modals remain the same... */}
-      {showLogin && (
-        <div className="modal-overlay" onClick={() => setShowLogin(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Login</h2>
-            <form onSubmit={handleLogin}>
-              <input
-                type="email"
-                placeholder="Email"
-                value={loginData.email}
-                onChange={(e) => setLoginData({...loginData, email: e.target.value})}
-                required
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={loginData.password}
-                onChange={(e) => setLoginData({...loginData, password: e.target.value})}
-                required
-              />
-              <button type="submit" className="btn-primary">Login</button>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Auth Modal */}
+      {showAuth && (
+        <div className="modal-overlay" onClick={() => setShowAuth(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{isLogin ? 'Login' : 'Sign Up'}</h2>
+              <button className="modal-close" onClick={() => setShowAuth(false)}>×</button>
+            </div>
+            
+            <form onSubmit={handleAuth}>
+              <div className="form-group">
+                <label>Username</label>
+                <input
+                  type="text"
+                  value={authForm.username}
+                  onChange={e => setAuthForm({ ...authForm, username: e.target.value })}
+                  required
+                />
+              </div>
 
-      {showRegister && (
-        <div className="modal-overlay" onClick={() => setShowRegister(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Register</h2>
-            <form onSubmit={handleRegister}>
-              <input
-                type="text"
-                placeholder="Username"
-                value={registerData.username}
-                onChange={(e) => setRegisterData({...registerData, username: e.target.value})}
-                required
-              />
-              <input
-                type="email"
-                placeholder="Email"
-                value={registerData.email}
-                onChange={(e) => setRegisterData({...registerData, email: e.target.value})}
-                required
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={registerData.password}
-                onChange={(e) => setRegisterData({...registerData, password: e.target.value})}
-                required
-              />
-              <button type="submit" className="btn-primary">Register</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showCreateMarket && (
-        <div className="modal-overlay" onClick={() => setShowCreateMarket(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Create Market</h2>
-            <form onSubmit={handleCreateMarket}>
-              <input
-                type="text"
-                placeholder="Question"
-                value={newMarket.question}
-                onChange={(e) => setNewMarket({...newMarket, question: e.target.value})}
-                required
-              />
-              <select
-                value={newMarket.type}
-                onChange={(e) => setNewMarket({...newMarket, type: e.target.value})}
-              >
-                <option value="binary">Binary (Yes/No)</option>
-                <option value="multiple">Multiple Choice</option>
-              </select>
-              <select
-                value={newMarket.category_id}
-                onChange={(e) => setNewMarket({...newMarket, category_id: parseInt(e.target.value)})}
-              >
-                {categories.map(cat => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
-              </select>
-              <input
-                type="datetime-local"
-                value={newMarket.deadline}
-                onChange={(e) => setNewMarket({...newMarket, deadline: e.target.value})}
-                required
-              />
-              {newMarket.type === 'multiple' && (
-                <div className="options-input">
-                  {newMarket.options.map((option, index) => (
-                    <input
-                      key={index}
-                      type="text"
-                      placeholder={`Option ${index + 1}`}
-                      value={option}
-                      onChange={(e) => {
-                        const newOptions = [...newMarket.options];
-                        newOptions[index] = e.target.value;
-                        setNewMarket({...newMarket, options: newOptions});
-                      }}
-                    />
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setNewMarket({...newMarket, options: [...newMarket.options, '']})}
-                    className="btn-secondary"
-                  >
-                    Add Option
-                  </button>
+              {!isLogin && (
+                <div className="form-group">
+                  <label>Email</label>
+                  <input
+                    type="email"
+                    value={authForm.email}
+                    onChange={e => setAuthForm({ ...authForm, email: e.target.value })}
+                    required
+                  />
                 </div>
               )}
-              <button type="submit" className="btn-primary">Create Market</button>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {selectedMarket && marketResults && (
-        <div className="modal-overlay" onClick={closeResults}>
-          <div className="modal results-modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Results: {selectedMarket.question}</h2>
-            <div className="results-content">
-              <div className="results-column">
-                <h3 className="winners-title">🎉 Winners ({marketResults.winners?.length || 0})</h3>
-                <div className="results-list">
-                  {marketResults.winners && marketResults.winners.length > 0 ? (
-                    marketResults.winners.map((bet, index) => (
-                      <div key={index} className="result-item winner">
-                        <span className="username">
-                          {user ? bet.username : bet.username.replace(/./g, '*')}
-                        </span>
-                        <span className="bet-info">
-                          Bet: ${formatCurrency(bet.amount)} 
-                          {bet.bet_type && ` on ${bet.bet_type}`}
-                          {bet.option_name && ` on ${bet.option_name}`}
-                        </span>
-                        <span className="payout">+${formatCurrency(bet.payout)}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <p>No winners</p>
-                  )}
-                </div>
+              <div className="form-group">
+                <label>Password</label>
+                <input
+                  type="password"
+                  value={authForm.password}
+                  onChange={e => setAuthForm({ ...authForm, password: e.target.value })}
+                  required
+                />
               </div>
-              <div className="results-column">
-                <h3 className="losers-title">😔 Losers ({marketResults.losers?.length || 0})</h3>
-                <div className="results-list">
-                  {marketResults.losers && marketResults.losers.length > 0 ? (
-                    marketResults.losers.map((bet, index) => (
-                      <div key={index} className="result-item loser">
-                        <span className="username">
-                          {user ? bet.username : bet.username.replace(/./g, '*')}
-                        </span>
-                        <span className="bet-info">
-                          Bet: ${formatCurrency(bet.amount)}
-                          {bet.bet_type && ` on ${bet.bet_type}`}
-                          {bet.option_name && ` on ${bet.option_name}`}
-                        </span>
-                        <span className="loss">-${formatCurrency(bet.amount)}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <p>No losers</p>
-                  )}
-                </div>
-              </div>
+
+              {error && <div className="error-message">{error}</div>}
+
+              <button type="submit" className="btn btn-primary btn-full">
+                {isLogin ? 'Login' : 'Sign Up'}
+              </button>
+            </form>
+
+            <div className="auth-switch">
+              {isLogin ? "Don't have an account? " : "Already have an account? "}
+              <button onClick={() => {
+                setIsLogin(!isLogin);
+                setError('');
+              }} className="link-button">
+                {isLogin ? 'Sign up' : 'Login'}
+              </button>
             </div>
-            <button onClick={closeResults} className="btn-secondary">Close</button>
           </div>
         </div>
       )}
