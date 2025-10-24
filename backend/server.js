@@ -295,9 +295,12 @@ app.get('/api/markets', async (req, res) => {
     }
     
     if (status) {
-      query += ` AND m.status = $${paramCount}`;
-      params.push(status);
-      paramCount++;
+      // Map status filter to resolved boolean
+      if (status === 'active') {
+        query += ` AND m.resolved = false`;
+      } else if (status === 'resolved') {
+        query += ` AND m.resolved = true`;
+      }
     }
     
     query += ' GROUP BY m.id, c.name, s.name ORDER BY m.created_at DESC';
@@ -317,11 +320,11 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
     await client.query('BEGIN');
     
     const { 
-      title, 
+      title,  // Will map to 'question' column
       description, 
       category_id, 
       subcategory_id, 
-      close_date,
+      close_date,  // Will map to 'deadline' column
       market_type,
       options // For multiple choice markets
     } = req.body;
@@ -332,15 +335,16 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
 
     // Determine if binary or multiple choice
     const isBinary = market_type === 'binary' || !options || options.length === 0;
+    const dbMarketType = isBinary ? 'binary' : 'multi-choice';
 
-    // Create the market with placeholder odds
+    // Create the market with placeholder odds (use 'question' and 'deadline' to match DB)
     const marketResult = await client.query(
       `INSERT INTO markets 
-       (title, description, category_id, subcategory_id, close_date, status, created_by, market_type, yes_odds, no_odds) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
+       (question, category_id, subcategory_id, deadline, resolved, created_by, market_type, yes_odds, no_odds) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
        RETURNING *`,
-      [title, description || '', category_id, subcategory_id || null, close_date, 'active', req.user.id, 
-       isBinary ? 'binary' : 'multiple', 50, 50] // Default 50/50 split, will be updated by AI
+      [title, category_id, subcategory_id || null, close_date, false, req.user.id, 
+       dbMarketType, 50, 50] // Default 50/50 split, will be updated by AI
     );
 
     const market = marketResult.rows[0];
@@ -383,14 +387,14 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Invalid bet parameters' });
     }
 
-    // Get market info
+    // Get market info (check 'resolved' instead of 'status')
     const marketResult = await client.query(
-      'SELECT * FROM markets WHERE id = $1 AND status = $2',
-      [market_id, 'active']
+      'SELECT * FROM markets WHERE id = $1 AND resolved = false',
+      [market_id]
     );
 
     if (marketResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Market not found or not active' });
+      return res.status(404).json({ error: 'Market not found or already resolved' });
     }
 
     const market = marketResult.rows[0];
@@ -567,10 +571,10 @@ app.post('/api/markets/:id/resolve', authenticateToken, async (req, res) => {
     // Normalize outcome to lowercase for binary markets
     const normalizedOutcome = market.market_type === 'binary' ? outcome.toLowerCase() : outcome;
 
-    // Update market status
+    // Update market as resolved (use 'resolved' boolean and 'outcome' column)
     await client.query(
-      'UPDATE markets SET status = $1, winning_outcome = $2 WHERE id = $3',
-      ['resolved', normalizedOutcome, marketId]
+      'UPDATE markets SET resolved = true, outcome = $1, resolved_by = $2, resolved_at = NOW() WHERE id = $3',
+      [normalizedOutcome, req.user.id, marketId]
     );
 
     // Get all bets for this market
