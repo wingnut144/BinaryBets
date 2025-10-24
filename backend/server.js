@@ -523,10 +523,7 @@ app.get('/api/leaderboard', async (req, res) => {
         u.id,
         u.username,
         u.balance,
-        COUNT(DISTINCT b.id) as total_bets,
-        COALESCE(SUM(CASE WHEN b.status = 'won' THEN b.potential_payout - b.amount ELSE 0 END), 0) as total_winnings,
-        COALESCE(SUM(CASE WHEN b.status = 'won' THEN 1 ELSE 0 END), 0) as wins,
-        COALESCE(SUM(CASE WHEN b.status = 'lost' THEN 1 ELSE 0 END), 0) as losses
+        COUNT(DISTINCT b.id) as total_bets
       FROM users u
       LEFT JOIN bets b ON u.id = b.user_id
       GROUP BY u.id, u.username, u.balance
