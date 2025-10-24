@@ -39,7 +39,7 @@ const authenticateToken = (req, res, next) => {
 
   if (!token) return res.status(401).json({ error: 'No token provided' });
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jsonwebtoken.verify(token, JWT_SECRET, (err, user) => {
     if (err) return res.status(403).json({ error: 'Invalid token' });
     req.user = user;
     next();
@@ -176,7 +176,7 @@ app.post('/api/register', async (req, res) => {
     );
 
     const user = result.rows[0];
-    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jsonwebtoken.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
 
     res.status(201).json({ token, user });
   } catch (error) {
@@ -209,7 +209,7 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jsonwebtoken.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
 
     res.json({
       token,
