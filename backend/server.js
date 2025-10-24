@@ -203,45 +203,47 @@ app.post('/api/register', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
-    }
-
-    // Find user
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-
+    const { username, password } = req.body;
+    
+    // ✅ SELECT is_admin field
+    const result = await pool.query(
+      'SELECT id, username, email, password_hash, balance, is_admin FROM users WHERE username = $1',
+      [username]
+    );
+    
     if (result.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-
+    
     const user = result.rows[0];
-
-    // Verify password (use password_hash column)
     const validPassword = await bcrypt.compare(password, user.password_hash);
-
+    
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-
-    const token = jsonwebtoken.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
-
+    
+    const token = jsonwebtoken.sign(
+      { userId: user.id, username: user.username },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    
+    // ✅ Return is_admin field
     res.json({
       token,
       user: {
         id: user.id,
         username: user.username,
         email: user.email,
-        balance: user.balance
+        balance: parseFloat(user.balance),
+        is_admin: user.is_admin || false  // ← ADD THIS LINE
       }
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ error: 'Failed to login' });
+    res.status(500).json({ error: 'Login failed' });
   }
 });
-
 // ============================================
 // CATEGORY ENDPOINTS
 // ============================================
@@ -396,108 +398,54 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
 // BETTING ENDPOINT WITH DYNAMIC ODDS
 // ============================================
 app.post('/api/bets', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
+  const userId = req.user.userId;
+  const { market_id, position, amount, odds, potential_payout } = req.body;
+  
+  console.log('Placing bet:', { userId, market_id, position, amount, odds, potential_payout });
   
   try {
-    await client.query('BEGIN');
+    await pool.query('BEGIN');
     
-    const { market_id, position, amount } = req.body;
-    const user_id = req.user.id;
-
-    if (!market_id || !position || !amount || amount <= 0) {
-      return res.status(400).json({ error: 'Invalid bet parameters' });
-    }
-
-    // Get market info (check 'resolved' instead of 'status')
-    const marketResult = await client.query(
-      'SELECT * FROM markets WHERE id = $1 AND resolved = false',
-      [market_id]
-    );
-
-    if (marketResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Market not found or already resolved' });
-    }
-
-    const market = marketResult.rows[0];
-
     // Check user balance
-    const userResult = await client.query(
+    const userResult = await pool.query(
       'SELECT balance FROM users WHERE id = $1',
-      [user_id]
+      [userId]
     );
-
-    const userBalance = parseFloat(userResult.rows[0].balance);
-
-    if (userBalance < amount) {
+    
+    if (!userResult.rows[0] || userResult.rows[0].balance < amount) {
+      await pool.query('ROLLBACK');
       return res.status(400).json({ error: 'Insufficient balance' });
     }
-
-    // Get current bet volumes (stored in yes_odds/no_odds as volumes)
-    let yesVolume = parseFloat(market.yes_odds) || 0;
-    let noVolume = parseFloat(market.no_odds) || 0;
     
-    // Calculate total pool
-    const totalVolume = yesVolume + noVolume;
-    
-    // Calculate CURRENT odds before this bet
-    let currentYesOdds = totalVolume > 0 ? totalVolume / yesVolume : 2.0;
-    let currentNoOdds = totalVolume > 0 ? totalVolume / noVolume : 2.0;
-    
-    // This bet locks in at CURRENT odds
-    const lockedOdds = position.toLowerCase() === 'yes' ? currentYesOdds : currentNoOdds;
-    const potentialPayout = amount * lockedOdds;
-
-    // Create the bet with locked odds
-    const betResult = await client.query(
-      `INSERT INTO bets (user_id, market_id, position, amount, odds, potential_payout, status) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7) 
-       RETURNING *`,
-      [user_id, market_id, position.toLowerCase(), amount, lockedOdds, potentialPayout, 'pending']
+    // ✅ Insert with all required columns
+    const betResult = await pool.query(
+      `INSERT INTO bets (
+        user_id, market_id, position, amount, 
+        odds, potential_payout, status, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) 
+      RETURNING *`,
+      [userId, market_id, position, amount, odds || 2.0, potential_payout || (amount * 2), 'pending']
     );
-
-    // Update user balance
-    await client.query(
+    
+    // Deduct balance
+    await pool.query(
       'UPDATE users SET balance = balance - $1 WHERE id = $2',
-      [amount, user_id]
+      [amount, userId]
     );
-
-    // NOW update the volumes for NEXT bettor
-    if (position.toLowerCase() === 'yes') {
-      yesVolume += amount;
-    } else {
-      noVolume += amount;
-    }
-
-    // Store updated volumes back to database (we use yes_odds/no_odds columns as volume storage)
-    await client.query(
-      'UPDATE markets SET yes_odds = $1, no_odds = $2 WHERE id = $3',
-      [yesVolume, noVolume, market_id]
-    );
-
-    // Calculate NEW odds for display (for next bettor)
-    const newTotalVolume = yesVolume + noVolume;
-    const newYesOdds = newTotalVolume / yesVolume;
-    const newNoOdds = newTotalVolume / noVolume;
-
-    await client.query('COMMIT');
-
-    res.status(201).json({
-      bet: betResult.rows[0],
-      newOdds: {
-        yes: newYesOdds.toFixed(2),
-        no: newNoOdds.toFixed(2)
-      }
-    });
-
+    
+    await pool.query('COMMIT');
+    
+    res.json({ success: true, bet: betResult.rows[0] });
+    
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error placing bet:', error);
-    res.status(500).json({ error: 'Failed to place bet' });
-  } finally {
-    client.release();
+    await pool.query('ROLLBACK');
+    console.error('Bet error:', error);
+    res.status(500).json({ 
+      error: 'Failed to place bet', 
+      details: error.message 
+    });
   }
 });
-
 // Get user's bets
 app.get('/api/bets', authenticateToken, async (req, res) => {
   try {
