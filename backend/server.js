@@ -238,8 +238,8 @@ app.get('/api/markets', async (req, res) => {
           ELSE 'active'
         END as status,
         m.outcome as winning_outcome,
-        COALESCE(m.yes_odds, 0) as yes_shares,
-        COALESCE(m.no_odds, 0) as no_shares,
+        COALESCE(m.yes_odds, 50) as yes_shares,
+        COALESCE(m.no_odds, 50) as no_shares,
         c.name as category_name,
         c.color as category_color,
         s.name as subcategory_name,
@@ -248,9 +248,9 @@ app.get('/api/markets', async (req, res) => {
             json_build_object(
               'id', mo.id,
               'text', mo.option_text,
-              'yes_shares', COALESCE(mo.yes_shares, 0),
-              'no_shares', COALESCE(mo.no_shares, 0)
-            ) ORDER BY mo.id
+              'odds', COALESCE(mo.odds, 50),
+              'option_order', mo.option_order
+            ) ORDER BY mo.option_order
           ) FILTER (WHERE mo.id IS NOT NULL),
           '[]'
         ) as options
@@ -309,8 +309,8 @@ app.get('/api/markets/:id', async (req, res) => {
           ELSE 'active'
         END as status,
         m.outcome as winning_outcome,
-        COALESCE(m.yes_odds, 0) as yes_shares,
-        COALESCE(m.no_odds, 0) as no_shares,
+        COALESCE(m.yes_odds, 50) as yes_shares,
+        COALESCE(m.no_odds, 50) as no_shares,
         c.name as category_name,
         c.color as category_color,
         s.name as subcategory_name,
@@ -319,9 +319,9 @@ app.get('/api/markets/:id', async (req, res) => {
             json_build_object(
               'id', mo.id,
               'text', mo.option_text,
-              'yes_shares', COALESCE(mo.yes_shares, 0),
-              'no_shares', COALESCE(mo.no_shares, 0)
-            ) ORDER BY mo.id
+              'odds', COALESCE(mo.odds, 50),
+              'option_order', mo.option_order
+            ) ORDER BY mo.option_order
           ) FILTER (WHERE mo.id IS NOT NULL),
           '[]'
         ) as options
@@ -362,10 +362,8 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Convert type to market_type format
     const market_type = type === 'multiple' ? 'multi-choice' : 'binary';
 
-    // Insert market
     const marketResult = await pool.query(
       `INSERT INTO markets 
        (question, description, category_id, subcategory_id, deadline, market_type, created_by, resolved, yes_odds, no_odds) 
@@ -377,12 +375,11 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
 
     const market = marketResult.rows[0];
 
-    // If multiple choice, insert options
     if (type === 'multiple' && options && options.length > 0) {
-      for (const option of options) {
+      for (let i = 0; i < options.length; i++) {
         await pool.query(
-          'INSERT INTO market_options (market_id, option_text) VALUES ($1, $2)',
-          [market.id, option]
+          'INSERT INTO market_options (market_id, option_text, odds, option_order) VALUES ($1, $2, $3, $4)',
+          [market.id, options[i], 50, i + 1]
         );
       }
     }
@@ -408,7 +405,6 @@ app.post('/api/markets/:id/resolve', async (req, res) => {
     console.log(`   Received outcome: "${outcome}"`);
     console.log(`   Resolved by: ${resolvedBy}`);
 
-    // VALIDATION: Check if parameters exist
     if (!outcome) {
       console.error('❌ Missing outcome parameter');
       return res.status(400).json({ error: 'Missing outcome parameter' });
@@ -419,7 +415,6 @@ app.post('/api/markets/:id/resolve', async (req, res) => {
       return res.status(400).json({ error: 'Missing resolvedBy parameter' });
     }
 
-    // Get market
     const marketResult = await pool.query(
       'SELECT * FROM markets WHERE id = $1',
       [id]
@@ -436,11 +431,9 @@ app.post('/api/markets/:id/resolve', async (req, res) => {
       return res.status(400).json({ error: 'Market is already resolved' });
     }
 
-    // FIXED: Safely convert to lowercase
     const normalizedOutcome = String(outcome).toLowerCase();
     console.log(`   Normalized outcome: "${normalizedOutcome}"`);
 
-    // Validate outcome based on market type
     if (market.market_type === 'binary') {
       if (!['yes', 'no'].includes(normalizedOutcome)) {
         console.error(`❌ Invalid binary outcome: "${normalizedOutcome}"`);
@@ -448,12 +441,10 @@ app.post('/api/markets/:id/resolve', async (req, res) => {
       }
     }
 
-    // Start transaction
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
-      // Update market status
       await client.query(
         `UPDATE markets 
          SET resolved = true, 
@@ -464,7 +455,6 @@ app.post('/api/markets/:id/resolve', async (req, res) => {
         [normalizedOutcome, resolvedBy, id]
       );
 
-      // Get all bets for this market
       const betsResult = await client.query(
         'SELECT * FROM bets WHERE market_id = $1 AND status = $2',
         [id, 'active']
@@ -472,18 +462,15 @@ app.post('/api/markets/:id/resolve', async (req, res) => {
 
       console.log(`   Processing ${betsResult.rows.length} bets`);
 
-      // Process each bet
       for (const bet of betsResult.rows) {
         const won = bet.position === normalizedOutcome;
-        const payout = won ? bet.shares * 2 : 0; // Simple 2x payout for winners
+        const payout = won ? bet.shares * 2 : 0;
 
-        // Update bet
         await client.query(
           'UPDATE bets SET status = $1, payout = $2 WHERE id = $3',
           [won ? 'won' : 'lost', payout, bet.id]
         );
 
-        // Update user balance if won
         if (won && payout > 0) {
           await client.query(
             'UPDATE users SET balance = balance + $1 WHERE id = $2',
@@ -581,7 +568,6 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
     try {
       await client.query('BEGIN');
 
-      // Get user balance
       const userResult = await client.query(
         'SELECT balance FROM users WHERE id = $1',
         [userId]
@@ -592,7 +578,6 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
         return res.status(400).json({ error: 'Insufficient balance' });
       }
 
-      // Get market
       const marketResult = await client.query(
         'SELECT * FROM markets WHERE id = $1',
         [market_id]
@@ -610,7 +595,6 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
         return res.status(400).json({ error: 'Market is already resolved' });
       }
 
-      // Create bet
       const betResult = await client.query(
         `INSERT INTO bets (user_id, market_id, position, shares, status) 
          VALUES ($1, $2, $3, $4, 'active') 
@@ -618,13 +602,11 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
         [userId, market_id, position, shares]
       );
 
-      // Update user balance
       await client.query(
         'UPDATE users SET balance = balance - $1 WHERE id = $2',
         [shares, userId]
       );
 
-      // Update market odds (simple approach)
       const column = position === 'yes' ? 'yes_odds' : 'no_odds';
       await client.query(
         `UPDATE markets SET ${column} = COALESCE(${column}, 0) + $1 WHERE id = $2`,
