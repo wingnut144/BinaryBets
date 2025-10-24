@@ -18,7 +18,7 @@ function App() {
   const [view, setView] = useState('markets');
 
   // Auth form state
-  const [authForm, setAuthForm] = useState({ username: '', email: '', password: '' });
+  const [authForm, setAuthForm] = useState({ username: '', email: '', password: '', confirmPassword: '' });
 
   // Market creation form state
   const [marketForm, setMarketForm] = useState({
@@ -123,11 +123,18 @@ function App() {
 
   const handleAuth = async (e) => {
     e.preventDefault();
+    
+    // Check if passwords match on registration
+    if (!isLogin && authForm.password !== authForm.confirmPassword) {
+      alert('Passwords do not match!');
+      return;
+    }
+    
     try {
       const endpoint = isLogin ? '/api/login' : '/api/register';
       const body = isLogin
         ? { email: authForm.email, password: authForm.password }
-        : authForm;
+        : { username: authForm.username, email: authForm.email, password: authForm.password };
 
       const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
@@ -141,7 +148,7 @@ function App() {
         localStorage.setItem('token', data.token);
         setUser(data.user);
         setShowAuth(false);
-        setAuthForm({ username: '', email: '', password: '' });
+        setAuthForm({ username: '', email: '', password: '', confirmPassword: '' });
       } else {
         alert(data.error || 'Authentication failed');
       }
@@ -547,12 +554,33 @@ function App() {
                 onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
                 required
               />
-              <button type="submit" className="btn-primary">
-                {isLogin ? 'Login' : 'Sign Up'}
+              {!isLogin && (
+                <>
+                  <input
+                    type="password"
+                    placeholder="Confirm Password"
+                    value={authForm.confirmPassword}
+                    onChange={(e) => setAuthForm({ ...authForm, confirmPassword: e.target.value })}
+                    required
+                    style={{
+                      borderColor: authForm.confirmPassword && authForm.password !== authForm.confirmPassword ? '#EF4444' : ''
+                    }}
+                  />
+                  {authForm.confirmPassword && authForm.password !== authForm.confirmPassword && (
+                    <span style={{ color: '#EF4444', fontSize: '12px', marginTop: '-10px' }}>
+                      Passwords do not match
+                    </span>
+                  )}
+                </>
+              )}
+              <button type="submit" className="btn-primary">{isLogin ? 'Login' : 'Sign Up'}
               </button>
               <button
                 type="button"
-                onClick={() => setIsLogin(!isLogin)}
+                onClick={() => {
+                  setIsLogin(!isLogin);
+                  setAuthForm({ username: '', email: '', password: '', confirmPassword: '' });
+                }}
                 className="btn-link"
               >
                 {isLogin ? 'Need an account? Sign up' : 'Have an account? Login'}
