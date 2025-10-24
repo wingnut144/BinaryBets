@@ -1,267 +1,206 @@
 import fetch from 'node-fetch';
-import pg from 'pg';
 
-// Retry helper function
-async function fetchWithRetry(url, options, maxRetries = 3, delay = 5000) {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      const response = await fetch(url, options);
-      return response;
-    } catch (error) {
-      if (i === maxRetries - 1) throw error;
-      console.log(`   ⚠️  Request failed, retrying in ${delay/1000}s... (attempt ${i + 1}/${maxRetries})`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
+const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:5000';
+const RESOLVER_INTERVAL = parseInt(process.env.RESOLVER_INTERVAL) || 60000; // 1 minute default
+
+console.log('🤖 Market Resolver Starting...');
+console.log(`📡 Backend URL: ${BACKEND_URL}`);
+console.log(`⏱️  Check Interval: ${RESOLVER_INTERVAL}ms`);
+
+// Helper function to check if market should be resolved
+function shouldResolveMarket(market) {
+  const now = new Date();
+  const closeDate = new Date(market.close_date);
+  
+  // Market must be closed and not already resolved
+  if (market.status !== 'active' || closeDate > now) {
+    return false;
   }
+  
+  console.log(`✅ Market ${market.id} is ready to resolve`);
+  return true;
 }
 
-// Wait for backend to be ready
-async function waitForBackend(url, maxRetries = 30, delay = 2000) {
-  console.log('Waiting for backend to be ready...');
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) {
-        console.log('Backend is ready!');
-        return true;
+// Helper function to determine winning outcome
+async function determineWinningOutcome(market) {
+  console.log(`🔍 Determining outcome for market ${market.id}: "${market.question}"`);
+  
+  try {
+    // For binary markets, use AI to determine yes/no
+    if (market.type === 'binary') {
+      console.log('📊 Binary market - using AI to determine Yes/No');
+      const outcome = await callOpenAI(market);
+      return outcome;
+    }
+    
+    // For multiple choice, find option with most volume
+    if (market.type === 'multiple' && market.options) {
+      console.log('📊 Multiple choice market - finding highest volume option');
+      const options = JSON.parse(market.options);
+      
+      // Get current volumes for all options
+      const response = await fetch(`${BACKEND_URL}/api/markets/${market.id}`);
+      const marketData = await response.json();
+      
+      if (!marketData.options || marketData.options.length === 0) {
+        throw new Error('No options found for multiple choice market');
       }
-    } catch (error) {
-      // Backend not ready yet
+      
+      // Find option with highest total volume
+      const winningOption = marketData.options.reduce((prev, current) => {
+        const prevVolume = prev.yes_shares + prev.no_shares;
+        const currentVolume = current.yes_shares + current.no_shares;
+        return currentVolume > prevVolume ? current : prev;
+      });
+      
+      console.log(`🏆 Winning option: "${winningOption.text}" with volume ${winningOption.yes_shares + winningOption.no_shares}`);
+      return winningOption.text;
     }
-    await new Promise(resolve => setTimeout(resolve, delay));
+    
+    throw new Error('Unknown market type');
+  } catch (error) {
+    console.error(`❌ Error determining outcome:`, error.message);
+    throw error;
   }
-  throw new Error('Backend failed to become ready');
 }
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:3001';
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
-if (!OPENAI_API_KEY) {
-  console.error('❌ OPENAI_API_KEY environment variable is required');
-  process.exit(1);
-}
-
-// Database connection
-const pool = new pg.Pool({
-  host: process.env.POSTGRES_HOST || 'postgres',
-  port: process.env.POSTGRES_PORT || 5432,
-  database: process.env.POSTGRES_DB || 'binarybets',
-  user: process.env.POSTGRES_USER || 'binaryuser',
-  password: process.env.POSTGRES_PASSWORD || 'binarypassword',
-});
-
-async function getExpiredMarkets() {
-  const result = await pool.query(
-    `SELECT m.*, 
-            COALESCE(
-              json_agg(
-                json_build_object('id', mo.id, 'name', mo.name)
-                ORDER BY mo.id
-              ) FILTER (WHERE mo.id IS NOT NULL),
-              '[]'
-            ) as options
-     FROM markets m
-     LEFT JOIN market_options mo ON m.id = mo.market_id
-     WHERE m.deadline < NOW() AND m.resolved = false
-     GROUP BY m.id
-     ORDER BY m.deadline ASC`
-  );
-  return result.rows;
-}
-
-async function determineOutcome(market) {
-  console.log(`📡 Asking OpenAI to determine outcome...`);
-  
-  let prompt;
-  if (market.type === 'binary') {
-    prompt = `You are analyzing a prediction market question to determine the outcome.
-
-Question: "${market.question}"
-Type: Binary (Yes/No)
-Deadline: ${market.deadline}
-Current Date: ${new Date().toISOString()}
-
-Based on factual information available, determine if the answer is "Yes" or "No".
-
-Respond in JSON format:
-{
-  "answer": "Yes" or "No",
-  "reasoning": "Brief explanation",
-  "confidence": "high" or "medium" or "low"
-}`;
-  } else {
-    const optionsList = market.options.map(opt => `- ${opt.name}`).join('\n');
-    prompt = `You are analyzing a prediction market question to determine the outcome.
-
-Question: "${market.question}"
-Type: Multiple Choice
-Options:
-${optionsList}
-Deadline: ${market.deadline}
-Current Date: ${new Date().toISOString()}
-
-Based on factual information available, determine which option is correct.
-
-Respond in JSON format:
-{
-  "answer": "Exact name of the winning option",
-  "reasoning": "Brief explanation",
-  "confidence": "high" or "medium" or "low"
-}`;
-  }
-
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${OPENAI_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: 'gpt-4',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a factual analyst that determines outcomes of prediction market questions based on real-world events and data. Always respond with valid JSON.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.1,
-      max_tokens: 500
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`OpenAI API error: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices[0].message.content;
-  
-  // Try to extract JSON from markdown code blocks if present
-  let jsonStr = content;
-  const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-  if (jsonMatch) {
-    jsonStr = jsonMatch[1];
-  }
-  
-  console.log(`   Raw OpenAI response: ${jsonStr.substring(0, 100)}...`);
-  
-  const aiResponse = JSON.parse(jsonStr);
-  return aiResponse;
-}
-
-async function resolveMarket(market, outcome) {
-  // Convert outcome to lowercase for binary markets
-  const normalizedOutcome = market.type === 'binary' 
-    ? outcome.toLowerCase() 
-    : outcome;
-
-  console.log(`🔧 Resolving market with outcome: "${normalizedOutcome}"`);
-
-  const response = await fetchWithRetry(
-    `${BACKEND_URL}/api/markets/${market.id}/resolve`,
-    {
+// Call OpenAI to determine yes/no outcome
+async function callOpenAI(market) {
+  try {
+    console.log('🤖 Calling OpenAI for market resolution...');
+    
+    const response = await fetch(`${BACKEND_URL}/api/resolve-with-ai`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        outcome: normalizedOutcome,
-        resolvedBy: 1  // Admin user ID
+        marketId: market.id,
+        question: market.question,
+        description: market.description,
+        category: market.category
       })
-    }
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`   ❌ Backend error response:`, errorText);
-    throw new Error(`Failed to resolve market: ${response.status} - ${errorText}`);
-  }
-
-  return await response.json();
-}
-
-async function resolveExpiredMarkets() {
-  try {
-    console.log(`🤖 [${new Date().toISOString()}] Starting market resolution check...`);
+    });
     
-    const markets = await getExpiredMarkets();
-    
-    if (markets.length === 0) {
-      console.log('✅ No expired markets to resolve');
-      return;
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenAI API call failed: ${response.status} - ${errorText}`);
     }
-
-    console.log(`📋 Found ${markets.length} expired market(s) to resolve`);
-
-    for (const market of markets) {
-      try {
-        console.log(`🔍 Resolving: "${market.question}"`);
-        console.log(`   Type: ${market.type}`);
-        console.log(`   Deadline: ${market.deadline}`);
-
-        const aiResponse = await determineOutcome(market);
-        
-        console.log(`✅ AI Determined Outcome: ${aiResponse.answer}`);
-        console.log(`   Reasoning: ${aiResponse.reasoning}`);
-        console.log(`   Confidence: ${aiResponse.confidence}`);
-
-        await resolveMarket(market, aiResponse.answer);
-        
-        console.log(`✅ Market resolved successfully!`);
-        
-      } catch (error) {
-        console.error(`❌ Failed to resolve market: ${error.message}`);
-        // Continue with next market
-      }
-    }
-
-    console.log('✅ Market resolution check complete');
     
+    const data = await response.json();
+    console.log(`🤖 OpenAI determined outcome: "${data.outcome}"`);
+    console.log(`📝 Reasoning: ${data.reasoning}`);
+    
+    return data.outcome; // Will be "yes" or "no"
   } catch (error) {
-    console.error('❌ Error in market resolver:', error);
+    console.error('❌ OpenAI call failed:', error.message);
     throw error;
   }
 }
 
-async function main() {
+// Resolve a specific market
+async function resolveMarket(market, outcome) {
   try {
-    // Wait for backend to be ready
-    await waitForBackend(`${BACKEND_URL}/api/health`);
+    console.log(`\n🎯 Resolving Market ${market.id}`);
+    console.log(`   Question: "${market.question}"`);
+    console.log(`   Type: ${market.type}`);
+    console.log(`   Original Outcome: "${outcome}"`);
     
-    console.log('Starting market resolver service...');
+    // CRITICAL FIX: Convert outcome to lowercase for binary markets
+    const normalizedOutcome = market.type === 'binary' 
+      ? outcome.toLowerCase()  // "Yes" → "yes", "No" → "no"
+      : outcome;
     
-    // Run immediately on startup
-    await resolveExpiredMarkets();
+    console.log(`   Normalized Outcome: "${normalizedOutcome}"`);
     
-    // Then run every 24 hours
-    console.log('Sleeping for 24 hours...');
-    setInterval(async () => {
-      await resolveExpiredMarkets();
-    }, 24 * 60 * 60 * 1000);
-
-    console.log('✅ Resolver completed successfully');
+    const response = await fetch(`${BACKEND_URL}/api/markets/${market.id}/resolve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        outcome: normalizedOutcome,  // ✅ Correct parameter name (lowercase for binary)
+        resolvedBy: 1  // ✅ Admin user ID
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Failed to resolve market: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
+    
+    const result = await response.json();
+    console.log(`✅ Market ${market.id} resolved successfully!`);
+    console.log(`   Outcome: "${normalizedOutcome}"`);
+    return result;
     
   } catch (error) {
-    console.error('❌ Fatal error:', error);
-    process.exit(1);
+    console.error(`❌ Error resolving market ${market.id}:`, error.message);
+    throw error;
   }
 }
 
+// Main resolver loop
+async function resolveMarkets() {
+  try {
+    console.log('\n🔄 Checking for markets to resolve...');
+    
+    // Fetch all active markets
+    const response = await fetch(`${BACKEND_URL}/api/markets`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch markets: ${response.status}`);
+    }
+    
+    const markets = await response.json();
+    console.log(`📋 Found ${markets.length} total markets`);
+    
+    // Filter markets that need resolution
+    const marketsToResolve = markets.filter(shouldResolveMarket);
+    
+    if (marketsToResolve.length === 0) {
+      console.log('✨ No markets need resolution at this time');
+      return;
+    }
+    
+    console.log(`⚡ ${marketsToResolve.length} markets need resolution`);
+    
+    // Resolve each market
+    for (const market of marketsToResolve) {
+      try {
+        const outcome = await determineWinningOutcome(market);
+        await resolveMarket(market, outcome);
+        
+        // Wait a bit between resolutions to avoid overwhelming the backend
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } catch (error) {
+        console.error(`❌ Failed to resolve market ${market.id}:`, error.message);
+        // Continue with next market
+      }
+    }
+    
+    console.log('✅ Resolution cycle complete');
+    
+  } catch (error) {
+    console.error('❌ Error in resolver loop:', error.message);
+  }
+}
+
+// Start the resolver
+console.log('🚀 Starting market resolver service...\n');
+
+// Run immediately on start
+resolveMarkets();
+
+// Then run on interval
+setInterval(resolveMarkets, RESOLVER_INTERVAL);
+
 // Handle graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('Received SIGTERM, shutting down gracefully...');
-  pool.end();
+  console.log('📴 Resolver shutting down...');
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
-  console.log('Received SIGINT, shutting down gracefully...');
-  pool.end();
+  console.log('📴 Resolver shutting down...');
   process.exit(0);
 });
-
-main();
