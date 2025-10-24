@@ -509,7 +509,7 @@ function App() {
                   <span className="username">{player.username}</span>
                   <span className="balance">${parseFloat(player.balance).toFixed(2)}</span>
                   <span className="stats">
-                    {player.total_bets} bets · {player.wins}W-{player.losses}L
+                    {player.total_bets} bets
                   </span>
                 </div>
               ))}
