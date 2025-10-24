@@ -72,12 +72,10 @@ app.post('/api/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
-    // Validation
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    // Check if user already exists
     const existingUser = await pool.query(
       'SELECT * FROM users WHERE username = $1 OR email = $2',
       [username, email]
@@ -87,10 +85,8 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).json({ error: 'Username or email already exists' });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Insert user
     const result = await pool.query(
       'INSERT INTO users (username, email, password, balance) VALUES ($1, $2, $3, $4) RETURNING id, username, email, balance',
       [username, email, hashedPassword, 1000]
@@ -98,7 +94,6 @@ app.post('/api/register', async (req, res) => {
 
     const user = result.rows[0];
 
-    // Generate token
     const token = jwt.sign(
       { id: user.id, username: user.username },
       JWT_SECRET,
@@ -129,7 +124,6 @@ app.post('/api/login', async (req, res) => {
       return res.status(400).json({ error: 'Username and password required' });
     }
 
-    // Find user
     const result = await pool.query(
       'SELECT * FROM users WHERE username = $1',
       [username]
@@ -141,13 +135,11 @@ app.post('/api/login', async (req, res) => {
 
     const user = result.rows[0];
 
-    // Check password
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Generate token
     const token = jwt.sign(
       { id: user.id, username: user.username },
       JWT_SECRET,
@@ -239,6 +231,15 @@ app.get('/api/markets', async (req, res) => {
     let query = `
       SELECT 
         m.*,
+        m.market_type as type,
+        m.deadline as close_date,
+        CASE 
+          WHEN m.resolved = true THEN 'resolved'
+          ELSE 'active'
+        END as status,
+        m.outcome as winning_outcome,
+        COALESCE(m.yes_odds, 0) as yes_shares,
+        COALESCE(m.no_odds, 0) as no_shares,
         c.name as category_name,
         c.color as category_color,
         s.name as subcategory_name,
@@ -247,8 +248,8 @@ app.get('/api/markets', async (req, res) => {
             json_build_object(
               'id', mo.id,
               'text', mo.option_text,
-              'yes_shares', mo.yes_shares,
-              'no_shares', mo.no_shares
+              'yes_shares', COALESCE(mo.yes_shares, 0),
+              'no_shares', COALESCE(mo.no_shares, 0)
             ) ORDER BY mo.id
           ) FILTER (WHERE mo.id IS NOT NULL),
           '[]'
@@ -276,9 +277,11 @@ app.get('/api/markets', async (req, res) => {
     }
     
     if (status) {
-      query += ` AND m.status = $${paramCount}`;
-      params.push(status);
-      paramCount++;
+      if (status === 'resolved') {
+        query += ` AND m.resolved = true`;
+      } else if (status === 'active') {
+        query += ` AND m.resolved = false`;
+      }
     }
     
     query += ' GROUP BY m.id, c.name, c.color, s.name ORDER BY m.created_at DESC';
@@ -299,6 +302,15 @@ app.get('/api/markets/:id', async (req, res) => {
     const result = await pool.query(
       `SELECT 
         m.*,
+        m.market_type as type,
+        m.deadline as close_date,
+        CASE 
+          WHEN m.resolved = true THEN 'resolved'
+          ELSE 'active'
+        END as status,
+        m.outcome as winning_outcome,
+        COALESCE(m.yes_odds, 0) as yes_shares,
+        COALESCE(m.no_odds, 0) as no_shares,
         c.name as category_name,
         c.color as category_color,
         s.name as subcategory_name,
@@ -307,8 +319,8 @@ app.get('/api/markets/:id', async (req, res) => {
             json_build_object(
               'id', mo.id,
               'text', mo.option_text,
-              'yes_shares', mo.yes_shares,
-              'no_shares', mo.no_shares
+              'yes_shares', COALESCE(mo.yes_shares, 0),
+              'no_shares', COALESCE(mo.no_shares, 0)
             ) ORDER BY mo.id
           ) FILTER (WHERE mo.id IS NOT NULL),
           '[]'
@@ -350,13 +362,17 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    // Convert type to market_type format
+    const market_type = type === 'multiple' ? 'multi-choice' : 'binary';
+
     // Insert market
     const marketResult = await pool.query(
       `INSERT INTO markets 
-       (question, description, category_id, subcategory_id, close_date, type, created_by, status) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'active') 
+       (question, description, category_id, subcategory_id, deadline, market_type, created_by, resolved, yes_odds, no_odds) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, $9) 
        RETURNING *`,
-      [question, description, category_id, subcategory_id, close_date, type, req.user.id]
+      [question, description, category_id, subcategory_id, close_date, market_type, req.user.id, 
+       market_type === 'binary' ? 50 : null, market_type === 'binary' ? 50 : null]
     );
 
     const market = marketResult.rows[0];
@@ -414,10 +430,10 @@ app.post('/api/markets/:id/resolve', async (req, res) => {
     }
 
     const market = marketResult.rows[0];
-    console.log(`   Market type: ${market.type}`);
+    console.log(`   Market type: ${market.market_type}`);
 
-    if (market.status !== 'active') {
-      return res.status(400).json({ error: 'Market is not active' });
+    if (market.resolved === true) {
+      return res.status(400).json({ error: 'Market is already resolved' });
     }
 
     // FIXED: Safely convert to lowercase
@@ -425,7 +441,7 @@ app.post('/api/markets/:id/resolve', async (req, res) => {
     console.log(`   Normalized outcome: "${normalizedOutcome}"`);
 
     // Validate outcome based on market type
-    if (market.type === 'binary') {
+    if (market.market_type === 'binary') {
       if (!['yes', 'no'].includes(normalizedOutcome)) {
         console.error(`❌ Invalid binary outcome: "${normalizedOutcome}"`);
         return res.status(400).json({ error: 'Invalid outcome for binary market. Must be "yes" or "no"' });
@@ -440,8 +456,8 @@ app.post('/api/markets/:id/resolve', async (req, res) => {
       // Update market status
       await client.query(
         `UPDATE markets 
-         SET status = 'resolved', 
-             winning_outcome = $1, 
+         SET resolved = true, 
+             outcome = $1, 
              resolved_at = NOW(),
              resolved_by = $2
          WHERE id = $3`,
@@ -459,7 +475,7 @@ app.post('/api/markets/:id/resolve', async (req, res) => {
       // Process each bet
       for (const bet of betsResult.rows) {
         const won = bet.position === normalizedOutcome;
-        const payout = won ? bet.shares : 0;
+        const payout = won ? bet.shares * 2 : 0; // Simple 2x payout for winners
 
         // Update bet
         await client.query(
@@ -589,9 +605,9 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
 
       const market = marketResult.rows[0];
 
-      if (market.status !== 'active') {
+      if (market.resolved === true) {
         await client.query('ROLLBACK');
-        return res.status(400).json({ error: 'Market is not active' });
+        return res.status(400).json({ error: 'Market is already resolved' });
       }
 
       // Create bet
@@ -608,10 +624,10 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
         [shares, userId]
       );
 
-      // Update market shares
-      const column = position === 'yes' ? 'yes_shares' : 'no_shares';
+      // Update market odds (simple approach)
+      const column = position === 'yes' ? 'yes_odds' : 'no_odds';
       await client.query(
-        `UPDATE markets SET ${column} = ${column} + $1 WHERE id = $2`,
+        `UPDATE markets SET ${column} = COALESCE(${column}, 0) + $1 WHERE id = $2`,
         [shares, market_id]
       );
 
@@ -638,9 +654,9 @@ app.get('/api/bets/user', authenticateToken, async (req, res) => {
       `SELECT 
         b.*,
         m.question,
-        m.status as market_status,
-        m.type,
-        m.winning_outcome,
+        m.resolved as market_resolved,
+        m.market_type as type,
+        m.outcome as winning_outcome,
         c.name as category_name
       FROM bets b
       JOIN markets m ON b.market_id = m.id
