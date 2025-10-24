@@ -2,7 +2,7 @@ import express from 'express';
 import pg from 'pg';
 import cors from 'cors';
 import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
+import jsonwebtoken from 'jsonwebtoken';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
 
