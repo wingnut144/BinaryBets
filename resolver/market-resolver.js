@@ -10,10 +10,10 @@ console.log(`⏱️  Check Interval: ${RESOLVER_INTERVAL}ms`);
 // Helper function to check if market should be resolved
 function shouldResolveMarket(market) {
   const now = new Date();
-  const closeDate = new Date(market.close_date);
+  const closeDate = new Date(market.deadline);
   
   // Market must be closed and not already resolved
-  if (market.status !== 'active' || closeDate > now) {
+  if (market.resolved === true || closeDate > now) {
     return false;
   }
   
@@ -27,16 +27,15 @@ async function determineWinningOutcome(market) {
   
   try {
     // For binary markets, use AI to determine yes/no
-    if (market.type === 'binary') {
+    if (market.market_type === 'binary') {
       console.log('📊 Binary market - using AI to determine Yes/No');
       const outcome = await callOpenAI(market);
       return outcome;
     }
     
     // For multiple choice, find option with most volume
-    if (market.type === 'multiple' && market.options) {
+    if (market.market_type === 'multi-choice') {
       console.log('📊 Multiple choice market - finding highest volume option');
-      const options = JSON.parse(market.options);
       
       // Get current volumes for all options
       const response = await fetch(`${BACKEND_URL}/api/markets/${market.id}`);
@@ -78,7 +77,7 @@ async function callOpenAI(market) {
         marketId: market.id,
         question: market.question,
         description: market.description,
-        category: market.category
+        category: market.category_name
       })
     });
     
@@ -103,11 +102,11 @@ async function resolveMarket(market, outcome) {
   try {
     console.log(`\n🎯 Resolving Market ${market.id}`);
     console.log(`   Question: "${market.question}"`);
-    console.log(`   Type: ${market.type}`);
+    console.log(`   Type: ${market.market_type}`);
     console.log(`   Original Outcome: "${outcome}"`);
     
     // CRITICAL FIX: Convert outcome to lowercase for binary markets
-    const normalizedOutcome = market.type === 'binary' 
+    const normalizedOutcome = market.market_type === 'binary' 
       ? outcome.toLowerCase()  // "Yes" → "yes", "No" → "no"
       : outcome;
     
