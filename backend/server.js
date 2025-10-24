@@ -169,10 +169,10 @@ app.post('/api/register', async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user
+    // Create user (use password_hash column and add full_name)
     const result = await pool.query(
-      'INSERT INTO users (username, email, password, balance) VALUES ($1, $2, $3, $4) RETURNING id, username, email, balance',
-      [username, email, hashedPassword, 1000]
+      'INSERT INTO users (username, email, password_hash, full_name, balance) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email, balance',
+      [username, email, hashedPassword, username, 1000] // Use username as full_name default
     );
 
     const user = result.rows[0];
@@ -202,8 +202,8 @@ app.post('/api/login', async (req, res) => {
 
     const user = result.rows[0];
 
-    // Verify password
-    const validPassword = await bcrypt.compare(password, user.password);
+    // Verify password (use password_hash column)
+    const validPassword = await bcrypt.compare(password, user.password_hash);
 
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
