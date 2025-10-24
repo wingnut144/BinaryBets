@@ -214,22 +214,32 @@ function App() {
 
     try {
       const token = localStorage.getItem('token');
+      
+      // Prepare the request body with AI odds if available
+      const requestBody = {
+        ...marketForm,
+        options: marketForm.market_type === 'multiple' ? marketForm.options.filter(o => o.trim()) : null
+      };
+      
+      // Include AI odds if they were generated
+      if (aiOdds && aiOdds.yes !== undefined) {
+        requestBody.ai_yes_odds = aiOdds.yes;
+        requestBody.ai_no_odds = aiOdds.no;
+      }
+      
       const response = await fetch(`${API_URL}/api/markets`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({
-          ...marketForm,
-          options: marketForm.market_type === 'multiple' ? marketForm.options.filter(o => o.trim()) : null
-        })
+        body: JSON.stringify(requestBody)
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        alert('Market created successfully!');
+        alert('Bet created successfully!');
         setShowCreateMarket(false);
         setMarketForm({
           title: '',
@@ -292,6 +302,64 @@ function App() {
     }
   };
 
+  const handleReportMarket = async (marketId) => {
+    const reason = prompt('Please enter the reason for reporting this bet:');
+    if (!reason || reason.trim() === '') {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/markets/${marketId}/report`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ reason: reason.trim() })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert('Report submitted successfully. An admin will review it.');
+      } else {
+        alert(data.error || 'Failed to submit report');
+      }
+    } catch (error) {
+      console.error('Error reporting market:', error);
+      alert('Failed to submit report');
+    }
+  };
+
+  const handleAdminDelete = async (marketId) => {
+    if (!confirm('Are you sure you want to delete this bet? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/admin/markets/${marketId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert('Bet deleted successfully');
+        fetchMarkets();
+      } else {
+        alert(data.error || 'Failed to delete bet');
+      }
+    } catch (error) {
+      console.error('Error deleting market:', error);
+      alert('Failed to delete bet');
+    }
+  };
+
   const calculateDisplayOdds = (yesVolume, noVolume) => {
     const total = parseFloat(yesVolume) + parseFloat(noVolume);
     if (total === 0) return { yes: '2.00', no: '2.00' };
@@ -329,7 +397,7 @@ function App() {
           className={view === 'markets' ? 'active' : ''} 
           onClick={() => setView('markets')}
         >
-          📊 Markets
+          📊 Bets
         </button>
         <button 
           className={view === 'leaderboard' ? 'active' : ''} 
@@ -345,6 +413,14 @@ function App() {
             📈 My Bets
           </button>
         )}
+        {user && user.is_admin && (
+          <button 
+            className={view === 'admin' ? 'active' : ''} 
+            onClick={() => setView('admin')}
+          >
+            🛡️ Admin
+          </button>
+        )}
       </nav>
 
       {/* Category Navigation */}
@@ -358,7 +434,7 @@ function App() {
                 setSelectedSubcategory(null);
               }}
             >
-              All Markets
+              All Bets
             </button>
             {categories.map(cat => (
               <button
@@ -413,7 +489,7 @@ function App() {
             </div>
             {user && (
               <button onClick={() => setShowCreateMarket(true)} className="btn-primary">
-                ➕ Create Market
+                ➕ Create Bet
               </button>
             )}
           </div>
@@ -500,6 +576,44 @@ function App() {
                     <span>💰 Total Volume: ${totalVolume.toFixed(2)}</span>
                     <span>📊 {market.bet_count} bets</span>
                   </div>
+
+                  {/* Report and Admin Actions */}
+                  <div className="market-actions" style={{ display: 'flex', gap: '10px', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #eee' }}>
+                    {user && (
+                      <button
+                        onClick={() => handleReportMarket(market.id)}
+                        className="btn-report"
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '12px',
+                          background: '#FEF3C7',
+                          color: '#92400E',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        🚩 Report
+                      </button>
+                    )}
+                    {user && user.is_admin && (
+                      <button
+                        onClick={() => handleAdminDelete(market.id)}
+                        className="btn-admin-delete"
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '12px',
+                          background: '#FEE2E2',
+                          color: '#991B1B',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        🗑️ Delete
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -520,6 +634,39 @@ function App() {
                   </span>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {view === 'admin' && user && user.is_admin && (
+          <div className="admin-container">
+            <h2>🛡️ Admin Panel - Reported Bets</h2>
+            <div className="reports-list">
+              <p style={{ color: '#666', fontStyle: 'italic' }}>
+                Reports feature is ready. Create the database table with:
+                <br />
+                <code style={{ background: '#f5f5f5', padding: '10px', display: 'block', marginTop: '10px', borderRadius: '5px' }}>
+                  CREATE TABLE market_reports (
+                  <br />
+                  &nbsp;&nbsp;id SERIAL PRIMARY KEY,
+                  <br />
+                  &nbsp;&nbsp;market_id INTEGER REFERENCES markets(id) ON DELETE CASCADE,
+                  <br />
+                  &nbsp;&nbsp;reported_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                  <br />
+                  &nbsp;&nbsp;reason TEXT NOT NULL,
+                  <br />
+                  &nbsp;&nbsp;status VARCHAR(20) DEFAULT 'pending',
+                  <br />
+                  &nbsp;&nbsp;created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  <br />
+                  &nbsp;&nbsp;resolved_at TIMESTAMP,
+                  <br />
+                  &nbsp;&nbsp;resolved_by INTEGER REFERENCES users(id)
+                  <br />
+                  );
+                </code>
+              </p>
             </div>
           </div>
         )}
@@ -590,15 +737,15 @@ function App() {
         </div>
       )}
 
-      {/* Create Market Modal */}
+      {/* Create Bet Modal */}
       {showCreateMarket && (
         <div className="modal-overlay" onClick={() => setShowCreateMarket(false)}>
           <div className="modal large" onClick={(e) => e.stopPropagation()}>
-            <h2>Create New Market</h2>
+            <h2>Create New Bet</h2>
             <form onSubmit={handleCreateMarket}>
               <input
                 type="text"
-                placeholder="Market Question"
+                placeholder="Bet Question"
                 value={marketForm.title}
                 onChange={(e) => setMarketForm({ ...marketForm, title: e.target.value })}
                 required
@@ -651,7 +798,7 @@ function App() {
                     checked={marketForm.market_type === 'binary'}
                     onChange={(e) => setMarketForm({ ...marketForm, market_type: e.target.value })}
                   />
-                  Yes/No Market
+                  Yes/No Bet
                 </label>
                 <label>
                   <input
@@ -660,7 +807,7 @@ function App() {
                     checked={marketForm.market_type === 'multiple'}
                     onChange={(e) => setMarketForm({ ...marketForm, market_type: e.target.value })}
                   />
-                  Multiple Choice
+                  Multiple Choice Bet
                 </label>
               </div>
 
@@ -731,7 +878,7 @@ function App() {
               </div>
 
               <div className="modal-actions">
-                <button type="submit" className="btn-primary">Create Market</button>
+                <button type="submit" className="btn-primary">Create Bet</button>
                 <button
                   type="button"
                   onClick={() => {
