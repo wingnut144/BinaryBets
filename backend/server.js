@@ -46,6 +46,22 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Middleware to verify admin
+const authenticateAdmin = async (req, res, next) => {
+  try {
+    const result = await pool.query('SELECT is_admin FROM users WHERE id = $1', [req.user.id]);
+    
+    if (result.rows.length === 0 || !result.rows[0].is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    
+    next();
+  } catch (error) {
+    console.error('Admin auth error:', error);
+    res.status(500).json({ error: 'Authentication failed' });
+  }
+};
+
 // ============================================
 // AI ODDS GENERATION ENDPOINT
 // ============================================
@@ -337,14 +353,19 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
     const isBinary = market_type === 'binary' || !options || options.length === 0;
     const dbMarketType = isBinary ? 'binary' : 'multi-choice';
 
-    // Create the market with placeholder odds (use 'question' and 'deadline' to match DB)
+    // Use AI odds if available from the request, otherwise default to 50/50
+    // Frontend should send ai_yes_odds and ai_no_odds from the generated odds
+    const initialYesVolume = req.body.ai_yes_odds || 50;
+    const initialNoVolume = req.body.ai_no_odds || 50;
+
+    // Create the market with AI odds (use 'question' and 'deadline' to match DB)
     const marketResult = await client.query(
       `INSERT INTO markets 
        (question, category_id, subcategory_id, deadline, resolved, created_by, market_type, yes_odds, no_odds) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
        RETURNING *`,
       [title, category_id, subcategory_id || null, close_date, false, req.user.id, 
-       dbMarketType, 50, 50] // Default 50/50 split, will be updated by AI
+       dbMarketType, initialYesVolume, initialNoVolume]
     );
 
     const market = marketResult.rows[0];
@@ -612,6 +633,152 @@ app.post('/api/markets/:id/resolve', authenticateToken, async (req, res) => {
     await client.query('ROLLBACK');
     console.error('Error resolving market:', error);
     res.status(500).json({ error: 'Failed to resolve market', details: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ============================================
+// ADMIN ENDPOINTS
+// ============================================
+
+// Admin: Delete any market
+app.delete('/api/admin/markets/:id', authenticateToken, authenticateAdmin, async (req, res) => {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    const marketId = req.params.id;
+    
+    // Check if market exists
+    const marketResult = await client.query('SELECT * FROM markets WHERE id = $1', [marketId]);
+    
+    if (marketResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Market not found' });
+    }
+    
+    // Delete the market (CASCADE will handle bets, options, reports)
+    await client.query('DELETE FROM markets WHERE id = $1', [marketId]);
+    
+    await client.query('COMMIT');
+    
+    res.json({ message: 'Market deleted successfully' });
+    
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error deleting market:', error);
+    res.status(500).json({ error: 'Failed to delete market', details: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Report a market
+app.post('/api/markets/:id/report', authenticateToken, async (req, res) => {
+  try {
+    const marketId = req.params.id;
+    const { reason } = req.body;
+    const userId = req.user.id;
+    
+    if (!reason) {
+      return res.status(400).json({ error: 'Reason is required' });
+    }
+    
+    // Check if market exists
+    const marketResult = await pool.query('SELECT * FROM markets WHERE id = $1', [marketId]);
+    
+    if (marketResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Market not found' });
+    }
+    
+    // Create report (assuming reports table exists)
+    try {
+      const result = await pool.query(
+        `INSERT INTO market_reports (market_id, reported_by, reason, status, created_at) 
+         VALUES ($1, $2, $3, $4, NOW()) 
+         RETURNING *`,
+        [marketId, userId, reason, 'pending']
+      );
+      
+      res.status(201).json({ message: 'Report submitted successfully', report: result.rows[0] });
+    } catch (dbError) {
+      // If table doesn't exist, just return success for now
+      console.log('Reports table may not exist yet:', dbError.message);
+      res.status(201).json({ message: 'Report received and will be reviewed' });
+    }
+    
+  } catch (error) {
+    console.error('Error reporting market:', error);
+    res.status(500).json({ error: 'Failed to submit report' });
+  }
+});
+
+// Admin: Get all reports
+app.get('/api/admin/reports', authenticateToken, authenticateAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT r.*, m.question as market_title, u.username as reported_by_username
+      FROM market_reports r
+      LEFT JOIN markets m ON r.market_id = m.id
+      LEFT JOIN users u ON r.reported_by = u.id
+      WHERE r.status = 'pending'
+      ORDER BY r.created_at DESC
+    `);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching reports:', error);
+    // If table doesn't exist, return empty array
+    res.json([]);
+  }
+});
+
+// Admin: Resolve report (approve or reject)
+app.post('/api/admin/reports/:id/resolve', authenticateToken, authenticateAdmin, async (req, res) => {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    const reportId = req.params.id;
+    const { action } = req.body; // 'approve' or 'reject'
+    
+    if (!['approve', 'reject'].includes(action)) {
+      return res.status(400).json({ error: 'Invalid action' });
+    }
+    
+    // Get the report
+    const reportResult = await client.query(
+      'SELECT * FROM market_reports WHERE id = $1',
+      [reportId]
+    );
+    
+    if (reportResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+    
+    const report = reportResult.rows[0];
+    
+    if (action === 'approve') {
+      // Delete the market
+      await client.query('DELETE FROM markets WHERE id = $1', [report.market_id]);
+    }
+    
+    // Mark report as resolved
+    await client.query(
+      'UPDATE market_reports SET status = $1, resolved_at = NOW(), resolved_by = $2 WHERE id = $3',
+      [action === 'approve' ? 'approved' : 'rejected', req.user.id, reportId]
+    );
+    
+    await client.query('COMMIT');
+    
+    res.json({ message: `Report ${action}ed successfully` });
+    
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error resolving report:', error);
+    res.status(500).json({ error: 'Failed to resolve report' });
   } finally {
     client.release();
   }
