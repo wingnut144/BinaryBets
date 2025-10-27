@@ -1,224 +1,101 @@
 import express from 'express';
-import pg from 'pg';
 import cors from 'cors';
+import pkg from 'pg';
 import bcrypt from 'bcrypt';
 import jsonwebtoken from 'jsonwebtoken';
-import OpenAI from 'openai';
-import dotenv from 'dotenv';
 
-dotenv.config();
-
-const { Pool } = pg;
+const { Pool } = pkg;
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// OpenAI setup
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+// Middleware
+app.use(cors());
+app.use(express.json());
 
-// PostgreSQL setup
+// Database connection
 const pool = new Pool({
-  host: process.env.DB_HOST || 'postgres',
+  host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
   database: process.env.DB_NAME || 'binarybets',
   user: process.env.DB_USER || 'binaryuser',
   password: process.env.DB_PASSWORD || 'binarypass',
 });
 
-app.use(cors());
-app.use(express.json());
-
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
-// Middleware to verify JWT
+// Authentication middleware
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
-  if (!token) return res.status(401).json({ error: 'No token provided' });
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
 
   jsonwebtoken.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
+    if (err) {
+      return res.status(403).json({ error: 'Invalid or expired token' });
+    }
     req.user = user;
     next();
   });
 };
 
-// Middleware to verify admin
-const authenticateAdmin = async (req, res, next) => {
+// Admin middleware
+const requireAdmin = async (req, res, next) => {
   try {
-    const result = await pool.query('SELECT is_admin FROM users WHERE id = $1', [req.user.id]);
+    const result = await pool.query(
+      'SELECT is_admin FROM users WHERE id = $1',
+      [req.user.userId]
+    );
     
-    if (result.rows.length === 0 || !result.rows[0].is_admin) {
+    if (!result.rows[0] || !result.rows[0].is_admin) {
       return res.status(403).json({ error: 'Admin access required' });
     }
     
     next();
   } catch (error) {
-    console.error('Admin auth error:', error);
-    res.status(500).json({ error: 'Authentication failed' });
+    console.error('Admin check error:', error);
+    res.status(500).json({ error: 'Failed to verify admin status' });
   }
 };
 
-// ============================================
-// AI ODDS GENERATION ENDPOINT
-// ============================================
-app.post('/api/generate-odds', authenticateToken, async (req, res) => {
-  try {
-    const { title, options } = req.body;
+// =============================================================================
+// HEALTH CHECK
+// =============================================================================
 
-    if (!title) {
-      return res.status(400).json({ error: 'Market title is required' });
-    }
-
-    // Determine if binary or multiple choice
-    const isBinary = !options || options.length === 0;
-    
-    let prompt;
-    if (isBinary) {
-      prompt = `You are an expert odds maker for prediction markets. Given the following yes/no prediction market question, provide fair initial odds that reflect the true probability of each outcome.
-
-Market Question: "${title}"
-
-Analyze this question considering:
-1. Historical data and trends
-2. Current events and context
-3. Expert opinions if relevant
-4. Base rates for similar events
-5. Any inherent biases in the question
-
-Provide initial odds as percentages that sum to 100%. Return ONLY a JSON object with this exact format:
-{
-  "yes": <number between 1-99>,
-  "no": <number between 1-99>,
-  "reasoning": "<brief 1-2 sentence explanation>"
-}
-
-Example: {"yes": 65, "no": 35, "reasoning": "Historical data shows this outcome occurs about 2 out of 3 times."}`;
-    } else {
-      const optionsList = options.map((opt, i) => `${i + 1}. ${opt}`).join('\n');
-      prompt = `You are an expert odds maker for prediction markets. Given the following multiple-choice prediction market question with options, provide fair initial odds that reflect the true probability of each outcome.
-
-Market Question: "${title}"
-
-Options:
-${optionsList}
-
-Analyze this question considering:
-1. Historical data and trends for each option
-2. Current events and context
-3. Expert opinions if relevant
-4. Base rates for similar events
-5. Relative likelihood of each option
-
-Provide initial odds as percentages that sum to 100%. Return ONLY a JSON object with this exact format:
-{
-  "odds": [
-    {"option": "<option_name>", "percentage": <number>},
-    ...
-  ],
-  "reasoning": "<brief 1-2 sentence explanation>"
-}`;
-    }
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an expert odds maker. Always respond with valid JSON only.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 500
-    });
-
-    const responseText = completion.choices[0].message.content.trim();
-    
-    // Parse the JSON response
-    let oddsData;
-    try {
-      // Remove markdown code blocks if present
-      const cleanedResponse = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-      oddsData = JSON.parse(cleanedResponse);
-    } catch (parseError) {
-      console.error('Failed to parse AI response:', responseText);
-      return res.status(500).json({ error: 'AI returned invalid format' });
-    }
-
-    console.log('AI Generated Odds:', oddsData);
-    res.json(oddsData);
-
-  } catch (error) {
-    console.error('Error generating odds:', error);
-    res.status(500).json({ error: 'Failed to generate odds', details: error.message });
-  }
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ============================================
+// =============================================================================
 // AUTHENTICATION ENDPOINTS
-// ============================================
-app.post('/api/register', async (req, res) => {
-  try {
-    const { username, email, password } = req.body;
+// =============================================================================
 
-    if (!username || !email || !password) {
-      return res.status(400).json({ error: 'All fields are required' });
-    }
-
-    // Check if user exists
-    const existingUser = await pool.query(
-      'SELECT * FROM users WHERE email = $1 OR username = $2',
-      [email, username]
-    );
-
-    if (existingUser.rows.length > 0) {
-      return res.status(400).json({ error: 'User already exists' });
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create user (use password_hash column and add full_name)
-    const result = await pool.query(
-      'INSERT INTO users (username, email, password_hash, full_name, balance) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email, balance',
-      [username, email, hashedPassword, username, 1000] // Use username as full_name default
-    );
-
-    const user = result.rows[0];
-    const token = jsonwebtoken.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
-
-    res.status(201).json({ token, user });
-  } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ error: 'Failed to register user' });
-  }
-});
-
+// Login
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
     
-    // ✅ SELECT is_admin field
+    console.log('Login attempt for:', username);
+    
     const result = await pool.query(
       'SELECT id, username, email, password_hash, balance, is_admin FROM users WHERE username = $1',
       [username]
     );
     
     if (result.rows.length === 0) {
+      console.log('User not found:', username);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
     const user = result.rows[0];
+    console.log('User found:', { id: user.id, username: user.username, is_admin: user.is_admin });
+    
     const validPassword = await bcrypt.compare(password, user.password_hash);
     
     if (!validPassword) {
+      console.log('Invalid password for:', username);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
@@ -228,7 +105,8 @@ app.post('/api/login', async (req, res) => {
       { expiresIn: '7d' }
     );
     
-    // ✅ Return is_admin field
+    console.log('✅ Login successful:', { username: user.username, is_admin: user.is_admin });
+    
     res.json({
       token,
       user: {
@@ -236,7 +114,7 @@ app.post('/api/login', async (req, res) => {
         username: user.username,
         email: user.email,
         balance: parseFloat(user.balance),
-        is_admin: user.is_admin || false  // ← ADD THIS LINE
+        is_admin: user.is_admin || false
       }
     });
   } catch (error) {
@@ -244,12 +122,89 @@ app.post('/api/login', async (req, res) => {
     res.status(500).json({ error: 'Login failed' });
   }
 });
-// ============================================
-// CATEGORY ENDPOINTS
-// ============================================
+
+// Register
+app.post('/api/register', async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+    
+    console.log('Registration attempt:', { username, email });
+    
+    // Check if user exists
+    const existingUser = await pool.query(
+      'SELECT id FROM users WHERE username = $1 OR email = $2',
+      [username, email]
+    );
+    
+    if (existingUser.rows.length > 0) {
+      return res.status(400).json({ error: 'Username or email already exists' });
+    }
+    
+    // Hash password
+    const password_hash = await bcrypt.hash(password, 10);
+    
+    // Insert user
+    const result = await pool.query(
+      `INSERT INTO users (username, email, password_hash, full_name, balance, is_admin, created_at) 
+       VALUES ($1, $2, $3, $4, 1000, FALSE, NOW()) 
+       RETURNING id, username, email, balance, is_admin`,
+      [username, email, password_hash, username]
+    );
+    
+    const newUser = result.rows[0];
+    
+    const token = jsonwebtoken.sign(
+      { userId: newUser.id, username: newUser.username },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    
+    console.log('✅ Registration successful:', newUser.username);
+    
+    res.json({
+      token,
+      user: {
+        id: newUser.id,
+        username: newUser.username,
+        email: newUser.email,
+        balance: parseFloat(newUser.balance),
+        is_admin: newUser.is_admin || false
+      }
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'Registration failed' });
+  }
+});
+
+// Get current user info
+app.get('/api/user', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, username, email, balance, is_admin FROM users WHERE id = $1',
+      [req.user.userId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    res.status(500).json({ error: 'Failed to fetch user data' });
+  }
+});
+
+// =============================================================================
+// CATEGORIES
+// =============================================================================
+
 app.get('/api/categories', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM categories ORDER BY id');
+    const result = await pool.query(
+      'SELECT * FROM categories ORDER BY display_order'
+    );
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching categories:', error);
@@ -257,73 +212,39 @@ app.get('/api/categories', async (req, res) => {
   }
 });
 
-app.get('/api/subcategories', async (req, res) => {
-  try {
-    const { category_id } = req.query;
-    
-    let query = 'SELECT * FROM subcategories';
-    let params = [];
-    
-    if (category_id) {
-      query += ' WHERE category_id = $1';
-      params.push(category_id);
-    }
-    
-    query += ' ORDER BY name';
-    
-    const result = await pool.query(query, params);
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching subcategories:', error);
-    res.status(500).json({ error: 'Failed to fetch subcategories' });
-  }
-});
+// =============================================================================
+// MARKETS (BETS)
+// =============================================================================
 
-// ============================================
-// MARKET ENDPOINTS
-// ============================================
+// Get all markets
 app.get('/api/markets', async (req, res) => {
   try {
-    const { category_id, subcategory_id, status } = req.query;
+    const { status } = req.query;
     
     let query = `
-      SELECT m.*, c.name as category_name, s.name as subcategory_name,
-             COUNT(DISTINCT b.id) as bet_count,
-             COALESCE(SUM(b.amount), 0) as total_volume
+      SELECT 
+        m.*,
+        c.name as category_name,
+        c.color as category_color,
+        c.icon as category_icon,
+        u.username as creator_username,
+        COUNT(DISTINCT b.id) as total_bets
       FROM markets m
       LEFT JOIN categories c ON m.category_id = c.id
-      LEFT JOIN subcategories s ON m.subcategory_id = s.id
+      LEFT JOIN users u ON m.created_by = u.id
       LEFT JOIN bets b ON m.id = b.market_id
-      WHERE 1=1
     `;
     
-    const params = [];
-    let paramCount = 1;
-    
-    if (category_id && category_id !== 'all') {
-      query += ` AND m.category_id = $${paramCount}`;
-      params.push(category_id);
-      paramCount++;
-    }
-    
-    if (subcategory_id) {
-      query += ` AND m.subcategory_id = $${paramCount}`;
-      params.push(subcategory_id);
-      paramCount++;
-    }
-    
     if (status) {
-      // Map status filter to resolved boolean
-      if (status === 'active') {
-        query += ` AND m.resolved = false`;
-      } else if (status === 'resolved') {
-        query += ` AND m.resolved = true`;
-      }
+      query += ` WHERE m.status = $1`;
     }
     
-    query += ' GROUP BY m.id, c.name, s.name ORDER BY m.created_at DESC';
+    query += ` GROUP BY m.id, c.name, c.color, c.icon, u.username ORDER BY m.created_at DESC`;
     
-    const result = await pool.query(query, params);
+    const result = status 
+      ? await pool.query(query, [status])
+      : await pool.query(query);
+    
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching markets:', error);
@@ -331,77 +252,123 @@ app.get('/api/markets', async (req, res) => {
   }
 });
 
-app.post('/api/markets', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  
+// Get single market
+app.get('/api/markets/:id', async (req, res) => {
   try {
-    await client.query('BEGIN');
+    const { id } = req.params;
     
-    const { 
-      title,  // Will map to 'question' column
-      description, 
-      category_id, 
-      subcategory_id, 
-      close_date,  // Will map to 'deadline' column
-      market_type,
-      options // For multiple choice markets
-    } = req.body;
-
-    if (!title || !category_id || !close_date) {
-      return res.status(400).json({ error: 'Title, category, and close date are required' });
-    }
-
-    // Determine if binary or multiple choice
-    const isBinary = market_type === 'binary' || !options || options.length === 0;
-    const dbMarketType = isBinary ? 'binary' : 'multi-choice';
-
-    // Use AI odds if available from the request, otherwise default to 50/50
-    // Frontend should send ai_yes_odds and ai_no_odds from the generated odds
-    const initialYesVolume = req.body.ai_yes_odds || 50;
-    const initialNoVolume = req.body.ai_no_odds || 50;
-
-    // Create the market with AI odds (use 'question' and 'deadline' to match DB)
-    const marketResult = await client.query(
-      `INSERT INTO markets 
-       (question, category_id, subcategory_id, deadline, resolved, created_by, market_type, yes_odds, no_odds) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
-       RETURNING *`,
-      [title, category_id, subcategory_id || null, close_date, false, req.user.id, 
-       dbMarketType, initialYesVolume, initialNoVolume]
+    const result = await pool.query(
+      `SELECT m.*, c.name as category_name, c.color as category_color
+       FROM markets m
+       LEFT JOIN categories c ON m.category_id = c.id
+       WHERE m.id = $1`,
+      [id]
     );
-
-    const market = marketResult.rows[0];
-
-    // If multiple choice, create options
-    if (!isBinary && options && options.length > 0) {
-      for (const option of options) {
-        await client.query(
-          'INSERT INTO market_options (market_id, option_name, votes) VALUES ($1, $2, $3)',
-          [market.id, option, 0]
-        );
-      }
-    }
-
-    await client.query('COMMIT');
     
-    res.status(201).json(market);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Market not found' });
+    }
+    
+    res.json(result.rows[0]);
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error creating market:', error);
-    res.status(500).json({ error: 'Failed to create market' });
-  } finally {
-    client.release();
+    console.error('Error fetching market:', error);
+    res.status(500).json({ error: 'Failed to fetch market' });
   }
 });
 
-// ============================================
-// BETTING ENDPOINT WITH DYNAMIC ODDS
-// ============================================
+// Create market
+app.post('/api/markets', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { question, category_id, close_date, market_type, options, ai_odds } = req.body;
+    
+    console.log('Creating market:', { question, category_id, close_date, market_type, ai_odds });
+    
+    // Initialize odds based on AI odds if provided
+    let initial_odds = { yes: 2.0, no: 2.0 };
+    let volume_distribution = { yes: 50, no: 50 };
+    
+    if (ai_odds && ai_odds.odds) {
+      const yesPercent = ai_odds.odds.yes || 50;
+      const noPercent = ai_odds.odds.no || 50;
+      
+      // Convert percentages to odds (odds = 100 / percentage)
+      initial_odds = {
+        yes: parseFloat((100 / yesPercent).toFixed(2)),
+        no: parseFloat((100 / noPercent).toFixed(2))
+      };
+      
+      volume_distribution = {
+        yes: yesPercent,
+        no: noPercent
+      };
+    }
+    
+    const result = await pool.query(
+      `INSERT INTO markets (
+        question, category_id, created_by, close_date, 
+        market_type, status, options, total_bet_amount,
+        ai_odds, current_odds, volume_distribution, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()) 
+      RETURNING *`,
+      [
+        question,
+        category_id,
+        userId,
+        close_date,
+        market_type || 'binary',
+        'active',
+        options || ['Yes', 'No'],
+        0,
+        JSON.stringify(ai_odds),
+        JSON.stringify(initial_odds),
+        JSON.stringify(volume_distribution)
+      ]
+    );
+    
+    console.log('✅ Market created:', result.rows[0].id);
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating market:', error);
+    res.status(500).json({ error: 'Failed to create market', details: error.message });
+  }
+});
+
+// Delete market (admin only)
+app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    console.log('Admin deleting market:', id);
+    
+    await pool.query('DELETE FROM markets WHERE id = $1', [id]);
+    
+    console.log('✅ Market deleted:', id);
+    
+    res.json({ success: true, message: 'Market deleted' });
+  } catch (error) {
+    console.error('Error deleting market:', error);
+    res.status(500).json({ error: 'Failed to delete market' });
+  }
+});
+
+// =============================================================================
+// BETS
+// =============================================================================
+
+// Place a bet
 app.post('/api/bets', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   const { market_id, position, amount, odds, potential_payout } = req.body;
   
-  console.log('Placing bet:', { userId, market_id, position, amount, odds, potential_payout });
+  console.log('=== PLACING BET ===');
+  console.log('User ID:', userId);
+  console.log('Market ID:', market_id);
+  console.log('Position:', position);
+  console.log('Amount:', amount);
+  console.log('Odds:', odds);
+  console.log('Potential Payout:', potential_payout);
   
   try {
     await pool.query('BEGIN');
@@ -412,93 +379,121 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
       [userId]
     );
     
-    if (!userResult.rows[0] || userResult.rows[0].balance < amount) {
+    if (!userResult.rows[0]) {
       await pool.query('ROLLBACK');
-      return res.status(400).json({ error: 'Insufficient balance' });
+      return res.status(404).json({ error: 'User not found' });
     }
     
-    // ✅ Insert with all required columns
+    const userBalance = parseFloat(userResult.rows[0].balance);
+    const betAmount = parseFloat(amount);
+    
+    console.log('User balance:', userBalance);
+    console.log('Bet amount:', betAmount);
+    
+    if (userBalance < betAmount) {
+      await pool.query('ROLLBACK');
+      return res.status(400).json({ 
+        error: `Insufficient balance. You have $${userBalance.toFixed(2)} but need $${betAmount.toFixed(2)}` 
+      });
+    }
+    
+    // Get market
+    const marketResult = await pool.query(
+      'SELECT id, question FROM markets WHERE id = $1',
+      [market_id]
+    );
+    
+    if (marketResult.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({ error: 'Market not found' });
+    }
+    
+    // Insert bet
     const betResult = await pool.query(
       `INSERT INTO bets (
         user_id, market_id, position, amount, 
         odds, potential_payout, status, created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) 
       RETURNING *`,
-      [userId, market_id, position, amount, odds || 2.0, potential_payout || (amount * 2), 'pending']
+      [userId, market_id, position, betAmount, odds || 2.0, potential_payout || (betAmount * 2.0), 'pending']
     );
     
-    // Deduct balance
+    console.log('Bet inserted:', betResult.rows[0]);
+    
+    // Deduct from user balance
     await pool.query(
       'UPDATE users SET balance = balance - $1 WHERE id = $2',
-      [amount, userId]
+      [betAmount, userId]
+    );
+    
+    // Update market total
+    await pool.query(
+      'UPDATE markets SET total_bet_amount = COALESCE(total_bet_amount, 0) + $1 WHERE id = $2',
+      [betAmount, market_id]
     );
     
     await pool.query('COMMIT');
     
-    res.json({ success: true, bet: betResult.rows[0] });
+    console.log('✅ Bet placed successfully');
+    
+    res.json({ 
+      success: true, 
+      bet: betResult.rows[0],
+      new_balance: userBalance - betAmount
+    });
     
   } catch (error) {
     await pool.query('ROLLBACK');
-    console.error('Bet error:', error);
+    console.error('❌ ERROR PLACING BET:', error);
     res.status(500).json({ 
       error: 'Failed to place bet', 
-      details: error.message 
+      details: error.message
     });
   }
 });
-// Get user's bets
-app.get('/api/bets', authenticateToken, async (req, res) => {
+
+// Get user's bets - THIS WAS MISSING!
+app.get('/api/user/bets', authenticateToken, async (req, res) => {
   try {
+    const userId = req.user.userId;
+    
+    console.log('Fetching bets for user:', userId);
+    
     const result = await pool.query(
-      `SELECT b.*, m.title as market_title 
-       FROM bets b 
-       JOIN markets m ON b.market_id = m.id 
-       WHERE b.user_id = $1 
-       ORDER BY b.created_at DESC`,
-      [req.user.id]
+      `SELECT 
+        b.*,
+        m.question,
+        m.close_date,
+        m.status as market_status
+      FROM bets b
+      JOIN markets m ON b.market_id = m.id
+      WHERE b.user_id = $1
+      ORDER BY b.created_at DESC`,
+      [userId]
     );
+    
+    console.log('Found', result.rows.length, 'bets for user:', userId);
+    
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching bets:', error);
-    res.status(500).json({ error: 'Failed to fetch bets' });
+    console.error('Error fetching user bets:', error);
+    res.status(500).json({ error: 'Failed to fetch user bets' });
   }
 });
 
-// ============================================
-// USER & LEADERBOARD ENDPOINTS
-// ============================================
-app.get('/api/user', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT id, username, email, balance FROM users WHERE id = $1',
-      [req.user.id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error('Error fetching user:', error);
-    res.status(500).json({ error: 'Failed to fetch user data' });
-  }
-});
+// =============================================================================
+// LEADERBOARD
+// =============================================================================
 
 app.get('/api/leaderboard', async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT 
-        u.id,
-        u.username,
-        u.balance,
-        COUNT(DISTINCT b.id) as total_bets
-      FROM users u
-      LEFT JOIN bets b ON u.id = b.user_id
-      GROUP BY u.id, u.username, u.balance
-      ORDER BY u.balance DESC
-      LIMIT 10
-    `);
+    const result = await pool.query(
+      `SELECT id, username, balance 
+       FROM users 
+       WHERE is_admin = FALSE
+       ORDER BY balance DESC 
+       LIMIT 50`
+    );
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching leaderboard:', error);
@@ -506,239 +501,187 @@ app.get('/api/leaderboard', async (req, res) => {
   }
 });
 
-// ============================================
-// MARKET RESOLUTION ENDPOINT
-// ============================================
-app.post('/api/markets/:id/resolve', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  
+// =============================================================================
+// AI ODDS GENERATION
+// =============================================================================
+
+app.post('/api/generate-odds', authenticateToken, async (req, res) => {
   try {
-    await client.query('BEGIN');
+    const { question, options } = req.body;
     
-    const marketId = req.params.id;
-    const { outcome } = req.body;
-
-    if (!outcome || typeof outcome !== 'string') {
-      return res.status(400).json({ error: 'Valid outcome is required (yes/no or option name)' });
-    }
-
-    // Get market details
-    const marketResult = await client.query(
-      'SELECT * FROM markets WHERE id = $1',
-      [marketId]
-    );
-
-    if (marketResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Market not found' });
-    }
-
-    const market = marketResult.rows[0];
-
-    // Normalize outcome to lowercase for binary markets
-    const normalizedOutcome = market.market_type === 'binary' ? outcome.toLowerCase() : outcome;
-
-    // Update market as resolved (use 'resolved' boolean and 'outcome' column)
-    await client.query(
-      'UPDATE markets SET resolved = true, outcome = $1, resolved_by = $2, resolved_at = NOW() WHERE id = $3',
-      [normalizedOutcome, req.user.id, marketId]
-    );
-
-    // Get all bets for this market
-    const betsResult = await client.query(
-      'SELECT * FROM bets WHERE market_id = $1 AND status = $2',
-      [marketId, 'pending']
-    );
-
-    // Process each bet
-    for (const bet of betsResult.rows) {
-      const won = bet.position.toLowerCase() === normalizedOutcome;
-      const newStatus = won ? 'won' : 'lost';
-
-      // Update bet status
-      await client.query(
-        'UPDATE bets SET status = $1 WHERE id = $2',
-        [newStatus, bet.id]
-      );
-
-      // If won, credit the payout
-      if (won) {
-        await client.query(
-          'UPDATE users SET balance = balance + $1 WHERE id = $2',
-          [parseFloat(bet.potential_payout), bet.user_id]
-        );
-      }
-    }
-
-    await client.query('COMMIT');
+    console.log('Generating AI odds for:', question);
     
-    res.json({ 
-      message: 'Market resolved successfully',
-      winning_outcome: normalizedOutcome,
-      bets_processed: betsResult.rows.length
+    // Check if OpenAI API key is available
+    if (!process.env.OPENAI_API_KEY) {
+      console.log('⚠️ No OpenAI API key, returning default odds');
+      return res.json({
+        odds: { yes: 50, no: 50 },
+        reasoning: 'Default odds (50/50) - AI generation not configured'
+      });
+    }
+    
+    // Call OpenAI API
+    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a prediction market analyst. Given a yes/no question, provide probability estimates and reasoning. Respond in JSON format with "yes" and "no" percentages that sum to 100, and a "reasoning" string.'
+          },
+          {
+            role: 'user',
+            content: `Question: ${question}\n\nProvide probability estimates as percentages.`
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 200
+      })
     });
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error resolving market:', error);
-    res.status(500).json({ error: 'Failed to resolve market', details: error.message });
-  } finally {
-    client.release();
-  }
-});
-
-// ============================================
-// ADMIN ENDPOINTS
-// ============================================
-
-// Admin: Delete any market
-app.delete('/api/admin/markets/:id', authenticateToken, authenticateAdmin, async (req, res) => {
-  const client = await pool.connect();
-  
-  try {
-    await client.query('BEGIN');
     
-    const marketId = req.params.id;
-    
-    // Check if market exists
-    const marketResult = await client.query('SELECT * FROM markets WHERE id = $1', [marketId]);
-    
-    if (marketResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Market not found' });
+    if (!openaiResponse.ok) {
+      throw new Error('OpenAI API request failed');
     }
     
-    // Delete the market (CASCADE will handle bets, options, reports)
-    await client.query('DELETE FROM markets WHERE id = $1', [marketId]);
+    const data = await openaiResponse.json();
+    const content = data.choices[0].message.content;
     
-    await client.query('COMMIT');
+    // Parse AI response
+    const aiOdds = JSON.parse(content);
     
-    res.json({ message: 'Market deleted successfully' });
+    console.log('✅ AI odds generated:', aiOdds);
+    
+    res.json({
+      odds: aiOdds,
+      reasoning: aiOdds.reasoning || 'Based on historical data and current trends'
+    });
     
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error deleting market:', error);
-    res.status(500).json({ error: 'Failed to delete market', details: error.message });
-  } finally {
-    client.release();
+    console.error('Error generating AI odds:', error);
+    
+    // Return default odds on error
+    res.json({
+      odds: { yes: 50, no: 50 },
+      reasoning: 'Default odds (50/50) - AI generation temporarily unavailable'
+    });
   }
 });
+
+// =============================================================================
+// REPORT SYSTEM
+// =============================================================================
 
 // Report a market
 app.post('/api/markets/:id/report', authenticateToken, async (req, res) => {
   try {
-    const marketId = req.params.id;
+    const { id } = req.params;
     const { reason } = req.body;
-    const userId = req.user.id;
+    const userId = req.user.userId;
     
-    if (!reason) {
-      return res.status(400).json({ error: 'Reason is required' });
-    }
+    console.log('Reporting market:', id, 'by user:', userId);
     
-    // Check if market exists
-    const marketResult = await pool.query('SELECT * FROM markets WHERE id = $1', [marketId]);
+    const result = await pool.query(
+      `INSERT INTO market_reports (market_id, reported_by, reason, status, created_at)
+       VALUES ($1, $2, $3, 'pending', NOW())
+       RETURNING *`,
+      [id, userId, reason]
+    );
     
-    if (marketResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Market not found' });
-    }
+    console.log('✅ Market reported:', result.rows[0].id);
     
-    // Create report (assuming reports table exists)
-    try {
-      const result = await pool.query(
-        `INSERT INTO market_reports (market_id, reported_by, reason, status, created_at) 
-         VALUES ($1, $2, $3, $4, NOW()) 
-         RETURNING *`,
-        [marketId, userId, reason, 'pending']
-      );
-      
-      res.status(201).json({ message: 'Report submitted successfully', report: result.rows[0] });
-    } catch (dbError) {
-      // If table doesn't exist, just return success for now
-      console.log('Reports table may not exist yet:', dbError.message);
-      res.status(201).json({ message: 'Report received and will be reviewed' });
-    }
-    
+    res.json({ success: true, report: result.rows[0] });
   } catch (error) {
     console.error('Error reporting market:', error);
-    res.status(500).json({ error: 'Failed to submit report' });
+    res.status(500).json({ error: 'Failed to report market' });
   }
 });
 
-// Admin: Get all reports
-app.get('/api/admin/reports', authenticateToken, authenticateAdmin, async (req, res) => {
+// Get reported markets (admin only) - THIS WAS MISSING!
+app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT r.*, m.question as market_title, u.username as reported_by_username
+    console.log('Fetching reported markets for admin');
+    
+    const result = await pool.query(
+      `SELECT 
+        r.*,
+        m.question,
+        u.username as reporter_username
       FROM market_reports r
-      LEFT JOIN markets m ON r.market_id = m.id
+      JOIN markets m ON r.market_id = m.id
       LEFT JOIN users u ON r.reported_by = u.id
-      WHERE r.status = 'pending'
-      ORDER BY r.created_at DESC
-    `);
+      ORDER BY r.created_at DESC`
+    );
+    
+    console.log('Found', result.rows.length, 'reports');
     
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching reports:', error);
-    // If table doesn't exist, return empty array
-    res.json([]);
+    res.status(500).json({ error: 'Failed to fetch reports' });
   }
 });
 
-// Admin: Resolve report (approve or reject)
-app.post('/api/admin/reports/:id/resolve', authenticateToken, authenticateAdmin, async (req, res) => {
-  const client = await pool.connect();
-  
+// Resolve a report (admin only)
+app.patch('/api/admin/reports/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    await client.query('BEGIN');
+    const { id } = req.params;
+    const { action } = req.body; // 'approve' or 'dismiss'
+    const adminId = req.user.userId;
     
-    const reportId = req.params.id;
-    const { action } = req.body; // 'approve' or 'reject'
+    console.log('Resolving report:', id, 'action:', action);
     
-    if (!['approve', 'reject'].includes(action)) {
-      return res.status(400).json({ error: 'Invalid action' });
-    }
+    await pool.query('BEGIN');
     
-    // Get the report
-    const reportResult = await client.query(
-      'SELECT * FROM market_reports WHERE id = $1',
-      [reportId]
+    // Update report status
+    const status = action === 'approve' ? 'approved' : 'dismissed';
+    
+    await pool.query(
+      `UPDATE market_reports 
+       SET status = $1, resolved_at = NOW(), resolved_by = $2
+       WHERE id = $3`,
+      [status, adminId, id]
     );
     
-    if (reportResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Report not found' });
-    }
-    
-    const report = reportResult.rows[0];
-    
+    // If approved, delete the market
     if (action === 'approve') {
-      // Delete the market
-      await client.query('DELETE FROM markets WHERE id = $1', [report.market_id]);
+      const report = await pool.query(
+        'SELECT market_id FROM market_reports WHERE id = $1',
+        [id]
+      );
+      
+      if (report.rows[0]) {
+        await pool.query('DELETE FROM markets WHERE id = $1', [report.rows[0].market_id]);
+        console.log('✅ Market deleted:', report.rows[0].market_id);
+      }
     }
     
-    // Mark report as resolved
-    await client.query(
-      'UPDATE market_reports SET status = $1, resolved_at = NOW(), resolved_by = $2 WHERE id = $3',
-      [action === 'approve' ? 'approved' : 'rejected', req.user.id, reportId]
-    );
+    await pool.query('COMMIT');
     
-    await client.query('COMMIT');
+    console.log('✅ Report resolved:', id);
     
-    res.json({ message: `Report ${action}ed successfully` });
-    
+    res.json({ success: true, message: `Report ${action}d` });
   } catch (error) {
-    await client.query('ROLLBACK');
+    await pool.query('ROLLBACK');
     console.error('Error resolving report:', error);
     res.status(500).json({ error: 'Failed to resolve report' });
-  } finally {
-    client.release();
   }
 });
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+// =============================================================================
+// START SERVER
+// =============================================================================
 
-// Start server
+const PORT = process.env.PORT || 5000;
+
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`🔗 API available at http://localhost:${PORT}`);
+  console.log(`📊 Database: ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || 'binarybets'}`);
 });
+
+export default app;
