@@ -493,7 +493,7 @@ function App() {
                     <div className="market-stats">
                       <div className="stat">
                         <span className="stat-label">Total Pool</span>
-                        <span className="stat-value">${parseFloat(market.total_bet_amount || 0).toFixed(2)}</span>
+                        <span className="stat-value">${parseFloat(market.total_pool || 0).toFixed(2)}</span>
                       </div>
                       <div className="stat">
                         <span className="stat-label">Total Bets</span>
