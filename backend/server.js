@@ -245,7 +245,21 @@ app.get('/api/markets', async (req, res) => {
       ? await pool.query(query, [status])
       : await pool.query(query);
     
-    res.json(result.rows);
+    // Add close_date alias and format odds for frontend
+    const markets = result.rows.map(market => ({
+      ...market,
+      close_date: market.deadline,
+      current_odds: {
+        yes: parseFloat(market.yes_odds || 2.0),
+        no: parseFloat(market.no_odds || 2.0)
+      },
+      volume_distribution: {
+        yes: 50,
+        no: 50
+      }
+    }));
+    
+    res.json(markets);
   } catch (error) {
     console.error('Error fetching markets:', error);
     res.status(500).json({ error: 'Failed to fetch markets' });
@@ -269,7 +283,11 @@ app.get('/api/markets/:id', async (req, res) => {
       return res.status(404).json({ error: 'Market not found' });
     }
     
-    res.json(result.rows[0]);
+    // Add close_date alias for frontend compatibility
+    const market = result.rows[0];
+    market.close_date = market.deadline;
+    
+    res.json(market);
   } catch (error) {
     console.error('Error fetching market:', error);
     res.status(500).json({ error: 'Failed to fetch market' });
@@ -280,49 +298,40 @@ app.get('/api/markets/:id', async (req, res) => {
 app.post('/api/markets', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { question, category_id, close_date, market_type, options, ai_odds } = req.body;
+    const { question, category_id, deadline, market_type, ai_odds } = req.body;
     
-    console.log('Creating market:', { question, category_id, close_date, market_type, ai_odds });
+    console.log('Creating market:', { question, category_id, deadline, market_type, ai_odds });
     
     // Initialize odds based on AI odds if provided
-    let initial_odds = { yes: 2.0, no: 2.0 };
-    let volume_distribution = { yes: 50, no: 50 };
+    let yes_odds = 2.0;
+    let no_odds = 2.0;
     
     if (ai_odds && ai_odds.odds) {
       const yesPercent = ai_odds.odds.yes || 50;
       const noPercent = ai_odds.odds.no || 50;
       
       // Convert percentages to odds (odds = 100 / percentage)
-      initial_odds = {
-        yes: parseFloat((100 / yesPercent).toFixed(2)),
-        no: parseFloat((100 / noPercent).toFixed(2))
-      };
-      
-      volume_distribution = {
-        yes: yesPercent,
-        no: noPercent
-      };
+      yes_odds = parseFloat((100 / yesPercent).toFixed(2));
+      no_odds = parseFloat((100 / noPercent).toFixed(2));
     }
     
     const result = await pool.query(
       `INSERT INTO markets (
-        question, category_id, created_by, close_date, 
-        market_type, status, options, total_bet_amount,
-        ai_odds, current_odds, volume_distribution, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()) 
+        question, category_id, created_by, deadline, 
+        market_type, status, yes_odds, no_odds, 
+        resolved, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW()) 
       RETURNING *`,
       [
         question,
         category_id,
         userId,
-        close_date,
+        deadline,
         market_type || 'binary',
         'active',
-        options || ['Yes', 'No'],
-        0,
-        JSON.stringify(ai_odds),
-        JSON.stringify(initial_odds),
-        JSON.stringify(volume_distribution)
+        yes_odds,
+        no_odds,
+        false
       ]
     );
     
@@ -360,7 +369,7 @@ app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res)
 // Place a bet
 app.post('/api/bets', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
-  const { market_id, position, amount, odds, potential_payout } = req.body;
+  const { market_id, position, amount, odds } = req.body;
   
   console.log('=== PLACING BET ===');
   console.log('User ID:', userId);
@@ -368,7 +377,6 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
   console.log('Position:', position);
   console.log('Amount:', amount);
   console.log('Odds:', odds);
-  console.log('Potential Payout:', potential_payout);
   
   try {
     await pool.query('BEGIN');
@@ -408,14 +416,16 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Market not found' });
     }
     
+    // Map position to bet_type ('yes'/'no' -> 'Yes'/'No')
+    const bet_type = position.toLowerCase() === 'yes' ? 'Yes' : 'No';
+    
     // Insert bet
     const betResult = await pool.query(
       `INSERT INTO bets (
-        user_id, market_id, position, amount, 
-        odds, potential_payout, status, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) 
+        user_id, market_id, amount, odds, bet_type, placed_at
+      ) VALUES ($1, $2, $3, $4, $5, NOW()) 
       RETURNING *`,
-      [userId, market_id, position, betAmount, odds || 2.0, potential_payout || (betAmount * 2.0), 'pending']
+      [userId, market_id, betAmount, odds || 2.0, bet_type]
     );
     
     console.log('Bet inserted:', betResult.rows[0]);
@@ -426,19 +436,20 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
       [betAmount, userId]
     );
     
-    // Update market total
-    await pool.query(
-      'UPDATE markets SET total_bet_amount = COALESCE(total_bet_amount, 0) + $1 WHERE id = $2',
-      [betAmount, market_id]
-    );
-    
     await pool.query('COMMIT');
+    
+    const potential_payout = betAmount * (odds || 2.0);
     
     console.log('✅ Bet placed successfully');
     
     res.json({ 
       success: true, 
-      bet: betResult.rows[0],
+      bet: {
+        ...betResult.rows[0],
+        potential_payout,
+        position: bet_type,
+        created_at: betResult.rows[0].placed_at
+      },
       new_balance: userBalance - betAmount
     });
     
@@ -452,7 +463,7 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
   }
 });
 
-// Get user's bets - THIS WAS MISSING!
+// Get user's bets
 app.get('/api/user/bets', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -462,13 +473,26 @@ app.get('/api/user/bets', authenticateToken, async (req, res) => {
     const result = await pool.query(
       `SELECT 
         b.*,
+        b.placed_at as created_at,
+        b.bet_type as position,
+        (b.amount * b.odds) as potential_payout,
+        CASE 
+          WHEN b.won = true THEN 'won'
+          WHEN b.won = false THEN 'lost'
+          ELSE 'pending'
+        END as status,
         m.question,
-        m.close_date,
-        m.status as market_status
+        m.deadline as close_date,
+        m.resolved,
+        CASE 
+          WHEN m.resolved = true THEN 'resolved'
+          WHEN m.deadline < NOW() THEN 'closed'
+          ELSE 'active'
+        END as market_status
       FROM bets b
       JOIN markets m ON b.market_id = m.id
       WHERE b.user_id = $1
-      ORDER BY b.created_at DESC`,
+      ORDER BY b.placed_at DESC`,
       [userId]
     );
     
