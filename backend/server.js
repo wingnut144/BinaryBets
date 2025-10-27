@@ -663,70 +663,226 @@ app.get('/api/leaderboard', async (req, res) => {
 
 app.post('/api/generate-odds', authenticateToken, async (req, res) => {
   try {
-    const { question, options } = req.body;
+    const { question, options, market_type } = req.body;
     
-    console.log('Generating AI odds for:', question);
+    console.log('=== GENERATING AI ODDS ===');
+    console.log('Question:', question);
+    console.log('Market type:', market_type);
+    console.log('Options:', options);
     
-    // Check if OpenAI API key is available
-    if (!process.env.OPENAI_API_KEY) {
-      console.log('⚠️ No OpenAI API key, returning default odds');
-      return res.json({
-        odds: { yes: 50, no: 50 },
-        reasoning: 'Default odds (50/50) - AI generation not configured'
-      });
+    // Determine if binary or multi-option
+    const isBinary = market_type === 'binary' || !options || options.length === 0 || 
+                     (options.length === 2 && options.includes('Yes') && options.includes('No'));
+    
+    console.log('Is binary market:', isBinary);
+    
+    // Try OpenAI first, fall back to Anthropic
+    let aiResponse;
+    let usingAnthropic = false;
+    
+    if (process.env.OPENAI_API_KEY) {
+      try {
+        console.log('🤖 Trying OpenAI...');
+        aiResponse = await generateOddsWithOpenAI(question, options, isBinary);
+      } catch (error) {
+        console.log('⚠️ OpenAI failed:', error.message);
+        if (process.env.ANTHROPIC_API_KEY) {
+          console.log('🤖 Trying Anthropic...');
+          aiResponse = await generateOddsWithAnthropic(question, options, isBinary);
+          usingAnthropic = true;
+        } else {
+          throw error;
+        }
+      }
+    } else if (process.env.ANTHROPIC_API_KEY) {
+      console.log('🤖 Using Anthropic...');
+      aiResponse = await generateOddsWithAnthropic(question, options, isBinary);
+      usingAnthropic = true;
+    } else {
+      console.log('⚠️ No AI API keys configured, returning default odds');
+      return res.json(getDefaultOdds(isBinary, options));
     }
     
-    // Call OpenAI API
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a prediction market analyst. Given a yes/no question, provide probability estimates and reasoning. Respond in JSON format with "yes" and "no" percentages that sum to 100, and a "reasoning" string.'
-          },
-          {
-            role: 'user',
-            content: `Question: ${question}\n\nProvide probability estimates as percentages.`
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 200
-      })
-    });
-    
-    if (!openaiResponse.ok) {
-      throw new Error('OpenAI API request failed');
-    }
-    
-    const data = await openaiResponse.json();
-    const content = data.choices[0].message.content;
-    
-    // Parse AI response
-    const aiOdds = JSON.parse(content);
-    
-    console.log('✅ AI odds generated:', aiOdds);
+    console.log('✅ AI odds generated:', aiResponse);
     
     res.json({
-      odds: aiOdds,
-      reasoning: aiOdds.reasoning || 'Based on historical data and current trends'
+      odds: aiResponse.odds,
+      reasoning: aiResponse.reasoning,
+      confidence: aiResponse.confidence,
+      ai_provider: usingAnthropic ? 'anthropic' : 'openai'
     });
     
   } catch (error) {
-    console.error('Error generating AI odds:', error);
+    console.error('❌ Error generating AI odds:', error);
     
     // Return default odds on error
-    res.json({
-      odds: { yes: 50, no: 50 },
-      reasoning: 'Default odds (50/50) - AI generation temporarily unavailable'
-    });
+    const { options, market_type } = req.body;
+    const isBinary = market_type === 'binary' || !options || options.length === 0;
+    
+    res.json(getDefaultOdds(isBinary, options));
   }
 });
+
+// Helper: Generate odds with OpenAI
+async function generateOddsWithOpenAI(question, options, isBinary) {
+  let systemPrompt, userPrompt;
+  
+  if (isBinary) {
+    systemPrompt = 'You are a prediction market analyst. Analyze the yes/no question and provide probability estimates. Consider current events, historical precedents, and logical reasoning. Respond in JSON format with "yes" (percentage 0-100), "no" (percentage 0-100), "reasoning" (your analysis), and "confidence" (high/medium/low).';
+    userPrompt = `Question: "${question}"\n\nProvide probability estimates as percentages that sum to 100.`;
+  } else {
+    systemPrompt = `You are a prediction market analyst. Analyze the question and ALL provided options to determine fair probability estimates. Consider each option's likelihood relative to the others. Respond in JSON format with an "odds" object containing each option name as a key with its percentage (0-100), "reasoning" (your analysis), and "confidence" (high/medium/low). The percentages must sum to 100.`;
+    userPrompt = `Question: "${question}"\n\nOptions: ${options.join(', ')}\n\nProvide probability estimates for EACH option as percentages that sum to 100.`;
+  }
+  
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: 'gpt-4',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 500
+    })
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.text();
+    throw new Error(`OpenAI API failed: ${errorData}`);
+  }
+  
+  const data = await response.json();
+  const content = data.choices[0].message.content;
+  const parsed = JSON.parse(content);
+  
+  // Normalize format
+  if (isBinary) {
+    return {
+      odds: { yes: parsed.yes, no: parsed.no },
+      reasoning: parsed.reasoning,
+      confidence: parsed.confidence || 'medium'
+    };
+  } else {
+    return {
+      odds: parsed.odds,
+      reasoning: parsed.reasoning,
+      confidence: parsed.confidence || 'medium'
+    };
+  }
+}
+
+// Helper: Generate odds with Anthropic Claude
+async function generateOddsWithAnthropic(question, options, isBinary) {
+  let prompt;
+  
+  if (isBinary) {
+    prompt = `You are a prediction market analyst. Analyze this yes/no question and provide probability estimates.
+
+Question: "${question}"
+
+Consider current events, historical precedents, and logical reasoning. Provide your analysis in JSON format with:
+- "yes": percentage probability (0-100)
+- "no": percentage probability (0-100)
+- "reasoning": your detailed analysis
+- "confidence": "high", "medium", or "low"
+
+The percentages must sum to 100. Respond with ONLY the JSON, no other text.`;
+  } else {
+    prompt = `You are a prediction market analyst. Analyze this question and ALL provided options to determine fair probability estimates.
+
+Question: "${question}"
+Options: ${options.join(', ')}
+
+Consider each option's likelihood relative to the others. Provide your analysis in JSON format with:
+- "odds": an object with each option name as a key and its percentage probability (0-100) as the value
+- "reasoning": your detailed analysis of why you assigned these probabilities
+- "confidence": "high", "medium", or "low"
+
+The percentages must sum to 100. Respond with ONLY the JSON, no other text.`;
+  }
+  
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: prompt
+      }]
+    })
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.text();
+    throw new Error(`Anthropic API failed: ${errorData}`);
+  }
+  
+  const data = await response.json();
+  const content = data.content[0].text;
+  
+  // Extract JSON from response (Claude might wrap it in markdown)
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error('Could not parse JSON from Claude response');
+  }
+  
+  const parsed = JSON.parse(jsonMatch[0]);
+  
+  // Normalize format
+  if (isBinary) {
+    return {
+      odds: { yes: parsed.yes, no: parsed.no },
+      reasoning: parsed.reasoning,
+      confidence: parsed.confidence || 'medium'
+    };
+  } else {
+    return {
+      odds: parsed.odds,
+      reasoning: parsed.reasoning,
+      confidence: parsed.confidence || 'medium'
+    };
+  }
+}
+
+// Helper: Get default odds when AI is unavailable
+function getDefaultOdds(isBinary, options) {
+  if (isBinary) {
+    return {
+      odds: { yes: 50, no: 50 },
+      reasoning: 'Default odds (50/50) - AI generation not configured',
+      confidence: 'low'
+    };
+  } else {
+    // Distribute evenly across all options
+    const optionCount = options ? options.length : 2;
+    const evenPercentage = Math.floor(100 / optionCount);
+    const remainder = 100 - (evenPercentage * optionCount);
+    
+    const odds = {};
+    options.forEach((option, index) => {
+      odds[option] = index === 0 ? evenPercentage + remainder : evenPercentage;
+    });
+    
+    return {
+      odds,
+      reasoning: 'Default even distribution - AI generation not configured',
+      confidence: 'low'
+    };
+  }
+}
+
 
 // =============================================================================
 // REPORT SYSTEM
