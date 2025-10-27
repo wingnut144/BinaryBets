@@ -228,7 +228,10 @@ app.get('/api/markets', async (req, res) => {
         c.color as category_color,
         c.icon as category_icon,
         u.username as creator_username,
-        COUNT(DISTINCT b.id) as total_bets
+        COUNT(DISTINCT b.id) as total_bets,
+        COALESCE(SUM(b.amount), 0) as total_pool,
+        COALESCE(SUM(CASE WHEN b.bet_type = 'Yes' THEN b.amount ELSE 0 END), 0) as yes_volume,
+        COALESCE(SUM(CASE WHEN b.bet_type = 'No' THEN b.amount ELSE 0 END), 0) as no_volume
       FROM markets m
       LEFT JOIN categories c ON m.category_id = c.id
       LEFT JOIN users u ON m.created_by = u.id
@@ -246,18 +249,34 @@ app.get('/api/markets', async (req, res) => {
       : await pool.query(query);
     
     // Add close_date alias and format odds for frontend
-    const markets = result.rows.map(market => ({
-      ...market,
-      close_date: market.deadline,
-      current_odds: {
-        yes: parseFloat(market.yes_odds || 2.0),
-        no: parseFloat(market.no_odds || 2.0)
-      },
-      volume_distribution: {
-        yes: 50,
-        no: 50
+    const markets = result.rows.map(market => {
+      const totalPool = parseFloat(market.total_pool || 0);
+      const yesVolume = parseFloat(market.yes_volume || 0);
+      const noVolume = parseFloat(market.no_volume || 0);
+      
+      // Calculate volume distribution percentages
+      let yesPercent = 50;
+      let noPercent = 50;
+      
+      if (totalPool > 0) {
+        yesPercent = Math.round((yesVolume / totalPool) * 100);
+        noPercent = Math.round((noVolume / totalPool) * 100);
       }
-    }));
+      
+      return {
+        ...market,
+        close_date: market.deadline,
+        total_pool: totalPool,
+        current_odds: {
+          yes: parseFloat(market.yes_odds || 2.0),
+          no: parseFloat(market.no_odds || 2.0)
+        },
+        volume_distribution: {
+          yes: yesPercent,
+          no: noPercent
+        }
+      };
+    });
     
     res.json(markets);
   } catch (error) {
