@@ -317,9 +317,16 @@ app.get('/api/markets/:id', async (req, res) => {
 app.post('/api/markets', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { question, category_id, deadline, market_type, ai_odds } = req.body;
+    const { question, category_id, deadline, close_date, market_type, ai_odds } = req.body;
     
-    console.log('Creating market:', { question, category_id, deadline, market_type, ai_odds });
+    // Frontend sends close_date, backend uses deadline
+    const marketDeadline = deadline || close_date;
+    
+    console.log('Creating market:', { question, category_id, deadline: marketDeadline, market_type, ai_odds });
+    
+    if (!marketDeadline) {
+      return res.status(400).json({ error: 'deadline or close_date is required' });
+    }
     
     // Initialize odds based on AI odds if provided
     let yes_odds = 2.0;
@@ -345,7 +352,7 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
         question,
         category_id,
         userId,
-        deadline,
+        marketDeadline,
         market_type || 'binary',
         'active',
         yes_odds,
