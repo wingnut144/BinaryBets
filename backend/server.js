@@ -381,6 +381,100 @@ app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res)
   }
 });
 
+// Resolve market (for market-resolver service)
+app.post('/api/markets/:id/resolve', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { outcome, reasoning, confidence } = req.body;
+    
+    console.log('=== RESOLVING MARKET ===');
+    console.log('Market ID:', id);
+    console.log('Outcome:', outcome);
+    console.log('Reasoning:', reasoning);
+    console.log('Confidence:', confidence);
+    
+    await pool.query('BEGIN');
+    
+    // Update market as resolved
+    const marketResult = await pool.query(
+      `UPDATE markets 
+       SET resolved = true, 
+           outcome = $1, 
+           winning_outcome = $2,
+           resolved_at = NOW()
+       WHERE id = $3
+       RETURNING *`,
+      [reasoning, outcome, id]
+    );
+    
+    if (marketResult.rows.length === 0) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({ error: 'Market not found' });
+    }
+    
+    console.log('✅ Market marked as resolved');
+    
+    // Determine winning bet_type
+    const winningBetType = outcome === 'Yes' ? 'Yes' : outcome === 'No' ? 'No' : null;
+    
+    if (winningBetType) {
+      // Mark winning bets
+      await pool.query(
+        `UPDATE bets 
+         SET won = true 
+         WHERE market_id = $1 AND bet_type = $2`,
+        [id, winningBetType]
+      );
+      
+      // Mark losing bets
+      const losingBetType = winningBetType === 'Yes' ? 'No' : 'Yes';
+      await pool.query(
+        `UPDATE bets 
+         SET won = false 
+         WHERE market_id = $1 AND bet_type = $2`,
+        [id, losingBetType]
+      );
+      
+      // Pay out winners
+      const winningBets = await pool.query(
+        `SELECT user_id, amount, odds, (amount * odds) as payout
+         FROM bets 
+         WHERE market_id = $1 AND bet_type = $2`,
+        [id, winningBetType]
+      );
+      
+      console.log(`💰 Paying out ${winningBets.rows.length} winning bets`);
+      
+      for (const bet of winningBets.rows) {
+        await pool.query(
+          'UPDATE users SET balance = balance + $1 WHERE id = $2',
+          [bet.payout, bet.user_id]
+        );
+        console.log(`   Paid $${bet.payout} to user ${bet.user_id}`);
+      }
+    }
+    
+    await pool.query('COMMIT');
+    
+    console.log('✅ Market resolution complete');
+    
+    res.json({
+      success: true,
+      market: marketResult.rows[0],
+      outcome,
+      winningBetType
+    });
+    
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    console.error('❌ ERROR RESOLVING MARKET:', error);
+    res.status(500).json({ 
+      error: 'Failed to resolve market', 
+      details: error.message 
+    });
+  }
+});
+
 // =============================================================================
 // BETS
 // =============================================================================
