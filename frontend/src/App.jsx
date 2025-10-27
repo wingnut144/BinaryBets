@@ -506,20 +506,25 @@ function App() {
                         <>
                           <div className="odds-option">
                             <span className="option-label">YES</span>
-                            <span className="odds-value">{(market.current_odds?.yes || 2.0).toFixed(2)}x</span>
-                            <span className="volume-pct">{market.volume_distribution?.yes || 50}%</span>
+                            <span className="odds-value" title="Payout multiplier">{(market.current_odds?.yes || 2.0).toFixed(2)}x</span>
+                            <span className="odds-label">Payout</span>
+                            <span className="volume-pct" title="Percentage of total money on this outcome">{market.volume_distribution?.yes || 50}%</span>
+                            <span className="volume-label">of pool</span>
                           </div>
                           <div className="odds-option">
                             <span className="option-label">NO</span>
-                            <span className="odds-value">{(market.current_odds?.no || 2.0).toFixed(2)}x</span>
-                            <span className="volume-pct">{market.volume_distribution?.no || 50}%</span>
+                            <span className="odds-value" title="Payout multiplier">{(market.current_odds?.no || 2.0).toFixed(2)}x</span>
+                            <span className="odds-label">Payout</span>
+                            <span className="volume-pct" title="Percentage of total money on this outcome">{market.volume_distribution?.no || 50}%</span>
+                            <span className="volume-label">of pool</span>
                           </div>
                         </>
                       ) : (
                         market.options?.map(option => (
                           <div key={option} className="odds-option">
                             <span className="option-label">{option}</span>
-                            <span className="odds-value">{(market.current_odds?.[option.toLowerCase()] || 2.0).toFixed(2)}x</span>
+                            <span className="odds-value" title="Payout multiplier">{(market.current_odds?.[option.toLowerCase()] || 2.0).toFixed(2)}x</span>
+                            <span className="odds-label">Payout</span>
                           </div>
                         ))
                       )}
