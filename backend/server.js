@@ -317,30 +317,42 @@ app.get('/api/markets/:id', async (req, res) => {
 app.post('/api/markets', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { question, category_id, deadline, close_date, market_type, ai_odds } = req.body;
+    const { question, category_id, deadline, close_date, market_type, ai_odds, options } = req.body;
     
     // Frontend sends close_date, backend uses deadline
     const marketDeadline = deadline || close_date;
     
-    console.log('Creating market:', { question, category_id, deadline: marketDeadline, market_type, ai_odds });
+    console.log('Creating market:', { question, category_id, deadline: marketDeadline, market_type, ai_odds, options });
     
     if (!marketDeadline) {
       return res.status(400).json({ error: 'deadline or close_date is required' });
     }
     
-    // Initialize odds based on AI odds if provided
-    let yes_odds = 2.0;
-    let no_odds = 2.0;
+    await pool.query('BEGIN');
     
-    if (ai_odds && ai_odds.odds) {
-      const yesPercent = ai_odds.odds.yes || 50;
-      const noPercent = ai_odds.odds.no || 50;
+    // Determine if binary or multi-choice
+    const isBinary = market_type === 'binary' || market_type === 'yes/no' || !options || options.length === 0;
+    const finalMarketType = isBinary ? 'binary' : 'multi-choice';
+    
+    let yes_odds = null;
+    let no_odds = null;
+    
+    // Only set yes_odds/no_odds for binary markets
+    if (isBinary) {
+      yes_odds = 2.0;
+      no_odds = 2.0;
       
-      // Convert percentages to odds (odds = 100 / percentage)
-      yes_odds = parseFloat((100 / yesPercent).toFixed(2));
-      no_odds = parseFloat((100 / noPercent).toFixed(2));
+      if (ai_odds && ai_odds.odds) {
+        const yesPercent = ai_odds.odds.yes || 50;
+        const noPercent = ai_odds.odds.no || 50;
+        
+        // Convert percentages to odds (odds = 100 / percentage)
+        yes_odds = parseFloat((100 / yesPercent).toFixed(2));
+        no_odds = parseFloat((100 / noPercent).toFixed(2));
+      }
     }
     
+    // Insert market
     const result = await pool.query(
       `INSERT INTO markets (
         question, category_id, created_by, deadline, 
@@ -353,7 +365,7 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
         category_id,
         userId,
         marketDeadline,
-        market_type || 'binary',
+        finalMarketType,
         'active',
         yes_odds,
         no_odds,
@@ -361,10 +373,39 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
       ]
     );
     
-    console.log('✅ Market created:', result.rows[0].id);
+    const marketId = result.rows[0].id;
+    
+    console.log('✅ Market created:', marketId);
+    
+    // For multi-choice markets, insert options
+    if (!isBinary && options && options.length > 0) {
+      console.log('📝 Inserting market options:', options);
+      
+      for (let i = 0; i < options.length; i++) {
+        const option = options[i];
+        let optionOdds = 2.0;
+        
+        // Get odds from AI if available
+        if (ai_odds && ai_odds.odds && ai_odds.odds[option]) {
+          const percentage = ai_odds.odds[option];
+          optionOdds = parseFloat((100 / percentage).toFixed(2));
+        }
+        
+        await pool.query(
+          `INSERT INTO market_options (market_id, option_text, odds, display_order, created_at)
+           VALUES ($1, $2, $3, $4, NOW())`,
+          [marketId, option, optionOdds, i]
+        );
+        
+        console.log(`   ✅ Option "${option}" added with odds ${optionOdds}x`);
+      }
+    }
+    
+    await pool.query('COMMIT');
     
     res.json(result.rows[0]);
   } catch (error) {
+    await pool.query('ROLLBACK');
     console.error('Error creating market:', error);
     res.status(500).json({ error: 'Failed to create market', details: error.message });
   }
