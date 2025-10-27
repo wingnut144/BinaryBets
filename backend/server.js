@@ -385,14 +385,12 @@ app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res)
 app.post('/api/markets/:id/resolve', async (req, res) => {
   try {
     const { id } = req.params;
-    
-    // Resolver sends different format than expected
-    // It determines outcome but only sends winning_option_id
-    // We need to re-determine the outcome from the market data
+    const { outcome, resolvedBy } = req.body;
     
     console.log('=== RESOLVING MARKET ===');
     console.log('Market ID:', id);
-    console.log('Request body:', req.body);
+    console.log('Outcome:', outcome);
+    console.log('Resolved by:', resolvedBy);
     
     await pool.query('BEGIN');
     
@@ -408,47 +406,16 @@ app.post('/api/markets/:id/resolve', async (req, res) => {
     }
     
     const market = marketResult.rows[0];
+    console.log('Market question:', market.question);
     
-    // For binary markets, determine winner from bet distribution
-    // The option with more bets loses (because odds favor the underdog)
-    // Actually, we need the resolver to tell us the outcome properly
-    
-    // Get bet totals
-    const betStats = await pool.query(
-      `SELECT 
-        bet_type,
-        COUNT(*) as bet_count,
-        SUM(amount) as total_amount
-       FROM bets 
-       WHERE market_id = $1 
-       GROUP BY bet_type`,
-      [id]
-    );
-    
-    console.log('Bet statistics:', betStats.rows);
-    
-    // For now, let's assume NO wins if there are more NO bets
-    // This is a temporary solution - ideally the resolver should send the outcome
-    let winningOutcome;
-    let reasoning = 'Automatically determined based on market closure';
-    
-    if (betStats.rows.length > 0) {
-      // Find the bet_type with higher total amount
-      const noBets = betStats.rows.find(r => r.bet_type === 'No');
-      const yesBets = betStats.rows.find(r => r.bet_type === 'Yes');
-      
-      const noAmount = noBets ? parseFloat(noBets.total_amount) : 0;
-      const yesAmount = yesBets ? parseFloat(yesBets.total_amount) : 0;
-      
-      // Winner is determined by market reality, not bet amounts
-      // For this temporary fix, let's say NO wins (since market is about snow and it's October)
-      winningOutcome = 'No';
-      reasoning = 'Market deadline passed - outcome determined as No';
-    } else {
-      winningOutcome = 'No';
+    // Validate outcome for binary markets
+    if (market.market_type === 'binary' && !['Yes', 'No', 'yes', 'no'].includes(outcome)) {
+      await pool.query('ROLLBACK');
+      return res.status(400).json({ error: 'Invalid outcome for binary market. Must be Yes or No.' });
     }
     
-    console.log('Determined winner:', winningOutcome);
+    // Normalize outcome to title case
+    const normalizedOutcome = outcome.charAt(0).toUpperCase() + outcome.slice(1).toLowerCase();
     
     // Update market as resolved
     await pool.query(
@@ -456,58 +423,65 @@ app.post('/api/markets/:id/resolve', async (req, res) => {
        SET resolved = true, 
            outcome = $1, 
            winning_outcome = $2,
+           resolved_by = $3,
            resolved_at = NOW()
-       WHERE id = $3`,
-      [reasoning, winningOutcome, id]
+       WHERE id = $4`,
+      [`Automatically resolved as ${normalizedOutcome}`, normalizedOutcome, resolvedBy, id]
     );
     
-    console.log('✅ Market marked as resolved');
+    console.log('✅ Market marked as resolved with outcome:', normalizedOutcome);
     
     // Mark winning bets
-    await pool.query(
+    const winningResult = await pool.query(
       `UPDATE bets 
        SET won = true 
-       WHERE market_id = $1 AND bet_type = $2`,
-      [id, winningOutcome]
+       WHERE market_id = $1 AND bet_type = $2
+       RETURNING id, user_id, amount, odds`,
+      [id, normalizedOutcome]
     );
     
+    console.log(`✅ Marked ${winningResult.rows.length} winning bets`);
+    
     // Mark losing bets
-    const losingOutcome = winningOutcome === 'Yes' ? 'No' : 'Yes';
-    await pool.query(
+    const losingOutcome = normalizedOutcome === 'Yes' ? 'No' : 'Yes';
+    const losingResult = await pool.query(
       `UPDATE bets 
        SET won = false 
-       WHERE market_id = $1 AND bet_type = $2`,
+       WHERE market_id = $1 AND bet_type = $2
+       RETURNING id`,
       [id, losingOutcome]
     );
     
-    console.log('✅ Bets marked as won/lost');
+    console.log(`✅ Marked ${losingResult.rows.length} losing bets`);
     
     // Pay out winners
-    const winningBets = await pool.query(
-      `SELECT user_id, amount, odds, (amount * odds) as payout
-       FROM bets 
-       WHERE market_id = $1 AND bet_type = $2`,
-      [id, winningOutcome]
-    );
+    let totalPayout = 0;
     
-    console.log(`💰 Paying out ${winningBets.rows.length} winning bets`);
-    
-    for (const bet of winningBets.rows) {
+    for (const bet of winningResult.rows) {
+      const payout = parseFloat(bet.amount) * parseFloat(bet.odds);
+      
       await pool.query(
         'UPDATE users SET balance = balance + $1 WHERE id = $2',
-        [bet.payout, bet.user_id]
+        [payout, bet.user_id]
       );
-      console.log(`   Paid $${bet.payout} to user ${bet.user_id}`);
+      
+      totalPayout += payout;
+      console.log(`   💰 Paid $${payout.toFixed(2)} to user ${bet.user_id} (bet #${bet.id})`);
     }
     
     await pool.query('COMMIT');
     
     console.log('✅ Market resolution complete');
+    console.log(`   Total payout: $${totalPayout.toFixed(2)}`);
+    console.log(`   Winners: ${winningResult.rows.length}`);
+    console.log(`   Losers: ${losingResult.rows.length}`);
     
     res.json({
       success: true,
-      outcome: winningOutcome,
-      winners_count: winningBets.rows.length
+      outcome: normalizedOutcome,
+      winners_count: winningResult.rows.length,
+      losers_count: losingResult.rows.length,
+      total_payout: totalPayout
     });
     
   } catch (error) {
