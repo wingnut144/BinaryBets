@@ -63,7 +63,6 @@ function App() {
     try {
       const response = await fetch(`${API_URL}/api/categories`);
       const data = await response.json();
-      // FIX: API returns {categories: [...]}
       setCategories(data.categories || []);
       console.log('Categories loaded:', data.categories);
     } catch (error) {
@@ -127,7 +126,6 @@ function App() {
   const handleAuth = async (e) => {
     e.preventDefault();
     
-    // Password confirmation check for registration
     if (authMode === 'register' && authForm.password !== authForm.confirmPassword) {
       alert('Passwords do not match!');
       return;
@@ -261,7 +259,19 @@ function App() {
 
     try {
       const amount = parseFloat(betAmount);
-      const odds = selectedBet.current_odds?.[betPosition] || 2.0;
+      let odds = 2.0;
+      
+      if (selectedBet.market_type === 'binary') {
+        odds = betPosition === 'yes' 
+          ? parseFloat(selectedBet.yes_odds || 2.0)
+          : parseFloat(selectedBet.no_odds || 2.0);
+      } else {
+        const selectedOption = selectedBet.options?.find(
+          o => o.option_text.toLowerCase() === betPosition
+        );
+        odds = parseFloat(selectedOption?.odds || 2.0);
+      }
+
       const potential_payout = amount * odds;
 
       const response = await fetch(`${API_URL}/api/bets`, {
@@ -287,7 +297,6 @@ function App() {
         setBetAmount('');
         setBetPosition('');
         
-        // Update user balance
         if (data.newBalance !== undefined) {
           const updatedUser = { ...user, balance: data.newBalance };
           setUser(updatedUser);
@@ -386,14 +395,12 @@ function App() {
     }
   };
 
-  // NEW: Handle option changes for multiple choice bets
   const handleOptionChange = (index, value) => {
     const newOptions = [...formData.options];
     newOptions[index] = value;
     setFormData({ ...formData, options: newOptions });
   };
 
-  // NEW: Add option row
   const handleAddOption = () => {
     if (formData.options.length < 10) {
       setFormData({ ...formData, options: [...formData.options, ''] });
@@ -402,7 +409,6 @@ function App() {
     }
   };
 
-  // NEW: Remove option row
   const handleRemoveOption = (index) => {
     if (formData.options.length > 2) {
       const newOptions = formData.options.filter((_, i) => i !== index);
@@ -542,18 +548,18 @@ function App() {
                         <>
                           <div className="odds-option">
                             <span className="option-label">YES</span>
-                            <span className="odds-value">{(market.yes_odds || 2.0).toFixed(2)}x</span>
+                            <span className="odds-value">{parseFloat(market.yes_odds || 2.0).toFixed(2)}x</span>
                           </div>
                           <div className="odds-option">
                             <span className="option-label">NO</span>
-                            <span className="odds-value">{(market.no_odds || 2.0).toFixed(2)}x</span>
+                            <span className="odds-value">{parseFloat(market.no_odds || 2.0).toFixed(2)}x</span>
                           </div>
                         </>
                       ) : (
                         market.options?.map(option => (
                           <div key={option.id} className="odds-option">
                             <span className="option-label">{option.option_text}</span>
-                            <span className="odds-value">{(option.odds || 2.0).toFixed(2)}x</span>
+                            <span className="odds-value">{parseFloat(option.odds || 2.0).toFixed(2)}x</span>
                           </div>
                         ))
                       )}
@@ -871,7 +877,6 @@ function App() {
         )}
       </main>
 
-      {/* Auth Modal */}
       {showAuthModal && (
         <div className="modal-overlay" onClick={() => setShowAuthModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -940,7 +945,6 @@ function App() {
         </div>
       )}
 
-      {/* Place Bet Modal */}
       {selectedBet && (
         <div className="modal-overlay" onClick={() => setSelectedBet(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -956,13 +960,13 @@ function App() {
                       className={betPosition === 'yes' ? 'active yes' : 'yes'}
                       onClick={() => setBetPosition('yes')}
                     >
-                      YES ({(selectedBet.yes_odds || 2.0).toFixed(2)}x)
+                      YES ({parseFloat(selectedBet.yes_odds || 2.0).toFixed(2)}x)
                     </button>
                     <button
                       className={betPosition === 'no' ? 'active no' : 'no'}
                       onClick={() => setBetPosition('no')}
                     >
-                      NO ({(selectedBet.no_odds || 2.0).toFixed(2)}x)
+                      NO ({parseFloat(selectedBet.no_odds || 2.0).toFixed(2)}x)
                     </button>
                   </>
                 ) : (
@@ -972,7 +976,7 @@ function App() {
                       className={betPosition === option.option_text.toLowerCase() ? 'active' : ''}
                       onClick={() => setBetPosition(option.option_text.toLowerCase())}
                     >
-                      {option.option_text} ({(option.odds || 2.0).toFixed(2)}x)
+                      {option.option_text} ({parseFloat(option.odds || 2.0).toFixed(2)}x)
                     </button>
                   ))
                 )}
@@ -996,8 +1000,8 @@ function App() {
                       <p>You're betting: <strong>${parseFloat(betAmount).toFixed(2)}</strong></p>
                       <p>Potential win: <strong className="win">
                         ${(parseFloat(betAmount) * (selectedBet.market_type === 'binary' 
-                          ? (betPosition === 'yes' ? selectedBet.yes_odds : selectedBet.no_odds)
-                          : selectedBet.options?.find(o => o.option_text.toLowerCase() === betPosition)?.odds || 2.0
+                          ? (betPosition === 'yes' ? parseFloat(selectedBet.yes_odds || 2.0) : parseFloat(selectedBet.no_odds || 2.0))
+                          : parseFloat(selectedBet.options?.find(o => o.option_text.toLowerCase() === betPosition)?.odds || 2.0)
                         )).toFixed(2)}
                       </strong></p>
                     </div>
