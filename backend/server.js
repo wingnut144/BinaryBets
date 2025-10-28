@@ -1,5 +1,5 @@
 // ==========================================
-// BINARY BETS - BACKEND SERVER
+// BINARY BETS - COMPLETE BACKEND SERVER
 // Location: backend/server.js
 // ==========================================
 
@@ -23,7 +23,7 @@ const { Pool } = pg;
 // Database connection
 const pool = new Pool({
   user: process.env.POSTGRES_USER,
-  host: 'postgres',
+  host: process.env.POSTGRES_HOST || 'postgres',
   database: process.env.POSTGRES_DB,
   password: process.env.POSTGRES_PASSWORD,
   port: 5432,
@@ -155,17 +155,6 @@ app.post('/api/auth/login', async (req, res) => {
 
     const user = result.rows[0];
 
-    // Optional: Uncomment to require email verification before login
-    /*
-    if (!user.email_verified) {
-      return res.status(403).json({ 
-        error: 'Please verify your email before logging in',
-        needsVerification: true,
-        email: user.email
-      });
-    }
-    */
-
     // Check password
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
@@ -202,7 +191,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/verify-email', async (req, res) => {
   const { token } = req.query;
   
-  console.log('📧 Email verification attempt:', { token: token?.substring(0, 10) + '...' });
+  console.log('📧 Email verification attempt');
 
   try {
     if (!token) {
@@ -358,7 +347,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 app.post('/api/auth/reset-password', async (req, res) => {
   const { token, newPassword, confirmPassword } = req.body;
   
-  console.log('🔐 Password reset attempt:', { token: token?.substring(0, 10) + '...' });
+  console.log('🔐 Password reset attempt');
 
   try {
     if (!token || !newPassword || !confirmPassword) {
@@ -416,27 +405,6 @@ app.post('/api/auth/reset-password', async (req, res) => {
   }
 });
 
-// Check verification status
-app.get('/api/auth/verification-status', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT email_verified FROM users WHERE id = $1',
-      [req.user.userId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    res.status(200).json({
-      email_verified: result.rows[0].email_verified
-    });
-  } catch (error) {
-    console.error('❌ Verification status error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 // Get current user
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
@@ -475,7 +443,7 @@ app.get('/api/markets', async (req, res) => {
             'id', mo.id,
             'option_text', mo.option_text,
             'odds', mo.odds,
-            'bet_count', mo.bet_count
+            'bet_count', COALESCE(mo.bet_count, 0)
           ) 
           ORDER BY mo.id
         ) FILTER (WHERE mo.id IS NOT NULL), '{}') as options
@@ -529,7 +497,6 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
       no_odds = (100 / noPercentage).toFixed(2);
     }
 
-    // For multi-choice, yes_odds and no_odds must be NULL
     const result = await pool.query(
       `INSERT INTO markets 
        (question, category_id, creator_id, market_type, deadline, yes_odds, no_odds, min_bet, max_bet, status) 
@@ -553,8 +520,6 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
 
     // For multi-choice markets, insert options
     if (market_type === 'multiple' && options && options.length > 0) {
-      console.log('📝 Inserting market options:', options);
-      
       for (const option of options) {
         let optionOdds = 2.0;
         
@@ -567,7 +532,6 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
           'INSERT INTO market_options (market_id, option_text, odds) VALUES ($1, $2, $3)',
           [market.id, option, optionOdds]
         );
-        console.log(`   ✅ Option "${option}" added with odds ${optionOdds}x`);
       }
     }
 
@@ -714,6 +678,30 @@ app.get('/api/categories', async (req, res) => {
     res.status(200).json({ categories: result.rows });
   } catch (error) {
     console.error('❌ Get categories error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ==========================================
+// LEADERBOARD ENDPOINT
+// ==========================================
+
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        id,
+        username,
+        balance,
+        created_at
+      FROM users
+      ORDER BY balance DESC
+      LIMIT 100
+    `);
+
+    res.status(200).json({ leaderboard: result.rows });
+  } catch (error) {
+    console.error('❌ Get leaderboard error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
