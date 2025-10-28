@@ -63,7 +63,9 @@ function App() {
     try {
       const response = await fetch(`${API_URL}/api/categories`);
       const data = await response.json();
-      setCategories(Array.isArray(data) ? data : []);
+      // FIX: API returns {categories: [...]}
+      setCategories(data.categories || []);
+      console.log('Categories loaded:', data.categories);
     } catch (error) {
       console.error('Error fetching categories:', error);
       setCategories([]);
@@ -74,7 +76,7 @@ function App() {
     try {
       const response = await fetch(`${API_URL}/api/markets?status=active`);
       const data = await response.json();
-      setMarkets(Array.isArray(data) ? data : []);
+      setMarkets(data.markets || []);
     } catch (error) {
       console.error('Error fetching bets:', error);
       setMarkets([]);
@@ -85,7 +87,7 @@ function App() {
     try {
       const response = await fetch(`${API_URL}/api/leaderboard`);
       const data = await response.json();
-      setLeaderboard(Array.isArray(data) ? data : []);
+      setLeaderboard(data.leaderboard || []);
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
       setLeaderboard([]);
@@ -94,13 +96,13 @@ function App() {
 
   const fetchUserBets = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/user/bets`, {
+      const response = await fetch(`${API_URL}/api/bets`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
       const data = await response.json();
-      setUserBets(Array.isArray(data) ? data : []);
+      setUserBets(data.bets || []);
     } catch (error) {
       console.error('Error fetching user bets:', error);
       setUserBets([]);
@@ -115,7 +117,7 @@ function App() {
         }
       });
       const data = await response.json();
-      setReportedBets(Array.isArray(data) ? data : []);
+      setReportedBets(data.reports || []);
     } catch (error) {
       console.error('Error fetching reported bets:', error);
       setReportedBets([]);
@@ -132,25 +134,32 @@ function App() {
     }
 
     try {
-      const endpoint = authMode === 'login' ? '/api/login' : '/api/register';
+      const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/signup';
       const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: authForm.username,
           email: authForm.email,
-          password: authForm.password
+          password: authForm.password,
+          password_confirm: authForm.confirmPassword
         })
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        setUser(data.user);
-        setShowAuthModal(false);
-        setAuthForm({ username: '', email: '', password: '', confirmPassword: '' });
+        if (authMode === 'register') {
+          alert(data.message || 'Account created! Please check your email to verify your account.');
+          setAuthMode('login');
+          setAuthForm({ username: '', email: '', password: '', confirmPassword: '' });
+        } else {
+          localStorage.setItem('token', data.token);
+          localStorage.setItem('user', JSON.stringify(data.user));
+          setUser(data.user);
+          setShowAuthModal(false);
+          setAuthForm({ username: '', email: '', password: '', confirmPassword: '' });
+        }
       } else {
         alert(data.error || 'Authentication failed');
       }
@@ -217,8 +226,8 @@ function App() {
           category_id: formData.category_id,
           close_date: formData.close_date,
           market_type: formData.bet_type,
-          options: formData.options,
-          ai_odds: formData.ai_odds // Include AI odds in creation
+          options: formData.bet_type === 'multiple' ? formData.options : undefined,
+          ai_odds: formData.ai_odds
         })
       });
 
@@ -233,6 +242,7 @@ function App() {
           ai_odds: null
         });
         fetchMarkets();
+        alert('Bet created successfully!');
       } else {
         const data = await response.json();
         alert(data.error || 'Failed to create bet');
@@ -262,7 +272,7 @@ function App() {
         },
         body: JSON.stringify({
           market_id: selectedBet.id,
-          position: betPosition,
+          prediction: betPosition,
           amount: amount,
           odds: odds,
           potential_payout: potential_payout
@@ -278,8 +288,8 @@ function App() {
         setBetPosition('');
         
         // Update user balance
-        if (data.new_balance !== undefined) {
-          const updatedUser = { ...user, balance: data.new_balance };
+        if (data.newBalance !== undefined) {
+          const updatedUser = { ...user, balance: data.newBalance };
           setUser(updatedUser);
           localStorage.setItem('user', JSON.stringify(updatedUser));
         }
@@ -373,6 +383,32 @@ function App() {
     } catch (error) {
       console.error('Error resolving report:', error);
       alert('Failed to resolve report');
+    }
+  };
+
+  // NEW: Handle option changes for multiple choice bets
+  const handleOptionChange = (index, value) => {
+    const newOptions = [...formData.options];
+    newOptions[index] = value;
+    setFormData({ ...formData, options: newOptions });
+  };
+
+  // NEW: Add option row
+  const handleAddOption = () => {
+    if (formData.options.length < 10) {
+      setFormData({ ...formData, options: [...formData.options, ''] });
+    } else {
+      alert('Maximum 10 options allowed');
+    }
+  };
+
+  // NEW: Remove option row
+  const handleRemoveOption = (index) => {
+    if (formData.options.length > 2) {
+      const newOptions = formData.options.filter((_, i) => i !== index);
+      setFormData({ ...formData, options: newOptions });
+    } else {
+      alert('Minimum 2 options required');
     }
   };
 
@@ -480,7 +516,7 @@ function App() {
                         {categories.find(c => c.id === market.category_id)?.icon || '📌'} {categories.find(c => c.id === market.category_id)?.name || 'Other'}
                       </span>
                       <span className="close-date">
-                        Closes: {new Date(market.close_date).toLocaleDateString('en-US', { 
+                        Closes: {new Date(market.deadline).toLocaleDateString('en-US', { 
                           year: 'numeric', 
                           month: '2-digit', 
                           day: '2-digit' 
@@ -493,10 +529,10 @@ function App() {
                     <div className="market-stats">
                       <div className="stat">
                         <span className="stat-label">Total Pool</span>
-                        <span className="stat-value">${parseFloat(market.total_pool || 0).toFixed(2)}</span>
+                        <span className="stat-value">${parseFloat(market.total_bet_amount || 0).toFixed(2)}</span>
                       </div>
                       <div className="stat">
-                        <span className="stat-label">Total Bets</span>
+                        <span className="stat-label">Participants</span>
                         <span className="stat-value">{market.total_bets || 0}</span>
                       </div>
                     </div>
@@ -506,25 +542,18 @@ function App() {
                         <>
                           <div className="odds-option">
                             <span className="option-label">YES</span>
-                            <span className="odds-value" title="Payout multiplier">{(market.current_odds?.yes || 2.0).toFixed(2)}x</span>
-                            <span className="odds-label">Payout</span>
-                            <span className="volume-pct" title="Percentage of total money on this outcome">{market.volume_distribution?.yes || 50}%</span>
-                            <span className="volume-label">of pool</span>
+                            <span className="odds-value">{(market.yes_odds || 2.0).toFixed(2)}x</span>
                           </div>
                           <div className="odds-option">
                             <span className="option-label">NO</span>
-                            <span className="odds-value" title="Payout multiplier">{(market.current_odds?.no || 2.0).toFixed(2)}x</span>
-                            <span className="odds-label">Payout</span>
-                            <span className="volume-pct" title="Percentage of total money on this outcome">{market.volume_distribution?.no || 50}%</span>
-                            <span className="volume-label">of pool</span>
+                            <span className="odds-value">{(market.no_odds || 2.0).toFixed(2)}x</span>
                           </div>
                         </>
                       ) : (
                         market.options?.map(option => (
-                          <div key={option} className="odds-option">
-                            <span className="option-label">{option}</span>
-                            <span className="odds-value" title="Payout multiplier">{(market.current_odds?.[option.toLowerCase()] || 2.0).toFixed(2)}x</span>
-                            <span className="odds-label">Payout</span>
+                          <div key={option.id} className="odds-option">
+                            <span className="option-label">{option.option_text}</span>
+                            <span className="odds-value">{(option.odds || 2.0).toFixed(2)}x</span>
                           </div>
                         ))
                       )}
@@ -576,11 +605,11 @@ function App() {
               <div className="bets-list">
                 {userBets.map(bet => (
                   <div key={bet.id} className="bet-card">
-                    <h4>{bet.question}</h4>
+                    <h4>{bet.market_question}</h4>
                     <div className="bet-details">
                       <div className="bet-detail">
                         <span className="label">Position:</span>
-                        <span className={`position ${bet.position.toLowerCase()}`}>{bet.position}</span>
+                        <span className={`position ${bet.prediction?.toLowerCase()}`}>{bet.prediction}</span>
                       </div>
                       <div className="bet-detail">
                         <span className="label">Amount:</span>
@@ -631,12 +660,17 @@ function App() {
                 <select
                   value={formData.category_id}
                   onChange={(e) => setFormData({...formData, category_id: parseInt(e.target.value)})}
+                  required
                 >
-                  {categories.map(cat => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.icon} {cat.name}
-                    </option>
-                  ))}
+                  {categories.length === 0 ? (
+                    <option value="">Loading categories...</option>
+                  ) : (
+                    categories.map(cat => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.icon} {cat.name}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 
@@ -655,7 +689,14 @@ function App() {
                 <label>Bet Type</label>
                 <select
                   value={formData.bet_type}
-                  onChange={(e) => setFormData({...formData, bet_type: e.target.value})}
+                  onChange={(e) => {
+                    const newType = e.target.value;
+                    setFormData({
+                      ...formData, 
+                      bet_type: newType,
+                      options: newType === 'binary' ? ['Yes', 'No'] : ['', '', '']
+                    });
+                  }}
                 >
                   <option value="binary">Yes/No</option>
                   <option value="multiple">Multiple Choice</option>
@@ -664,16 +705,39 @@ function App() {
 
               {formData.bet_type === 'multiple' && (
                 <div className="form-group">
-                  <label>Options (comma-separated)</label>
-                  <input
-                    type="text"
-                    value={formData.options.join(', ')}
-                    onChange={(e) => setFormData({
-                      ...formData, 
-                      options: e.target.value.split(',').map(o => o.trim())
-                    })}
-                    placeholder="Option 1, Option 2, Option 3"
-                  />
+                  <label>Options (2-10 options)</label>
+                  <div className="options-list">
+                    {formData.options.map((option, index) => (
+                      <div key={index} className="option-row">
+                        <input
+                          type="text"
+                          value={option}
+                          onChange={(e) => handleOptionChange(index, e.target.value)}
+                          placeholder={`Option ${index + 1}`}
+                          required
+                        />
+                        {formData.options.length > 2 && (
+                          <button
+                            type="button"
+                            className="btn-remove"
+                            onClick={() => handleRemoveOption(index)}
+                            title="Remove option"
+                          >
+                            ❌
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {formData.options.length < 10 && (
+                      <button
+                        type="button"
+                        className="btn-add-option"
+                        onClick={handleAddOption}
+                      >
+                        ➕ Add Option
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -723,9 +787,9 @@ function App() {
                   <span className="username">{player.username}</span>
                   <span className="balance">${parseFloat(player.balance).toFixed(2)}</span>
                   <span className="profit" style={{ 
-                    color: player.balance >= 1000 ? '#10B981' : '#EF4444' 
+                    color: player.balance >= 10000 ? '#10B981' : '#EF4444' 
                   }}>
-                    {player.balance >= 1000 ? '+' : ''}{(player.balance - 1000).toFixed(2)}
+                    {player.balance >= 10000 ? '+' : ''}{(player.balance - 10000).toFixed(2)}
                   </span>
                 </div>
               ))}
@@ -789,7 +853,7 @@ function App() {
                         <p className="bet-meta">
                           Category: {categories.find(c => c.id === market.category_id)?.name || 'Unknown'} • 
                           Total bets: ${parseFloat(market.total_bet_amount || 0).toFixed(2)} • 
-                          Closes: {new Date(market.close_date).toLocaleDateString()}
+                          Closes: {new Date(market.deadline).toLocaleDateString()}
                         </p>
                       </div>
                       <button 
@@ -892,23 +956,23 @@ function App() {
                       className={betPosition === 'yes' ? 'active yes' : 'yes'}
                       onClick={() => setBetPosition('yes')}
                     >
-                      YES ({(selectedBet.current_odds?.yes || 2.0).toFixed(2)}x)
+                      YES ({(selectedBet.yes_odds || 2.0).toFixed(2)}x)
                     </button>
                     <button
                       className={betPosition === 'no' ? 'active no' : 'no'}
                       onClick={() => setBetPosition('no')}
                     >
-                      NO ({(selectedBet.current_odds?.no || 2.0).toFixed(2)}x)
+                      NO ({(selectedBet.no_odds || 2.0).toFixed(2)}x)
                     </button>
                   </>
                 ) : (
                   selectedBet.options?.map(option => (
                     <button
-                      key={option}
-                      className={betPosition === option.toLowerCase() ? 'active' : ''}
-                      onClick={() => setBetPosition(option.toLowerCase())}
+                      key={option.id}
+                      className={betPosition === option.option_text.toLowerCase() ? 'active' : ''}
+                      onClick={() => setBetPosition(option.option_text.toLowerCase())}
                     >
-                      {option} ({(selectedBet.current_odds?.[option.toLowerCase()] || 2.0).toFixed(2)}x)
+                      {option.option_text} ({(option.odds || 2.0).toFixed(2)}x)
                     </button>
                   ))
                 )}
@@ -931,9 +995,11 @@ function App() {
                     <div className="bet-summary">
                       <p>You're betting: <strong>${parseFloat(betAmount).toFixed(2)}</strong></p>
                       <p>Potential win: <strong className="win">
-                        ${(parseFloat(betAmount) * (selectedBet.current_odds?.[betPosition] || 2.0)).toFixed(2)}
+                        ${(parseFloat(betAmount) * (selectedBet.market_type === 'binary' 
+                          ? (betPosition === 'yes' ? selectedBet.yes_odds : selectedBet.no_odds)
+                          : selectedBet.options?.find(o => o.option_text.toLowerCase() === betPosition)?.odds || 2.0
+                        )).toFixed(2)}
                       </strong></p>
-                      <p>Odds: <strong>{(selectedBet.current_odds?.[betPosition] || 2.0).toFixed(2)}x</strong></p>
                     </div>
                   )}
 
