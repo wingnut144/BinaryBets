@@ -1,15 +1,17 @@
-import express from 'express';
-import cors from 'cors';
-import pkg from 'pg';
-import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
+const express = require('express');
+const cors = require('cors');
+const { Pool } = require('pg');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
-const { Pool } = pkg;
 const app = express();
+const PORT = process.env.PORT || 3001;
 
-// Configuration
-const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const RESOLVER_TOKEN = process.env.RESOLVER_TOKEN || 'resolver-secure-token-' + Math.random().toString(36).substring(2, 15);
 
 console.log('🔐 Resolver Token:', RESOLVER_TOKEN);
@@ -20,74 +22,87 @@ const pool = new Pool({
   ssl: false
 });
 
-// Middleware
+// Test database connection
+pool.query('SELECT NOW()', (err, res) => {
+  if (err) {
+    console.error('❌ Database connection error:', err);
+  } else {
+    console.log('✅ Database connected at:', res.rows[0].now);
+  }
+});
+
+// ============================================================================
+// MIDDLEWARE
+// ============================================================================
+
 app.use(cors({
-  origin: '*',
+  origin: process.env.FRONTEND_URL || '*',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(express.json());
 
-// Authentication middleware
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+// Request logging
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path}`);
+  next();
+});
 
+// ============================================================================
+// AUTHENTICATION MIDDLEWARE
+// ============================================================================
+
+const authenticate = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  
   if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
+    return res.status(401).json({ error: 'No token provided' });
   }
-
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      console.error('Token verification error:', err.message);
-      return res.status(403).json({ error: 'Invalid or expired token' });
-    }
-    req.user = user;
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    console.log(`🔐 Authenticated user:`, decoded);
     next();
-  });
+  } catch (error) {
+    console.error('❌ Token verification failed:', error.message);
+    res.status(401).json({ error: 'Invalid token' });
+  }
 };
 
-// Admin authentication middleware
-const authenticateAdmin = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
+const authenticateAdmin = async (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  
   if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
+    return res.status(401).json({ error: 'No token provided' });
   }
-
-  jwt.verify(token, JWT_SECRET, async (err, user) => {
-    if (err) {
-      console.error('Token verification error:', err.message);
-      return res.status(403).json({ error: 'Invalid or expired token' });
-    }
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
     
     // Check if user is admin
-    try {
-      const result = await pool.query(
-        'SELECT is_admin FROM users WHERE id = $1',
-        [user.id]
-      );
-      
-      if (result.rows.length === 0 || !result.rows[0].is_admin) {
-        return res.status(403).json({ error: 'Admin access required' });
-      }
-      
-      req.user = user;
-      next();
-    } catch (error) {
-      console.error('Admin check error:', error);
-      res.status(500).json({ error: 'Server error' });
+    const result = await pool.query(
+      'SELECT is_admin FROM users WHERE id = $1',
+      [decoded.id]
+    );
+    
+    if (!result.rows[0] || !result.rows[0].is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
     }
-  });
+    
+    req.user = decoded;
+    next();
+  } catch (error) {
+    console.error('❌ Admin authentication failed:', error.message);
+    res.status(401).json({ error: 'Invalid token' });
+  }
 };
 
-// Resolver authentication middleware
 const authenticateResolver = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
+  const token = req.headers.authorization?.split(' ')[1];
+  
   if (token === RESOLVER_TOKEN) {
     next();
   } else {
@@ -95,7 +110,10 @@ const authenticateResolver = (req, res, next) => {
   }
 };
 
-// Health check
+// ============================================================================
+// HEALTH CHECK
+// ============================================================================
+
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
@@ -109,22 +127,47 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
     
-    // Hash password
-    const password_hash = await bcrypt.hash(password, 10);
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'All fields required' });
+    }
     
-    // Insert user
+    // Check if user exists
+    const existingUser = await pool.query(
+      'SELECT id FROM users WHERE username = $1 OR email = $2',
+      [username, email]
+    );
+    
+    if (existingUser.rows.length > 0) {
+      return res.status(400).json({ error: 'Username or email already exists' });
+    }
+    
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
+    
+    // Create user
     const result = await pool.query(
-      'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id, username, email, balance',
-      [username, email, password_hash]
+      'INSERT INTO users (username, email, password_hash, balance) VALUES ($1, $2, $3, $4) RETURNING id, username, email, balance',
+      [username, email, passwordHash, 1000.00]
     );
     
     const user = result.rows[0];
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
     
-    res.json({ user, token });
+    console.log('✅ New user registered:', username);
+    
+    res.status(201).json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        balance: parseFloat(user.balance),
+        is_admin: false
+      }
+    });
   } catch (error) {
-    console.error('Register error:', error);
-    res.status(400).json({ error: error.message });
+    console.error('❌ Registration error:', error);
+    res.status(500).json({ error: 'Registration failed' });
   }
 });
 
@@ -133,9 +176,13 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
     
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
+    }
+    
     // Get user
     const result = await pool.query(
-      'SELECT * FROM users WHERE username = $1',
+      'SELECT id, username, email, password_hash, balance, is_admin FROM users WHERE username = $1',
       [username]
     );
     
@@ -145,46 +192,31 @@ app.post('/api/auth/login', async (req, res) => {
     
     const user = result.rows[0];
     
-    // Check password
+    // Verify password
     const validPassword = await bcrypt.compare(password, user.password_hash);
+    
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
+    // Generate token
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
     
+    console.log('✅ User logged in:', username);
+    
     res.json({
+      token,
       user: {
         id: user.id,
         username: user.username,
         email: user.email,
-        balance: user.balance,
+        balance: parseFloat(user.balance),
         is_admin: user.is_admin || false
-      },
-      token
+      }
     });
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get current user
-app.get('/api/users/me', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT id, username, email, balance, is_admin, created_at FROM users WHERE id = $1',
-      [req.user.id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    res.json({ user: result.rows[0] });
-  } catch (error) {
-    console.error('Get user error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('❌ Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
   }
 });
 
@@ -192,30 +224,42 @@ app.get('/api/users/me', authenticateToken, async (req, res) => {
 // CATEGORY ROUTES
 // ============================================================================
 
-// Get all categories with market counts
+// Get all categories
 app.get('/api/categories', async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
         c.id,
         c.name,
-        c.description,
         c.icon,
         c.color,
+        c.description,
         COUNT(DISTINCT m.id) as market_count
       FROM categories c
-      LEFT JOIN markets m ON c.id = m.category_id AND m.status = 'active'
-      GROUP BY c.id, c.name, c.description, c.icon, c.color
+      LEFT JOIN markets m ON m.category_id = c.id
+      GROUP BY c.id
       ORDER BY c.name
     `);
-    res.json({ categories: result.rows });
+    
+    const categories = result.rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      icon: row.icon,
+      color: row.color,
+      description: row.description,
+      market_count: parseInt(row.market_count)
+    }));
+    
+    console.log(`📁 Categories loaded: (${categories.length})`, categories.map(c => c.name));
+    
+    res.json({ categories });
   } catch (error) {
-    console.error('Get categories error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('❌ Error fetching categories:', error);
+    res.status(500).json({ error: 'Failed to fetch categories' });
   }
 });
 
-// Get single category with subcategories
+// Get category with subcategories
 app.get('/api/categories/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -230,85 +274,21 @@ app.get('/api/categories/:id', async (req, res) => {
       return res.status(404).json({ error: 'Category not found' });
     }
     
-    // Get subcategories with market counts
-    const subcategoriesResult = await pool.query(`
-      SELECT 
-        s.id,
-        s.name,
-        s.description,
-        COUNT(DISTINCT m.id) as market_count
-      FROM subcategories s
-      LEFT JOIN markets m ON s.id = m.subcategory_id AND m.status = 'active'
-      WHERE s.category_id = $1
-      GROUP BY s.id, s.name, s.description
-      ORDER BY s.name
-    `, [id]);
+    // Get subcategories
+    const subcategoriesResult = await pool.query(
+      'SELECT id, name, description FROM subcategories WHERE category_id = $1 ORDER BY name',
+      [id]
+    );
     
-    const category = categoryResult.rows[0];
-    category.subcategories = subcategoriesResult.rows;
+    const category = {
+      ...categoryResult.rows[0],
+      subcategories: subcategoriesResult.rows
+    };
     
     res.json({ category });
   } catch (error) {
-    console.error('Get category error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get markets by category
-app.get('/api/categories/:id/markets', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status = 'active' } = req.query;
-    
-    const result = await pool.query(`
-      SELECT 
-        m.*,
-        u.username as creator_username,
-        c.name as category_name,
-        c.icon as category_icon,
-        c.color as category_color,
-        s.name as subcategory_name
-      FROM markets m
-      JOIN users u ON m.creator_id = u.id
-      LEFT JOIN categories c ON m.category_id = c.id
-      LEFT JOIN subcategories s ON m.subcategory_id = s.id
-      WHERE m.category_id = $1 AND m.status = $2
-      ORDER BY m.created_at DESC
-    `, [id, status]);
-    
-    res.json({ markets: result.rows });
-  } catch (error) {
-    console.error('Get category markets error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get markets by subcategory
-app.get('/api/subcategories/:id/markets', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status = 'active' } = req.query;
-    
-    const result = await pool.query(`
-      SELECT 
-        m.*,
-        u.username as creator_username,
-        c.name as category_name,
-        c.icon as category_icon,
-        c.color as category_color,
-        s.name as subcategory_name
-      FROM markets m
-      JOIN users u ON m.creator_id = u.id
-      LEFT JOIN categories c ON m.category_id = c.id
-      LEFT JOIN subcategories s ON m.subcategory_id = s.id
-      WHERE m.subcategory_id = $1 AND m.status = $2
-      ORDER BY m.created_at DESC
-    `, [id, status]);
-    
-    res.json({ markets: result.rows });
-  } catch (error) {
-    console.error('Get subcategory markets error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('❌ Error fetching category:', error);
+    res.status(500).json({ error: 'Failed to fetch category' });
   }
 });
 
@@ -316,26 +296,21 @@ app.get('/api/subcategories/:id/markets', async (req, res) => {
 // ADMIN CATEGORY MANAGEMENT ROUTES
 // ============================================================================
 
-// Create new category
+// Create category
 app.post('/api/admin/categories', authenticateAdmin, async (req, res) => {
   try {
-    const { name, description, icon, color } = req.body;
+    const { name, icon, color, description } = req.body;
     
     const result = await pool.query(
-      `INSERT INTO categories (name, description, icon, color) 
-       VALUES ($1, $2, $3, $4) 
-       RETURNING *`,
-      [name, description, icon, color]
+      'INSERT INTO categories (name, icon, color, description) VALUES ($1, $2, $3, $4) RETURNING *',
+      [name, icon || '📁', color || '#667eea', description]
     );
     
-    res.json({ category: result.rows[0] });
+    console.log('✅ Category created:', name);
+    res.status(201).json({ category: result.rows[0] });
   } catch (error) {
-    console.error('Create category error:', error);
-    if (error.code === '23505') { // Unique violation
-      res.status(400).json({ error: 'Category name already exists' });
-    } else {
-      res.status(500).json({ error: 'Server error' });
-    }
+    console.error('❌ Error creating category:', error);
+    res.status(500).json({ error: 'Failed to create category' });
   }
 });
 
@@ -343,28 +318,22 @@ app.post('/api/admin/categories', authenticateAdmin, async (req, res) => {
 app.put('/api/admin/categories/:id', authenticateAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, icon, color } = req.body;
+    const { name, icon, color, description } = req.body;
     
     const result = await pool.query(
-      `UPDATE categories 
-       SET name = $1, description = $2, icon = $3, color = $4
-       WHERE id = $5
-       RETURNING *`,
-      [name, description, icon, color, id]
+      'UPDATE categories SET name = $1, icon = $2, color = $3, description = $4 WHERE id = $5 RETURNING *',
+      [name, icon, color, description, id]
     );
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Category not found' });
     }
     
+    console.log('✅ Category updated:', name);
     res.json({ category: result.rows[0] });
   } catch (error) {
-    console.error('Update category error:', error);
-    if (error.code === '23505') { // Unique violation
-      res.status(400).json({ error: 'Category name already exists' });
-    } else {
-      res.status(500).json({ error: 'Server error' });
-    }
+    console.error('❌ Error updating category:', error);
+    res.status(500).json({ error: 'Failed to update category' });
   }
 });
 
@@ -373,74 +342,31 @@ app.delete('/api/admin/categories/:id', authenticateAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Check if category has markets
-    const marketsResult = await pool.query(
-      'SELECT COUNT(*) as count FROM markets WHERE category_id = $1',
-      [id]
-    );
+    await pool.query('DELETE FROM categories WHERE id = $1', [id]);
     
-    const marketCount = parseInt(marketsResult.rows[0].count);
-    
-    if (marketCount > 0) {
-      // Set category_id to NULL for existing markets instead of blocking deletion
-      await pool.query(
-        'UPDATE markets SET category_id = NULL WHERE category_id = $1',
-        [id]
-      );
-    }
-    
-    // Delete category (subcategories will cascade delete due to ON DELETE CASCADE)
-    const result = await pool.query(
-      'DELETE FROM categories WHERE id = $1 RETURNING *',
-      [id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Category not found' });
-    }
-    
-    res.json({ 
-      success: true, 
-      message: marketCount > 0 
-        ? `Category deleted. ${marketCount} markets were uncategorized.`
-        : 'Category deleted successfully.'
-    });
+    console.log('✅ Category deleted:', id);
+    res.json({ message: 'Category deleted successfully' });
   } catch (error) {
-    console.error('Delete category error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('❌ Error deleting category:', error);
+    res.status(500).json({ error: 'Failed to delete category' });
   }
 });
 
-// Create new subcategory
+// Create subcategory
 app.post('/api/admin/subcategories', authenticateAdmin, async (req, res) => {
   try {
     const { category_id, name, description } = req.body;
     
-    // Check if category exists
-    const categoryResult = await pool.query(
-      'SELECT id FROM categories WHERE id = $1',
-      [category_id]
-    );
-    
-    if (categoryResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Category not found' });
-    }
-    
     const result = await pool.query(
-      `INSERT INTO subcategories (category_id, name, description) 
-       VALUES ($1, $2, $3) 
-       RETURNING *`,
+      'INSERT INTO subcategories (category_id, name, description) VALUES ($1, $2, $3) RETURNING *',
       [category_id, name, description]
     );
     
-    res.json({ subcategory: result.rows[0] });
+    console.log('✅ Subcategory created:', name);
+    res.status(201).json({ subcategory: result.rows[0] });
   } catch (error) {
-    console.error('Create subcategory error:', error);
-    if (error.code === '23505') { // Unique violation
-      res.status(400).json({ error: 'Subcategory name already exists in this category' });
-    } else {
-      res.status(500).json({ error: 'Server error' });
-    }
+    console.error('❌ Error creating subcategory:', error);
+    res.status(500).json({ error: 'Failed to create subcategory' });
   }
 });
 
@@ -451,10 +377,7 @@ app.put('/api/admin/subcategories/:id', authenticateAdmin, async (req, res) => {
     const { name, description } = req.body;
     
     const result = await pool.query(
-      `UPDATE subcategories 
-       SET name = $1, description = $2
-       WHERE id = $3
-       RETURNING *`,
+      'UPDATE subcategories SET name = $1, description = $2 WHERE id = $3 RETURNING *',
       [name, description, id]
     );
     
@@ -462,14 +385,11 @@ app.put('/api/admin/subcategories/:id', authenticateAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Subcategory not found' });
     }
     
+    console.log('✅ Subcategory updated:', name);
     res.json({ subcategory: result.rows[0] });
   } catch (error) {
-    console.error('Update subcategory error:', error);
-    if (error.code === '23505') { // Unique violation
-      res.status(400).json({ error: 'Subcategory name already exists in this category' });
-    } else {
-      res.status(500).json({ error: 'Server error' });
-    }
+    console.error('❌ Error updating subcategory:', error);
+    res.status(500).json({ error: 'Failed to update subcategory' });
   }
 });
 
@@ -478,211 +398,248 @@ app.delete('/api/admin/subcategories/:id', authenticateAdmin, async (req, res) =
   try {
     const { id } = req.params;
     
-    // Check if subcategory has markets
-    const marketsResult = await pool.query(
-      'SELECT COUNT(*) as count FROM markets WHERE subcategory_id = $1',
-      [id]
-    );
+    await pool.query('DELETE FROM subcategories WHERE id = $1', [id]);
     
-    const marketCount = parseInt(marketsResult.rows[0].count);
+    console.log('✅ Subcategory deleted:', id);
+    res.json({ message: 'Subcategory deleted successfully' });
+  } catch (error) {
+    console.error('❌ Error deleting subcategory:', error);
+    res.status(500).json({ error: 'Failed to delete subcategory' });
+  }
+});
+
+// ============================================================================
+// AI ODDS GENERATION ROUTE (CHATGPT PRIMARY, ANTHROPIC FALLBACK)
+// ============================================================================
+
+app.post('/api/generate-odds', authenticate, async (req, res) => {
+  try {
+    const { question, options } = req.body;
     
-    if (marketCount > 0) {
-      // Set subcategory_id to NULL for existing markets
-      await pool.query(
-        'UPDATE markets SET subcategory_id = NULL WHERE subcategory_id = $1',
-        [id]
-      );
+    if (!question || !options || !Array.isArray(options) || options.length < 2) {
+      return res.status(400).json({ 
+        error: 'Please provide a question and at least 2 options' 
+      });
+    }
+
+    console.log('🤖 Generating odds for:', question);
+    console.log('📊 Options:', options);
+    
+    // ========================================================================
+    // PRIMARY: Try OpenAI ChatGPT first
+    // ========================================================================
+    if (process.env.OPENAI_API_KEY) {
+      try {
+        console.log('🎯 Attempting ChatGPT odds generation...');
+        
+        const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: 'gpt-4',
+            messages: [{
+              role: 'system',
+              content: 'You are a prediction market odds estimator. Analyze questions and provide probability estimates in JSON format only.'
+            }, {
+              role: 'user',
+              content: `Estimate probabilities for: "${question}"\nOptions: ${options.join(', ')}\nRespond with ONLY valid JSON: {"${options[0]}": 0.XX, "${options[1]}": 0.XX}\nProbabilities must sum to 1.0.`
+            }],
+            max_tokens: 200,
+            temperature: 0.7
+          })
+        });
+        
+        if (openaiResponse.ok) {
+          const data = await openaiResponse.json();
+          const responseText = data.choices[0].message.content.trim();
+          
+          console.log('📝 ChatGPT response:', responseText);
+          
+          const jsonMatch = responseText.match(/\{[^}]+\}/);
+          if (jsonMatch) {
+            const odds = JSON.parse(jsonMatch[0]);
+            
+            const sum = Object.values(odds).reduce((a, b) => a + b, 0);
+            const hasAllOptions = options.every(opt => odds.hasOwnProperty(opt));
+            
+            if (hasAllOptions && Math.abs(sum - 1.0) < 0.02) {
+              const normalizationFactor = 1.0 / sum;
+              Object.keys(odds).forEach(key => {
+                odds[key] = parseFloat((odds[key] * normalizationFactor).toFixed(3));
+              });
+              
+              console.log('✅ ChatGPT odds:', odds);
+              return res.json({ 
+                odds, 
+                provider: 'chatgpt',
+                message: 'AI-generated odds powered by ChatGPT-4'
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('❌ ChatGPT failed:', error.message);
+      }
     }
     
-    // Delete subcategory
-    const result = await pool.query(
-      'DELETE FROM subcategories WHERE id = $1 RETURNING *',
-      [id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Subcategory not found' });
+    // ========================================================================
+    // FALLBACK: Try Anthropic Claude
+    // ========================================================================
+    if (process.env.ANTHROPIC_API_KEY) {
+      try {
+        console.log('🎯 Attempting Anthropic (fallback)...');
+        
+        const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': process.env.ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model: 'claude-3-5-sonnet-20241022',
+            max_tokens: 250,
+            messages: [{
+              role: 'user',
+              content: `Estimate probabilities for: "${question}"\nOptions: ${options.join(', ')}\nRespond with ONLY JSON: {"${options[0]}": 0.XX, "${options[1]}": 0.XX}\nSum must equal 1.0.`
+            }]
+          })
+        });
+        
+        if (anthropicResponse.ok) {
+          const data = await anthropicResponse.json();
+          const responseText = data.content[0].text.trim();
+          
+          console.log('📝 Anthropic response:', responseText);
+          
+          const jsonMatch = responseText.match(/\{[^}]+\}/);
+          if (jsonMatch) {
+            const odds = JSON.parse(jsonMatch[0]);
+            
+            const sum = Object.values(odds).reduce((a, b) => a + b, 0);
+            const hasAllOptions = options.every(opt => odds.hasOwnProperty(opt));
+            
+            if (hasAllOptions && Math.abs(sum - 1.0) < 0.02) {
+              const normalizationFactor = 1.0 / sum;
+              Object.keys(odds).forEach(key => {
+                odds[key] = parseFloat((odds[key] * normalizationFactor).toFixed(3));
+              });
+              
+              console.log('✅ Anthropic odds:', odds);
+              return res.json({ 
+                odds, 
+                provider: 'anthropic',
+                message: 'AI-generated odds powered by Claude'
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('❌ Anthropic failed:', error.message);
+      }
     }
+    
+    // Equal odds fallback
+    console.log('⚠️ Using equal odds fallback');
+    const equalProb = 1.0 / options.length;
+    const odds = {};
+    options.forEach(option => {
+      odds[option] = parseFloat(equalProb.toFixed(3));
+    });
     
     res.json({ 
-      success: true,
-      message: marketCount > 0
-        ? `Subcategory deleted. ${marketCount} markets lost their subcategory.`
-        : 'Subcategory deleted successfully.'
+      odds, 
+      provider: 'fallback',
+      message: 'Using equal probabilities'
     });
+    
   } catch (error) {
-    console.error('Delete subcategory error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('❌ Odds generation error:', error);
+    res.status(500).json({ error: 'Failed to generate odds' });
   }
-});
-
-// ============================================================================
-// LEADERBOARD ROUTES
-// ============================================================================
-
-app.get('/api/leaderboard', async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT 
-        u.id,
-        u.username,
-        u.balance,
-        COUNT(DISTINCT b.market_id) as total_bets,
-        COUNT(DISTINCT CASE WHEN m.outcome = mo.option_text THEN b.id END) as wins
-      FROM users u
-      LEFT JOIN bets b ON u.id = b.user_id
-      LEFT JOIN markets m ON b.market_id = m.id
-      LEFT JOIN market_options mo ON b.option_id = mo.id
-      GROUP BY u.id, u.username, u.balance
-      ORDER BY u.balance DESC
-      LIMIT 10
-    `);
-    res.json({ leaderboard: result.rows });
-  } catch (error) {
-    console.error('Leaderboard error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// ============================================================================
-// ADMIN ROUTES
-// ============================================================================
-
-app.get('/api/admin/reports', async (req, res) => {
-  res.json({ reports: [] });
 });
 
 // ============================================================================
 // MARKET ROUTES
 // ============================================================================
 
-// Get all markets with optional filtering
+// Get all markets
 app.get('/api/markets', async (req, res) => {
   try {
-    const { status, category_id, subcategory_id } = req.query;
+    const { category, subcategory } = req.query;
     
     let query = `
       SELECT 
         m.*,
-        u.username as creator_username,
         c.name as category_name,
         c.icon as category_icon,
         c.color as category_color,
-        s.name as subcategory_name
+        s.name as subcategory_name,
+        u.username as creator_username
       FROM markets m
-      JOIN users u ON m.creator_id = u.id
       LEFT JOIN categories c ON m.category_id = c.id
       LEFT JOIN subcategories s ON m.subcategory_id = s.id
-      WHERE 1=1
+      LEFT JOIN users u ON m.created_by = u.id
+      WHERE m.status = 'active'
     `;
     
     const params = [];
-    let paramCount = 1;
     
-    if (status) {
-      query += ` AND m.status = $${paramCount}`;
-      params.push(status);
-      paramCount++;
+    if (category && category !== 'all') {
+      params.push(category);
+      query += ` AND m.category_id = $${params.length}`;
     }
     
-    if (category_id) {
-      query += ` AND m.category_id = $${paramCount}`;
-      params.push(category_id);
-      paramCount++;
-    }
-    
-    if (subcategory_id) {
-      query += ` AND m.subcategory_id = $${paramCount}`;
-      params.push(subcategory_id);
-      paramCount++;
+    if (subcategory) {
+      params.push(subcategory);
+      query += ` AND m.subcategory_id = $${params.length}`;
     }
     
     query += ' ORDER BY m.created_at DESC';
     
-    const marketsResult = await pool.query(query, params);
+    const result = await pool.query(query, params);
     
-    // Get options for each market
-    for (let market of marketsResult.rows) {
-      const optionsResult = await pool.query(
-        'SELECT id, option_text, total_amount FROM market_options WHERE market_id = $1',
-        [market.id]
-      );
-      market.options = optionsResult.rows;
-    }
+    const markets = result.rows.map(row => ({
+      ...row,
+      options: row.options || [],
+      close_date: row.close_date
+    }));
     
-    res.json({ markets: marketsResult.rows });
+    console.log(`📊 Loaded ${markets.length} markets`);
+    res.json({ markets });
   } catch (error) {
-    console.error('Get markets error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get single market
-app.get('/api/markets/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const marketResult = await pool.query(
-      `SELECT 
-        m.*,
-        u.username as creator_username,
-        c.name as category_name,
-        c.icon as category_icon,
-        c.color as category_color,
-        s.name as subcategory_name
-      FROM markets m
-      JOIN users u ON m.creator_id = u.id
-      LEFT JOIN categories c ON m.category_id = c.id
-      LEFT JOIN subcategories s ON m.subcategory_id = s.id
-      WHERE m.id = $1`,
-      [id]
-    );
-    
-    if (marketResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Market not found' });
-    }
-    
-    const market = marketResult.rows[0];
-    
-    // Get options
-    const optionsResult = await pool.query(
-      'SELECT id, option_text, total_amount FROM market_options WHERE market_id = $1',
-      [id]
-    );
-    market.options = optionsResult.rows;
-    
-    res.json({ market });
-  } catch (error) {
-    console.error('Get market error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('❌ Error fetching markets:', error);
+    res.status(500).json({ error: 'Failed to fetch markets' });
   }
 });
 
 // Create market
-app.post('/api/markets', authenticateToken, async (req, res) => {
+app.post('/api/markets', authenticate, async (req, res) => {
   try {
-    const { question, deadline, options, category_id, subcategory_id } = req.body;
+    const { question, options, close_date, category_id, subcategory_id, ai_odds } = req.body;
     
-    // Insert market
-    const marketResult = await pool.query(
-      'INSERT INTO markets (creator_id, question, deadline, category_id, subcategory_id) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [req.user.id, question, deadline, category_id || null, subcategory_id || null]
-    );
-    
-    const market = marketResult.rows[0];
-    
-    // Insert options
-    for (let option of options) {
-      await pool.query(
-        'INSERT INTO market_options (market_id, option_text) VALUES ($1, $2)',
-        [market.id, option]
-      );
+    if (!question || !options || !close_date) {
+      return res.status(400).json({ error: 'Missing required fields' });
     }
     
-    res.json({ market });
+    if (!Array.isArray(options) || options.length < 2) {
+      return res.status(400).json({ error: 'At least 2 options required' });
+    }
+    
+    const result = await pool.query(
+      `INSERT INTO markets (question, options, close_date, created_by, category_id, subcategory_id, ai_odds) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [question, JSON.stringify(options), close_date, req.user.id, category_id, subcategory_id, ai_odds ? JSON.stringify(ai_odds) : null]
+    );
+    
+    console.log('✅ Market created:', question);
+    res.status(201).json({ market: result.rows[0] });
   } catch (error) {
-    console.error('Create market error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('❌ Error creating market:', error);
+    res.status(500).json({ error: 'Failed to create market' });
   }
 });
 
@@ -690,10 +647,42 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
 // BET ROUTES
 // ============================================================================
 
-// Place bet
-app.post('/api/bets', authenticateToken, async (req, res) => {
+// Get user's bets
+app.get('/api/bets', authenticate, async (req, res) => {
   try {
-    const { market_id, option_id, amount } = req.body;
+    console.log(`📊 GET /api/bets - User: ${req.user.id} (${req.user.username})`);
+    
+    const result = await pool.query(
+      `SELECT b.*, m.question, m.options, m.status as market_status
+       FROM bets b
+       JOIN markets m ON b.market_id = m.id
+       WHERE b.user_id = $1
+       ORDER BY b.created_at DESC`,
+      [req.user.id]
+    );
+    
+    res.json({ 
+      bets: result.rows,
+      username: req.user.username
+    });
+  } catch (error) {
+    console.error('❌ Error fetching bets:', error);
+    res.status(500).json({ error: 'Failed to fetch bets' });
+  }
+});
+
+// Place bet
+app.post('/api/bets', authenticate, async (req, res) => {
+  try {
+    const { market_id, position, amount } = req.body;
+    
+    if (!market_id || !position || !amount) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    if (amount <= 0) {
+      return res.status(400).json({ error: 'Amount must be positive' });
+    }
     
     // Check user balance
     const userResult = await pool.query(
@@ -701,94 +690,84 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
       [req.user.id]
     );
     
-    if (userResult.rows[0].balance < amount) {
+    if (parseFloat(userResult.rows[0].balance) < amount) {
       return res.status(400).json({ error: 'Insufficient balance' });
     }
     
-    // Check market is active
+    // Check market exists and is active
     const marketResult = await pool.query(
-      'SELECT status FROM markets WHERE id = $1',
-      [market_id]
+      'SELECT * FROM markets WHERE id = $1 AND status = $2',
+      [market_id, 'active']
     );
     
-    if (marketResult.rows[0].status !== 'active') {
-      return res.status(400).json({ error: 'Market is not active' });
+    if (marketResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Market not found or closed' });
     }
     
-    // Place bet
-    await pool.query(
-      'INSERT INTO bets (user_id, market_id, option_id, amount) VALUES ($1, $2, $3, $4)',
-      [req.user.id, market_id, option_id, amount]
-    );
+    // Create bet and update balance in transaction
+    const client = await pool.connect();
     
-    // Update user balance
-    await pool.query(
-      'UPDATE users SET balance = balance - $1 WHERE id = $2',
-      [amount, req.user.id]
-    );
-    
-    // Update option total
-    await pool.query(
-      'UPDATE market_options SET total_amount = total_amount + $1 WHERE id = $2',
-      [amount, option_id]
-    );
-    
-    res.json({ success: true });
+    try {
+      await client.query('BEGIN');
+      
+      // Deduct from user balance
+      await client.query(
+        'UPDATE users SET balance = balance - $1 WHERE id = $2',
+        [amount, req.user.id]
+      );
+      
+      // Create bet
+      const betResult = await client.query(
+        'INSERT INTO bets (user_id, market_id, position, amount, odds) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+        [req.user.id, market_id, position, amount, 1.5] // Default odds
+      );
+      
+      await client.query('COMMIT');
+      
+      console.log(`✅ Bet placed: ${req.user.username} - $${amount} on ${position}`);
+      res.status(201).json({ bet: betResult.rows[0] });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   } catch (error) {
-    console.error('Place bet error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('❌ Error placing bet:', error);
+    res.status(500).json({ error: 'Failed to place bet' });
   }
 });
 
-// Get user's bets
-app.get('/api/users/me/bets', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT 
-        b.*,
-        m.question,
-        m.status as market_status,
-        m.outcome,
-        mo.option_text
-      FROM bets b
-      JOIN markets m ON b.market_id = m.id
-      JOIN market_options mo ON b.option_id = mo.id
-      WHERE b.user_id = $1
-      ORDER BY b.created_at DESC`,
-      [req.user.id]
-    );
-    
-    res.json({ bets: result.rows });
-  } catch (error) {
-    console.error('Get user bets error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+// ============================================================================
+// LEADERBOARD ROUTE
+// ============================================================================
 
-// Get all bets (requires authentication) - THIS WAS CAUSING THE 403 ERROR
-app.get('/api/bets', authenticateToken, async (req, res) => {
+app.get('/api/leaderboard', async (req, res) => {
   try {
-    console.log('GET /api/bets - User:', req.user);
-    const result = await pool.query(
-      `SELECT 
-        b.*,
-        m.question,
-        m.status as market_status,
-        m.outcome,
-        mo.option_text,
-        u.username
-      FROM bets b
-      JOIN markets m ON b.market_id = m.id
-      JOIN market_options mo ON b.option_id = mo.id
-      JOIN users u ON b.user_id = u.id
-      WHERE b.user_id = $1
-      ORDER BY b.created_at DESC`,
-      [req.user.id]
-    );
-    res.json({ bets: result.rows });
+    const result = await pool.query(`
+      SELECT 
+        id,
+        username,
+        balance,
+        COALESCE((SELECT COUNT(*) FROM bets WHERE user_id = users.id), 0) as total_bets,
+        created_at
+      FROM users
+      ORDER BY balance DESC
+      LIMIT 10
+    `);
+    
+    const leaderboard = result.rows.map(row => ({
+      id: row.id,
+      username: row.username,
+      balance: parseFloat(row.balance),
+      total_bets: parseInt(row.total_bets),
+      created_at: row.created_at
+    }));
+    
+    res.json({ leaderboard });
   } catch (error) {
-    console.error('Get bets error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('❌ Error fetching leaderboard:', error);
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
   }
 });
 
@@ -796,7 +775,6 @@ app.get('/api/bets', authenticateToken, async (req, res) => {
 // RESOLVER ROUTES (Protected with resolver token)
 // ============================================================================
 
-// AI resolution endpoint
 app.post('/api/resolve-with-ai', authenticateResolver, async (req, res) => {
   try {
     const { question, options } = req.body;
@@ -813,7 +791,7 @@ app.post('/api/resolve-with-ai', authenticateResolver, async (req, res) => {
           },
           body: JSON.stringify({
             model: 'claude-3-5-sonnet-20241022',
-            max_tokens: 1024,
+            max_tokens: 100,
             messages: [{
               role: 'user',
               content: `You are a prediction market resolver. Given this question: "${question}", and these options: ${options.join(', ')}, determine which option is correct based on current facts. Respond with ONLY the exact option text, nothing else. If you cannot determine the outcome with certainty, respond with "Unresolved".`
@@ -827,8 +805,8 @@ app.post('/api/resolve-with-ai', authenticateResolver, async (req, res) => {
           console.log('✅ Anthropic determined outcome:', outcome);
           return res.json({ outcome, provider: 'anthropic' });
         }
-      } catch (err) {
-        console.error('Anthropic error:', err.message);
+      } catch (error) {
+        console.error('❌ Anthropic resolution failed:', error.message);
       }
     }
     
@@ -860,77 +838,15 @@ app.post('/api/resolve-with-ai', authenticateResolver, async (req, res) => {
           console.log('✅ OpenAI determined outcome:', outcome);
           return res.json({ outcome, provider: 'openai' });
         }
-      } catch (err) {
-        console.error('OpenAI error:', err.message);
+      } catch (error) {
+        console.error('❌ OpenAI resolution failed:', error.message);
       }
     }
     
-    // No AI available
-    res.json({ outcome: 'Unresolved', provider: 'none' });
+    res.status(503).json({ error: 'AI resolution unavailable', outcome: 'Unresolved' });
   } catch (error) {
-    console.error('AI resolution error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Resolve market
-app.post('/api/markets/:id/resolve', authenticateResolver, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { outcome, winning_outcome } = req.body;
-    
-    // Update market
-    await pool.query(
-      'UPDATE markets SET status = $1, outcome = $2, resolved_at = NOW() WHERE id = $3',
-      ['resolved', outcome, id]
-    );
-    
-    // If there's a winning outcome, pay out winners
-    if (winning_outcome && winning_outcome !== 'Unresolved') {
-      const winningOptionResult = await pool.query(
-        'SELECT id, total_amount FROM market_options WHERE market_id = $1 AND option_text = $2',
-        [id, winning_outcome]
-      );
-      
-      if (winningOptionResult.rows.length > 0) {
-        const winningOption = winningOptionResult.rows[0];
-        
-        // Get total pool
-        const poolResult = await pool.query(
-          'SELECT SUM(total_amount) as total_pool FROM market_options WHERE market_id = $1',
-          [id]
-        );
-        const totalPool = parseFloat(poolResult.rows[0].total_pool) || 0;
-        
-        // Get winning bets
-        const betsResult = await pool.query(
-          'SELECT user_id, amount FROM bets WHERE market_id = $1 AND option_id = $2',
-          [id, winningOption.id]
-        );
-        
-        // Pay out each winner
-        for (let bet of betsResult.rows) {
-          const winningAmount = parseFloat(winningOption.total_amount);
-          const userBetAmount = parseFloat(bet.amount);
-          const payout = winningAmount > 0 ? (userBetAmount / winningAmount) * totalPool : 0;
-          
-          await pool.query(
-            'UPDATE users SET balance = balance + $1 WHERE id = $2',
-            [payout, bet.user_id]
-          );
-          
-          await pool.query(
-            'UPDATE bets SET payout = $1 WHERE market_id = $2 AND user_id = $3',
-            [payout, id, bet.user_id]
-          );
-        }
-      }
-    }
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Resolve market error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('❌ Resolution error:', error);
+    res.status(500).json({ error: 'Resolution failed' });
   }
 });
 
@@ -938,7 +854,18 @@ app.post('/api/markets/:id/resolve', authenticateResolver, async (req, res) => {
 // START SERVER
 // ============================================================================
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔐 Resolver Token: ${RESOLVER_TOKEN}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('🚀 Binary Bets API Server');
+  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📊 Database: ${process.env.DATABASE_URL ? 'Connected' : 'Not configured'}`);
+  console.log(`🤖 OpenAI: ${process.env.OPENAI_API_KEY ? 'Configured' : 'Not configured'}`);
+  console.log(`🤖 Anthropic: ${process.env.ANTHROPIC_API_KEY ? 'Configured' : 'Not configured'}`);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('⏳ SIGTERM received, shutting down gracefully...');
+  await pool.end();
+  process.exit(0);
 });
