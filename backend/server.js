@@ -21,7 +21,12 @@ const pool = new Pool({
 });
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // Authentication middleware
@@ -35,10 +40,46 @@ const authenticateToken = (req, res, next) => {
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
+      console.error('Token verification error:', err.message);
       return res.status(403).json({ error: 'Invalid or expired token' });
     }
     req.user = user;
     next();
+  });
+};
+
+// Admin authentication middleware
+const authenticateAdmin = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  jwt.verify(token, JWT_SECRET, async (err, user) => {
+    if (err) {
+      console.error('Token verification error:', err.message);
+      return res.status(403).json({ error: 'Invalid or expired token' });
+    }
+    
+    // Check if user is admin
+    try {
+      const result = await pool.query(
+        'SELECT is_admin FROM users WHERE id = $1',
+        [user.id]
+      );
+      
+      if (result.rows.length === 0 || !result.rows[0].is_admin) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+      
+      req.user = user;
+      next();
+    } catch (error) {
+      console.error('Admin check error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
   });
 };
 
@@ -117,7 +158,8 @@ app.post('/api/auth/login', async (req, res) => {
         id: user.id,
         username: user.username,
         email: user.email,
-        balance: user.balance
+        balance: user.balance,
+        is_admin: user.is_admin || false
       },
       token
     });
@@ -131,7 +173,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/users/me', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, username, email, balance, created_at FROM users WHERE id = $1',
+      'SELECT id, username, email, balance, is_admin, created_at FROM users WHERE id = $1',
       [req.user.id]
     );
     
@@ -266,6 +308,210 @@ app.get('/api/subcategories/:id/markets', async (req, res) => {
     res.json({ markets: result.rows });
   } catch (error) {
     console.error('Get subcategory markets error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================================================
+// ADMIN CATEGORY MANAGEMENT ROUTES
+// ============================================================================
+
+// Create new category
+app.post('/api/admin/categories', authenticateAdmin, async (req, res) => {
+  try {
+    const { name, description, icon, color } = req.body;
+    
+    const result = await pool.query(
+      `INSERT INTO categories (name, description, icon, color) 
+       VALUES ($1, $2, $3, $4) 
+       RETURNING *`,
+      [name, description, icon, color]
+    );
+    
+    res.json({ category: result.rows[0] });
+  } catch (error) {
+    console.error('Create category error:', error);
+    if (error.code === '23505') { // Unique violation
+      res.status(400).json({ error: 'Category name already exists' });
+    } else {
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+});
+
+// Update category
+app.put('/api/admin/categories/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, icon, color } = req.body;
+    
+    const result = await pool.query(
+      `UPDATE categories 
+       SET name = $1, description = $2, icon = $3, color = $4
+       WHERE id = $5
+       RETURNING *`,
+      [name, description, icon, color, id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+    
+    res.json({ category: result.rows[0] });
+  } catch (error) {
+    console.error('Update category error:', error);
+    if (error.code === '23505') { // Unique violation
+      res.status(400).json({ error: 'Category name already exists' });
+    } else {
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+});
+
+// Delete category
+app.delete('/api/admin/categories/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if category has markets
+    const marketsResult = await pool.query(
+      'SELECT COUNT(*) as count FROM markets WHERE category_id = $1',
+      [id]
+    );
+    
+    const marketCount = parseInt(marketsResult.rows[0].count);
+    
+    if (marketCount > 0) {
+      // Set category_id to NULL for existing markets instead of blocking deletion
+      await pool.query(
+        'UPDATE markets SET category_id = NULL WHERE category_id = $1',
+        [id]
+      );
+    }
+    
+    // Delete category (subcategories will cascade delete due to ON DELETE CASCADE)
+    const result = await pool.query(
+      'DELETE FROM categories WHERE id = $1 RETURNING *',
+      [id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+    
+    res.json({ 
+      success: true, 
+      message: marketCount > 0 
+        ? `Category deleted. ${marketCount} markets were uncategorized.`
+        : 'Category deleted successfully.'
+    });
+  } catch (error) {
+    console.error('Delete category error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Create new subcategory
+app.post('/api/admin/subcategories', authenticateAdmin, async (req, res) => {
+  try {
+    const { category_id, name, description } = req.body;
+    
+    // Check if category exists
+    const categoryResult = await pool.query(
+      'SELECT id FROM categories WHERE id = $1',
+      [category_id]
+    );
+    
+    if (categoryResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+    
+    const result = await pool.query(
+      `INSERT INTO subcategories (category_id, name, description) 
+       VALUES ($1, $2, $3) 
+       RETURNING *`,
+      [category_id, name, description]
+    );
+    
+    res.json({ subcategory: result.rows[0] });
+  } catch (error) {
+    console.error('Create subcategory error:', error);
+    if (error.code === '23505') { // Unique violation
+      res.status(400).json({ error: 'Subcategory name already exists in this category' });
+    } else {
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+});
+
+// Update subcategory
+app.put('/api/admin/subcategories/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description } = req.body;
+    
+    const result = await pool.query(
+      `UPDATE subcategories 
+       SET name = $1, description = $2
+       WHERE id = $3
+       RETURNING *`,
+      [name, description, id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Subcategory not found' });
+    }
+    
+    res.json({ subcategory: result.rows[0] });
+  } catch (error) {
+    console.error('Update subcategory error:', error);
+    if (error.code === '23505') { // Unique violation
+      res.status(400).json({ error: 'Subcategory name already exists in this category' });
+    } else {
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+});
+
+// Delete subcategory
+app.delete('/api/admin/subcategories/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if subcategory has markets
+    const marketsResult = await pool.query(
+      'SELECT COUNT(*) as count FROM markets WHERE subcategory_id = $1',
+      [id]
+    );
+    
+    const marketCount = parseInt(marketsResult.rows[0].count);
+    
+    if (marketCount > 0) {
+      // Set subcategory_id to NULL for existing markets
+      await pool.query(
+        'UPDATE markets SET subcategory_id = NULL WHERE subcategory_id = $1',
+        [id]
+      );
+    }
+    
+    // Delete subcategory
+    const result = await pool.query(
+      'DELETE FROM subcategories WHERE id = $1 RETURNING *',
+      [id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Subcategory not found' });
+    }
+    
+    res.json({ 
+      success: true,
+      message: marketCount > 0
+        ? `Subcategory deleted. ${marketCount} markets lost their subcategory.`
+        : 'Subcategory deleted successfully.'
+    });
+  } catch (error) {
+    console.error('Delete subcategory error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -519,19 +765,22 @@ app.get('/api/users/me/bets', authenticateToken, async (req, res) => {
   }
 });
 
-// Get all bets (requires authentication)
+// Get all bets (requires authentication) - THIS WAS CAUSING THE 403 ERROR
 app.get('/api/bets', authenticateToken, async (req, res) => {
   try {
+    console.log('GET /api/bets - User:', req.user);
     const result = await pool.query(
       `SELECT 
         b.*,
         m.question,
         m.status as market_status,
         m.outcome,
-        mo.option_text
+        mo.option_text,
+        u.username
       FROM bets b
       JOIN markets m ON b.market_id = m.id
       JOIN market_options mo ON b.option_id = mo.id
+      JOIN users u ON b.user_id = u.id
       WHERE b.user_id = $1
       ORDER BY b.created_at DESC`,
       [req.user.id]
