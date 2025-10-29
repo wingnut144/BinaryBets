@@ -575,6 +575,64 @@ app.get('/api/users/me/bets', authenticateToken, async (req, res) => {
   }
 });
 
+// Get categories (stub - returns empty for now)
+app.get('/api/categories', async (req, res) => {
+  res.json({ categories: [] });
+});
+
+// Get leaderboard
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        u.id,
+        u.username,
+        u.balance,
+        COUNT(DISTINCT b.market_id) as total_bets,
+        COUNT(DISTINCT CASE WHEN m.outcome = mo.option_text THEN b.id END) as wins
+      FROM users u
+      LEFT JOIN bets b ON u.id = b.user_id
+      LEFT JOIN markets m ON b.market_id = m.id
+      LEFT JOIN market_options mo ON b.option_id = mo.id
+      GROUP BY u.id, u.username, u.balance
+      ORDER BY u.balance DESC
+      LIMIT 10
+    `);
+    res.json({ leaderboard: result.rows });
+  } catch (error) {
+    console.error('Leaderboard error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get admin reports (stub - returns empty for now)
+app.get('/api/admin/reports', async (req, res) => {
+  res.json({ reports: [] });
+});
+
+// Get all bets for current user
+app.get('/api/bets', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        b.*,
+        m.question,
+        m.status as market_status,
+        m.outcome,
+        mo.option_text
+      FROM bets b
+      JOIN markets m ON b.market_id = m.id
+      JOIN market_options mo ON b.option_id = mo.id
+      WHERE b.user_id = $1
+      ORDER BY b.created_at DESC
+    `, [req.user.id]);
+    res.json({ bets: result.rows });
+  } catch (error) {
+    console.error('Get bets error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Start server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
