@@ -322,7 +322,7 @@ app.post('/api/markets/:id/report', authenticateToken, async (req, res) => {
     }
 
     await pool.query(
-      `INSERT INTO market_reports (market_id, reporter_id, reason, status) 
+      `INSERT INTO market_reports (market_id, reported_by, reason, status) 
        VALUES ($1, $2, $3, 'pending')`,
       [id, req.user.userId, reason]
     );
@@ -535,10 +535,10 @@ app.get('/api/admin/reports', authenticateToken, async (req, res) => {
         mr.*,
         m.question,
         u.username as reporter_username
-      FROM market_reports mr
-      JOIN markets m ON mr.market_id = m.id
-      JOIN users u ON mr.reporter_id = u.id
-      ORDER BY mr.created_at DESC
+     u.username as reporter_username
+FROM market_reports mr
+JOIN markets m ON mr.market_id = m.id
+JOIN users u ON mr.reported_by = u.id
     `);
 
     res.status(200).json({ reports: result.rows });
