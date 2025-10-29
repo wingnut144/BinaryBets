@@ -303,8 +303,8 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
         }
 
         await pool.query(
-          'INSERT INTO market_options (market_id, option_text, odds, bet_count) VALUES ($1, $2, $3, 0)',
-          [market.id, option, optionOdds]
+          'INSERT INTO market_options (market_id, option_text, odds, bet_count, option_order) VALUES ($1, $2, $3, 0, $4)',
+          [market.id, option, optionOdds, options.indexOf(option) + 1]
         );
       }
     }
@@ -610,27 +610,214 @@ app.post('/api/generate-odds', authenticateToken, async (req, res) => {
   console.log('🤖 Generating AI odds for:', question);
 
   try {
-    const odds = {};
+    // Priority 1: Try OpenAI first
+    if (process.env.OPENAI_API_KEY) {
+      console.log('🔵 Trying OpenAI API...');
+      const openaiResult = await generateOddsWithOpenAI(question, options);
+      if (openaiResult.success) {
+        console.log('✅ OpenAI odds generated successfully');
+        return res.status(200).json({
+          odds: openaiResult.odds,
+          reasoning: openaiResult.reasoning,
+          source: 'OpenAI GPT-4'
+        });
+      }
+      console.log('⚠️ OpenAI failed, trying Anthropic...');
+    }
+
+    // Priority 2: Try Anthropic Claude
+    if (process.env.ANTHROPIC_API_KEY) {
+      console.log('🟣 Trying Anthropic API...');
+      const claudeResult = await generateOddsWithClaude(question, options);
+      if (claudeResult.success) {
+        console.log('✅ Claude odds generated successfully');
+        return res.status(200).json({
+          odds: claudeResult.odds,
+          reasoning: claudeResult.reasoning,
+          source: 'Anthropic Claude'
+        });
+      }
+      console.log('⚠️ Claude failed, using defaults...');
+    }
+
+    // Priority 3: Default odds
+    console.log('⚠️ No API keys configured or all APIs failed, using default odds');
+    res.status(200).json({
+      odds: generateDefaultOdds(options),
+      reasoning: 'Default odds (AI APIs unavailable)',
+      source: 'Default'
+    });
+
+  } catch (error) {
+    console.error('❌ Generate odds error:', error);
+    res.status(200).json({
+      odds: generateDefaultOdds(options),
+      reasoning: 'Error generating AI odds, using defaults',
+      source: 'Default'
+    });
+  }
+});
+
+// OpenAI odds generation
+async function generateOddsWithOpenAI(question, options) {
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [{
+          role: 'system',
+          content: 'You are a prediction market expert. Analyze questions and provide accurate probability estimates based on current events, historical data, and logical reasoning. Always respond with valid JSON only.'
+        }, {
+          role: 'user',
+          content: `Analyze this prediction market question and provide probability estimates.
+
+Question: "${question}"
+Options: ${options.join(', ')}
+
+Respond with ONLY this JSON format (no other text):
+{
+  "odds": {
+    ${options.map(opt => `"${opt}": <percentage as integer>`).join(',\n    ')}
+  },
+  "reasoning": "<brief explanation of your probability estimates>"
+}
+
+Make sure the percentages add up to 100.`
+        }],
+        temperature: 0.7,
+        max_tokens: 500
+      })
+    });
+
+    if (!response.ok) {
+      console.error('❌ OpenAI API error:', response.status, await response.text());
+      return { success: false };
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
     
-    if (options.length === 2 && options[0] === 'Yes' && options[1] === 'No') {
-      odds.Yes = 50;
-      odds.No = 50;
-    } else {
-      const percentage = Math.floor(100 / options.length);
-      options.forEach(option => {
-        odds[option] = percentage;
+    // Parse JSON from response
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error('❌ Could not parse OpenAI response');
+      return { success: false };
+    }
+
+    const aiResponse = JSON.parse(jsonMatch[0]);
+    
+    // Validate odds sum to 100
+    const total = Object.values(aiResponse.odds).reduce((sum, val) => sum + val, 0);
+    if (Math.abs(total - 100) > 2) {
+      console.warn('⚠️ OpenAI odds don\'t sum to 100:', total, '- normalizing...');
+      Object.keys(aiResponse.odds).forEach(key => {
+        aiResponse.odds[key] = Math.round((aiResponse.odds[key] / total) * 100);
       });
     }
 
-    res.status(200).json({
-      odds,
-      reasoning: 'Default odds generated. For more accurate predictions, integrate with an AI service.'
-    });
+    return {
+      success: true,
+      odds: aiResponse.odds,
+      reasoning: aiResponse.reasoning || 'AI-generated probability estimates'
+    };
+
   } catch (error) {
-    console.error('❌ Generate odds error:', error);
-    res.status(500).json({ error: 'Failed to generate odds' });
+    console.error('❌ OpenAI generation error:', error.message);
+    return { success: false };
   }
-});
+}
+
+// Anthropic Claude odds generation
+async function generateOddsWithClaude(question, options) {
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 1024,
+        messages: [{
+          role: 'user',
+          content: `You are a prediction market expert. Analyze this question and provide probability estimates.
+
+Question: "${question}"
+Options: ${options.join(', ')}
+
+Provide your analysis in this exact JSON format:
+{
+  "odds": {
+    ${options.map(opt => `"${opt}": <percentage as integer>`).join(',\n    ')}
+  },
+  "reasoning": "<brief explanation of your probability estimates>"
+}
+
+Make sure the percentages add up to 100. Base your estimates on current events, historical data, and logical reasoning.`
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      console.error('❌ Claude API error:', response.status, await response.text());
+      return { success: false };
+    }
+
+    const data = await response.json();
+    const content = data.content[0].text;
+    
+    // Parse JSON from Claude's response
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error('❌ Could not parse Claude response');
+      return { success: false };
+    }
+
+    const aiResponse = JSON.parse(jsonMatch[0]);
+    
+    // Validate odds sum to 100
+    const total = Object.values(aiResponse.odds).reduce((sum, val) => sum + val, 0);
+    if (Math.abs(total - 100) > 2) {
+      console.warn('⚠️ Claude odds don\'t sum to 100:', total, '- normalizing...');
+      Object.keys(aiResponse.odds).forEach(key => {
+        aiResponse.odds[key] = Math.round((aiResponse.odds[key] / total) * 100);
+      });
+    }
+
+    return {
+      success: true,
+      odds: aiResponse.odds,
+      reasoning: aiResponse.reasoning || 'AI-generated probability estimates'
+    };
+
+  } catch (error) {
+    console.error('❌ Claude generation error:', error.message);
+    return { success: false };
+  }
+}
+
+// Helper function for default odds
+function generateDefaultOdds(options) {
+  const odds = {};
+  if (options.length === 2 && options[0] === 'Yes' && options[1] === 'No') {
+    odds.Yes = 50;
+    odds.No = 50;
+  } else {
+    const percentage = Math.floor(100 / options.length);
+    const remainder = 100 - (percentage * options.length);
+    options.forEach((option, index) => {
+      odds[option] = percentage + (index === 0 ? remainder : 0);
+    });
+  }
+  return odds;
+}
 
 // ==========================================
 // HEALTH CHECK
