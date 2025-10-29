@@ -1,3 +1,4 @@
+cat market-resolver.js
 import fetch from 'node-fetch';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:5000';
@@ -203,3 +204,4 @@ process.on('SIGINT', () => {
   console.log('📴 Resolver shutting down...');
   process.exit(0);
 });
+root@ubuntu-s-2vcpu-4gb-sfo3-01:~/BinaryBets/resolver# 
