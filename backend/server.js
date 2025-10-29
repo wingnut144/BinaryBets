@@ -221,6 +221,230 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // ============================================================================
+// EMAIL VERIFICATION & PASSWORD RESET ROUTES
+// ============================================================================
+
+// Temporary in-memory storage (use Redis in production)
+const verificationCodes = new Map();
+const resetTokens = new Map();
+
+// Send verification email
+app.post('/api/auth/send-verification', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    verificationCodes.set(userId, {
+      code,
+      expires: Date.now() + 10 * 60 * 1000
+    });
+    
+    const result = await pool.query(
+      'SELECT email, username FROM users WHERE id = $1',
+      [userId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const { email, username } = result.rows[0];
+    
+    console.log('📧 Verification code for', username, ':', code);
+    
+    // In development, return the code
+    if (process.env.NODE_ENV === 'development') {
+      return res.json({ 
+        message: 'Verification code sent',
+        code
+      });
+    }
+    
+    res.json({ 
+      message: 'Verification code sent to your email',
+      email: email.replace(/(.{2})(.*)(@.*)/, '$1***$3')
+    });
+    
+  } catch (error) {
+    console.error('❌ Error sending verification:', error);
+    res.status(500).json({ error: 'Failed to send verification code' });
+  }
+});
+
+// Verify email with code
+app.post('/api/auth/verify-email', authenticate, async (req, res) => {
+  try {
+    const { code } = req.body;
+    const userId = req.user.id;
+    
+    if (!code) {
+      return res.status(400).json({ error: 'Verification code required' });
+    }
+    
+    const stored = verificationCodes.get(userId);
+    
+    if (!stored) {
+      return res.status(400).json({ error: 'No verification code found' });
+    }
+    
+    if (Date.now() > stored.expires) {
+      verificationCodes.delete(userId);
+      return res.status(400).json({ error: 'Verification code expired' });
+    }
+    
+    if (stored.code !== code) {
+      return res.status(400).json({ error: 'Invalid verification code' });
+    }
+    
+    await pool.query(
+      'UPDATE users SET email_verified = TRUE WHERE id = $1',
+      [userId]
+    );
+    
+    verificationCodes.delete(userId);
+    
+    console.log('✅ Email verified for user:', userId);
+    
+    res.json({ 
+      message: 'Email verified successfully',
+      verified: true
+    });
+    
+  } catch (error) {
+    console.error('❌ Error verifying email:', error);
+    res.status(500).json({ error: 'Failed to verify email' });
+  }
+});
+
+// Request password reset
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email required' });
+    }
+    
+    const result = await pool.query(
+      'SELECT id, username, email FROM users WHERE email = $1',
+      [email]
+    );
+    
+    if (result.rows.length === 0) {
+      console.log('⚠️  Password reset requested for non-existent email:', email);
+      return res.json({ 
+        message: 'If that email exists, a reset link has been sent'
+      });
+    }
+    
+    const user = result.rows[0];
+    const resetToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
+    
+    resetTokens.set(resetToken, {
+      userId: user.id,
+      expires: Date.now() + 60 * 60 * 1000
+    });
+    
+    console.log('🔐 Password reset token for', user.username, ':', resetToken);
+    console.log('   Reset link: https://binary-bets.com/reset-password?token=' + resetToken);
+    
+    if (process.env.NODE_ENV === 'development') {
+      return res.json({ 
+        message: 'Password reset link sent',
+        token: resetToken,
+        resetLink: `https://binary-bets.com/reset-password?token=${resetToken}`
+      });
+    }
+    
+    res.json({ 
+      message: 'If that email exists, a reset link has been sent'
+    });
+    
+  } catch (error) {
+    console.error('❌ Error requesting password reset:', error);
+    res.status(500).json({ error: 'Failed to process request' });
+  }
+});
+
+// Verify reset token
+app.get('/api/auth/verify-reset-token/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    const stored = resetTokens.get(token);
+    
+    if (!stored) {
+      return res.status(400).json({ 
+        valid: false,
+        error: 'Invalid or expired reset token' 
+      });
+    }
+    
+    if (Date.now() > stored.expires) {
+      resetTokens.delete(token);
+      return res.status(400).json({ 
+        valid: false,
+        error: 'Reset token has expired' 
+      });
+    }
+    
+    res.json({ 
+      valid: true,
+      message: 'Token is valid'
+    });
+    
+  } catch (error) {
+    console.error('❌ Error verifying reset token:', error);
+    res.status(500).json({ error: 'Failed to verify token' });
+  }
+});
+
+// Reset password with token
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    
+    if (!token || !password) {
+      return res.status(400).json({ error: 'Token and password required' });
+    }
+    
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+    
+    const stored = resetTokens.get(token);
+    
+    if (!stored) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+    
+    if (Date.now() > stored.expires) {
+      resetTokens.delete(token);
+      return res.status(400).json({ error: 'Reset token has expired' });
+    }
+    
+    const passwordHash = await bcrypt.hash(password, 10);
+    
+    await pool.query(
+      'UPDATE users SET password_hash = $1 WHERE id = $2',
+      [passwordHash, stored.userId]
+    );
+    
+    resetTokens.delete(token);
+    
+    console.log('✅ Password reset for user:', stored.userId);
+    
+    res.json({ 
+      message: 'Password reset successfully',
+      success: true
+    });
+    
+  } catch (error) {
+    console.error('❌ Error resetting password:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+// ============================================================================
 // CATEGORY ROUTES
 // ============================================================================
 
