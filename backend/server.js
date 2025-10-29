@@ -1,8 +1,9 @@
-const express = require('express');
-const cors = require('cors');
-const { Pool } = require('pg');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
+import express from 'express';
+import cors from 'cors';
+import pkg from 'pg';
+const { Pool } = pkg;
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -131,7 +132,6 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'All fields required' });
     }
     
-    // Check if user exists
     const existingUser = await pool.query(
       'SELECT id FROM users WHERE username = $1 OR email = $2',
       [username, email]
@@ -141,10 +141,8 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'Username or email already exists' });
     }
     
-    // Hash password
     const passwordHash = await bcrypt.hash(password, 10);
     
-    // Create user
     const result = await pool.query(
       'INSERT INTO users (username, email, password_hash, balance) VALUES ($1, $2, $3, $4) RETURNING id, username, email, balance',
       [username, email, passwordHash, 1000.00]
@@ -180,7 +178,6 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Username and password required' });
     }
     
-    // Get user
     const result = await pool.query(
       'SELECT id, username, email, password_hash, balance, is_admin FROM users WHERE username = $1',
       [username]
@@ -192,14 +189,12 @@ app.post('/api/auth/login', async (req, res) => {
     
     const user = result.rows[0];
     
-    // Verify password
     const validPassword = await bcrypt.compare(password, user.password_hash);
     
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
-    // Generate token
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
     
     console.log('✅ User logged in:', username);
@@ -224,7 +219,6 @@ app.post('/api/auth/login', async (req, res) => {
 // EMAIL VERIFICATION & PASSWORD RESET ROUTES
 // ============================================================================
 
-// Temporary in-memory storage (use Redis in production)
 const verificationCodes = new Map();
 const resetTokens = new Map();
 
@@ -252,7 +246,6 @@ app.post('/api/auth/send-verification', authenticate, async (req, res) => {
     
     console.log('📧 Verification code for', username, ':', code);
     
-    // In development, return the code
     if (process.env.NODE_ENV === 'development') {
       return res.json({ 
         message: 'Verification code sent',
@@ -448,7 +441,6 @@ app.post('/api/auth/reset-password', async (req, res) => {
 // CATEGORY ROUTES
 // ============================================================================
 
-// Get all categories
 app.get('/api/categories', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -483,12 +475,10 @@ app.get('/api/categories', async (req, res) => {
   }
 });
 
-// Get category with subcategories
 app.get('/api/categories/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Get category
     const categoryResult = await pool.query(
       'SELECT * FROM categories WHERE id = $1',
       [id]
@@ -498,7 +488,6 @@ app.get('/api/categories/:id', async (req, res) => {
       return res.status(404).json({ error: 'Category not found' });
     }
     
-    // Get subcategories
     const subcategoriesResult = await pool.query(
       'SELECT id, name, description FROM subcategories WHERE category_id = $1 ORDER BY name',
       [id]
@@ -520,7 +509,6 @@ app.get('/api/categories/:id', async (req, res) => {
 // ADMIN CATEGORY MANAGEMENT ROUTES
 // ============================================================================
 
-// Create category
 app.post('/api/admin/categories', authenticateAdmin, async (req, res) => {
   try {
     const { name, icon, color, description } = req.body;
@@ -538,7 +526,6 @@ app.post('/api/admin/categories', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Update category
 app.put('/api/admin/categories/:id', authenticateAdmin, async (req, res) => {
   try {
     const { id } = req.params;
@@ -561,7 +548,6 @@ app.put('/api/admin/categories/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Delete category
 app.delete('/api/admin/categories/:id', authenticateAdmin, async (req, res) => {
   try {
     const { id } = req.params;
@@ -576,7 +562,6 @@ app.delete('/api/admin/categories/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Create subcategory
 app.post('/api/admin/subcategories', authenticateAdmin, async (req, res) => {
   try {
     const { category_id, name, description } = req.body;
@@ -594,7 +579,6 @@ app.post('/api/admin/subcategories', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Update subcategory
 app.put('/api/admin/subcategories/:id', authenticateAdmin, async (req, res) => {
   try {
     const { id } = req.params;
@@ -617,7 +601,6 @@ app.put('/api/admin/subcategories/:id', authenticateAdmin, async (req, res) => {
   }
 });
 
-// Delete subcategory
 app.delete('/api/admin/subcategories/:id', authenticateAdmin, async (req, res) => {
   try {
     const { id } = req.params;
@@ -647,14 +630,11 @@ app.post('/api/generate-odds', authenticate, async (req, res) => {
     }
 
     console.log('🤖 Generating odds for:', question);
-    console.log('📊 Options:', options);
     
-    // ========================================================================
-    // PRIMARY: Try OpenAI ChatGPT first
-    // ========================================================================
+    // Try ChatGPT first
     if (process.env.OPENAI_API_KEY) {
       try {
-        console.log('🎯 Attempting ChatGPT odds generation...');
+        console.log('🎯 Attempting ChatGPT...');
         
         const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
@@ -666,10 +646,10 @@ app.post('/api/generate-odds', authenticate, async (req, res) => {
             model: 'gpt-4',
             messages: [{
               role: 'system',
-              content: 'You are a prediction market odds estimator. Analyze questions and provide probability estimates in JSON format only.'
+              content: 'You are a prediction market odds estimator. Respond with JSON only.'
             }, {
               role: 'user',
-              content: `Estimate probabilities for: "${question}"\nOptions: ${options.join(', ')}\nRespond with ONLY valid JSON: {"${options[0]}": 0.XX, "${options[1]}": 0.XX}\nProbabilities must sum to 1.0.`
+              content: `Estimate probabilities for: "${question}"\nOptions: ${options.join(', ')}\nRespond ONLY with JSON: {"${options[0]}": 0.XX, "${options[1]}": 0.XX}\nSum must equal 1.0.`
             }],
             max_tokens: 200,
             temperature: 0.7
@@ -679,8 +659,6 @@ app.post('/api/generate-odds', authenticate, async (req, res) => {
         if (openaiResponse.ok) {
           const data = await openaiResponse.json();
           const responseText = data.choices[0].message.content.trim();
-          
-          console.log('📝 ChatGPT response:', responseText);
           
           const jsonMatch = responseText.match(/\{[^}]+\}/);
           if (jsonMatch) {
@@ -696,11 +674,7 @@ app.post('/api/generate-odds', authenticate, async (req, res) => {
               });
               
               console.log('✅ ChatGPT odds:', odds);
-              return res.json({ 
-                odds, 
-                provider: 'chatgpt',
-                message: 'AI-generated odds powered by ChatGPT-4'
-              });
+              return res.json({ odds, provider: 'chatgpt' });
             }
           }
         }
@@ -709,12 +683,10 @@ app.post('/api/generate-odds', authenticate, async (req, res) => {
       }
     }
     
-    // ========================================================================
-    // FALLBACK: Try Anthropic Claude
-    // ========================================================================
+    // Try Anthropic
     if (process.env.ANTHROPIC_API_KEY) {
       try {
-        console.log('🎯 Attempting Anthropic (fallback)...');
+        console.log('🎯 Attempting Anthropic...');
         
         const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -728,7 +700,7 @@ app.post('/api/generate-odds', authenticate, async (req, res) => {
             max_tokens: 250,
             messages: [{
               role: 'user',
-              content: `Estimate probabilities for: "${question}"\nOptions: ${options.join(', ')}\nRespond with ONLY JSON: {"${options[0]}": 0.XX, "${options[1]}": 0.XX}\nSum must equal 1.0.`
+              content: `Estimate probabilities for: "${question}"\nOptions: ${options.join(', ')}\nJSON only: {"${options[0]}": 0.XX, "${options[1]}": 0.XX}`
             }]
           })
         });
@@ -736,8 +708,6 @@ app.post('/api/generate-odds', authenticate, async (req, res) => {
         if (anthropicResponse.ok) {
           const data = await anthropicResponse.json();
           const responseText = data.content[0].text.trim();
-          
-          console.log('📝 Anthropic response:', responseText);
           
           const jsonMatch = responseText.match(/\{[^}]+\}/);
           if (jsonMatch) {
@@ -753,11 +723,7 @@ app.post('/api/generate-odds', authenticate, async (req, res) => {
               });
               
               console.log('✅ Anthropic odds:', odds);
-              return res.json({ 
-                odds, 
-                provider: 'anthropic',
-                message: 'AI-generated odds powered by Claude'
-              });
+              return res.json({ odds, provider: 'anthropic' });
             }
           }
         }
@@ -767,18 +733,13 @@ app.post('/api/generate-odds', authenticate, async (req, res) => {
     }
     
     // Equal odds fallback
-    console.log('⚠️ Using equal odds fallback');
     const equalProb = 1.0 / options.length;
     const odds = {};
     options.forEach(option => {
       odds[option] = parseFloat(equalProb.toFixed(3));
     });
     
-    res.json({ 
-      odds, 
-      provider: 'fallback',
-      message: 'Using equal probabilities'
-    });
+    res.json({ odds, provider: 'fallback' });
     
   } catch (error) {
     console.error('❌ Odds generation error:', error);
@@ -790,7 +751,6 @@ app.post('/api/generate-odds', authenticate, async (req, res) => {
 // MARKET ROUTES
 // ============================================================================
 
-// Get all markets
 app.get('/api/markets', async (req, res) => {
   try {
     const { category, subcategory } = req.query;
@@ -840,7 +800,6 @@ app.get('/api/markets', async (req, res) => {
   }
 });
 
-// Create market
 app.post('/api/markets', authenticate, async (req, res) => {
   try {
     const { question, options, close_date, category_id, subcategory_id, ai_odds } = req.body;
@@ -871,10 +830,9 @@ app.post('/api/markets', authenticate, async (req, res) => {
 // BET ROUTES
 // ============================================================================
 
-// Get user's bets
 app.get('/api/bets', authenticate, async (req, res) => {
   try {
-    console.log(`📊 GET /api/bets - User: ${req.user.id} (${req.user.username})`);
+    console.log(`📊 GET /api/bets - User: ${req.user.id}`);
     
     const result = await pool.query(
       `SELECT b.*, m.question, m.options, m.status as market_status
@@ -885,17 +843,13 @@ app.get('/api/bets', authenticate, async (req, res) => {
       [req.user.id]
     );
     
-    res.json({ 
-      bets: result.rows,
-      username: req.user.username
-    });
+    res.json({ bets: result.rows, username: req.user.username });
   } catch (error) {
     console.error('❌ Error fetching bets:', error);
     res.status(500).json({ error: 'Failed to fetch bets' });
   }
 });
 
-// Place bet
 app.post('/api/bets', authenticate, async (req, res) => {
   try {
     const { market_id, position, amount } = req.body;
@@ -908,7 +862,6 @@ app.post('/api/bets', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Amount must be positive' });
     }
     
-    // Check user balance
     const userResult = await pool.query(
       'SELECT balance FROM users WHERE id = $1',
       [req.user.id]
@@ -918,7 +871,6 @@ app.post('/api/bets', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Insufficient balance' });
     }
     
-    // Check market exists and is active
     const marketResult = await pool.query(
       'SELECT * FROM markets WHERE id = $1 AND status = $2',
       [market_id, 'active']
@@ -928,27 +880,24 @@ app.post('/api/bets', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Market not found or closed' });
     }
     
-    // Create bet and update balance in transaction
     const client = await pool.connect();
     
     try {
       await client.query('BEGIN');
       
-      // Deduct from user balance
       await client.query(
         'UPDATE users SET balance = balance - $1 WHERE id = $2',
         [amount, req.user.id]
       );
       
-      // Create bet
       const betResult = await client.query(
         'INSERT INTO bets (user_id, market_id, position, amount, odds) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-        [req.user.id, market_id, position, amount, 1.5] // Default odds
+        [req.user.id, market_id, position, amount, 1.5]
       );
       
       await client.query('COMMIT');
       
-      console.log(`✅ Bet placed: ${req.user.username} - $${amount} on ${position}`);
+      console.log(`✅ Bet placed: $${amount} on ${position}`);
       res.status(201).json({ bet: betResult.rows[0] });
     } catch (error) {
       await client.query('ROLLBACK');
@@ -996,14 +945,13 @@ app.get('/api/leaderboard', async (req, res) => {
 });
 
 // ============================================================================
-// RESOLVER ROUTES (Protected with resolver token)
+// RESOLVER ROUTES
 // ============================================================================
 
 app.post('/api/resolve-with-ai', authenticateResolver, async (req, res) => {
   try {
     const { question, options } = req.body;
     
-    // Try Anthropic first
     if (process.env.ANTHROPIC_API_KEY) {
       try {
         const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1018,7 +966,7 @@ app.post('/api/resolve-with-ai', authenticateResolver, async (req, res) => {
             max_tokens: 100,
             messages: [{
               role: 'user',
-              content: `You are a prediction market resolver. Given this question: "${question}", and these options: ${options.join(', ')}, determine which option is correct based on current facts. Respond with ONLY the exact option text, nothing else. If you cannot determine the outcome with certainty, respond with "Unresolved".`
+              content: `Determine correct outcome for: "${question}". Options: ${options.join(', ')}. Respond with exact option text or "Unresolved".`
             }]
           })
         });
@@ -1026,44 +974,11 @@ app.post('/api/resolve-with-ai', authenticateResolver, async (req, res) => {
         if (anthropicResponse.ok) {
           const data = await anthropicResponse.json();
           const outcome = data.content[0].text.trim();
-          console.log('✅ Anthropic determined outcome:', outcome);
+          console.log('✅ Resolved:', outcome);
           return res.json({ outcome, provider: 'anthropic' });
         }
       } catch (error) {
-        console.error('❌ Anthropic resolution failed:', error.message);
-      }
-    }
-    
-    // Try OpenAI as fallback
-    if (process.env.OPENAI_API_KEY) {
-      try {
-        const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-          },
-          body: JSON.stringify({
-            model: 'gpt-4',
-            messages: [{
-              role: 'system',
-              content: 'You are a prediction market resolver. Determine the correct outcome based on current facts. Respond with ONLY the exact option text. If uncertain, respond with "Unresolved".'
-            }, {
-              role: 'user',
-              content: `Question: "${question}"\nOptions: ${options.join(', ')}`
-            }],
-            max_tokens: 50
-          })
-        });
-        
-        if (openaiResponse.ok) {
-          const data = await openaiResponse.json();
-          const outcome = data.choices[0].message.content.trim();
-          console.log('✅ OpenAI determined outcome:', outcome);
-          return res.json({ outcome, provider: 'openai' });
-        }
-      } catch (error) {
-        console.error('❌ OpenAI resolution failed:', error.message);
+        console.error('❌ Resolution failed:', error.message);
       }
     }
     
@@ -1082,14 +997,12 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('🚀 Binary Bets API Server');
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📊 Database: ${process.env.DATABASE_URL ? 'Connected' : 'Not configured'}`);
   console.log(`🤖 OpenAI: ${process.env.OPENAI_API_KEY ? 'Configured' : 'Not configured'}`);
   console.log(`🤖 Anthropic: ${process.env.ANTHROPIC_API_KEY ? 'Configured' : 'Not configured'}`);
 });
 
-// Graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('⏳ SIGTERM received, shutting down gracefully...');
+  console.log('⏳ Shutting down...');
   await pool.end();
   process.exit(0);
 });
