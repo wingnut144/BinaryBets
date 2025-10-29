@@ -256,16 +256,23 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
     let yes_odds = null;
     let no_odds = null;
 
-    if (market_type === 'binary' && ai_odds && ai_odds.odds) {
-      const yesPercentage = ai_odds.odds.Yes || 50;
-      const noPercentage = ai_odds.odds.No || 50;
-      yes_odds = (100 / yesPercentage).toFixed(2);
-      no_odds = (100 / noPercentage).toFixed(2);
-    } else if (market_type === 'binary') {
-      yes_odds = 2.0;
-      no_odds = 2.0;
+    // Only set odds for binary markets
+    if (market_type === 'binary') {
+      if (ai_odds && ai_odds.odds) {
+        const yesPercentage = ai_odds.odds.Yes || 50;
+        const noPercentage = ai_odds.odds.No || 50;
+        yes_odds = (100 / yesPercentage).toFixed(2);
+        no_odds = (100 / noPercentage).toFixed(2);
+      } else {
+        yes_odds = 2.0;
+        no_odds = 2.0;
+      }
     }
+    // For multiple choice, yes_odds and no_odds remain NULL
 
+    // Convert 'multiple' to 'multi-choice' for database
+    const dbMarketType = market_type === 'multiple' ? 'multi-choice' : (market_type || 'binary');
+    
     const result = await pool.query(
       `INSERT INTO markets 
        (question, category_id, creator_id, market_type, deadline, yes_odds, no_odds, status) 
@@ -275,7 +282,7 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
         question, 
         category_id, 
         req.user.userId, 
-        market_type || 'binary', 
+        dbMarketType, 
         close_date,
         yes_odds,
         no_odds
@@ -285,6 +292,7 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
     const market = result.rows[0];
     console.log('✅ Market created:', market.id);
 
+    // Add options for multi-choice markets
     if (market_type === 'multiple' && options && options.length > 0) {
       for (const option of options) {
         let optionOdds = 2.0;
