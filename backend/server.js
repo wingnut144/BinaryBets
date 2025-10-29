@@ -311,7 +311,7 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
   }
 });
 
-// Report market
+// Report market (FIXED: uses reported_by)
 app.post('/api/markets/:id/report', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { reason } = req.body;
@@ -363,7 +363,7 @@ app.delete('/api/markets/:id', authenticateToken, async (req, res) => {
 // BET ENDPOINTS
 // ==========================================
 
-// Get user's bets
+// Get user's bets (FIXED: includes option_id)
 app.get('/api/bets', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(`
@@ -518,7 +518,7 @@ app.get('/api/leaderboard', async (req, res) => {
 // ADMIN ENDPOINTS
 // ==========================================
 
-// Get reported markets
+// Get reported markets (FIXED: uses reported_by)
 app.get('/api/admin/reports', authenticateToken, async (req, res) => {
   try {
     const userResult = await pool.query(
@@ -535,10 +535,10 @@ app.get('/api/admin/reports', authenticateToken, async (req, res) => {
         mr.*,
         m.question,
         u.username as reporter_username
-     u.username as reporter_username
-FROM market_reports mr
-JOIN markets m ON mr.market_id = m.id
-JOIN users u ON mr.reported_by = u.id
+      FROM market_reports mr
+      JOIN markets m ON mr.market_id = m.id
+      JOIN users u ON mr.reported_by = u.id
+      ORDER BY mr.created_at DESC
     `);
 
     res.status(200).json({ reports: result.rows });
@@ -602,15 +602,12 @@ app.post('/api/generate-odds', authenticateToken, async (req, res) => {
   console.log('🤖 Generating AI odds for:', question);
 
   try {
-    // Simple odds generation - you can enhance this with actual AI
     const odds = {};
     
     if (options.length === 2 && options[0] === 'Yes' && options[1] === 'No') {
-      // Binary market - default 50/50
       odds.Yes = 50;
       odds.No = 50;
     } else {
-      // Multiple choice - distribute evenly
       const percentage = Math.floor(100 / options.length);
       options.forEach(option => {
         odds[option] = percentage;
