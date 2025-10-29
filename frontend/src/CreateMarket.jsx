@@ -12,6 +12,11 @@ const CreateMarket = ({ onMarketCreated }) => {
   const [selectedSubcategory, setSelectedSubcategory] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  // AI Odds Generation
+  const [generatingOdds, setGeneratingOdds] = useState(false);
+  const [aiOdds, setAiOdds] = useState(null);
+  const [showOddsPreview, setShowOddsPreview] = useState(false);
 
   // Fetch categories on mount
   useEffect(() => {
@@ -66,6 +71,62 @@ const CreateMarket = ({ onMarketCreated }) => {
     setOptions(newOptions);
   };
 
+  // AI Odds Generation
+  const handleGenerateOdds = async () => {
+    if (!question.trim()) {
+      setError('Please enter a question first');
+      return;
+    }
+
+    const validOptions = options.filter(opt => opt.trim());
+    if (validOptions.length < 2) {
+      setError('Please provide at least 2 options');
+      return;
+    }
+
+    setGeneratingOdds(true);
+    setError('');
+
+    try {
+      const response = await fetch(`${API_URL}/api/generate-odds`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          question: question.trim(),
+          options: validOptions
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to generate odds');
+      }
+
+      setAiOdds(data.odds);
+      setShowOddsPreview(true);
+    } catch (error) {
+      console.error('Error generating odds:', error);
+      setError(error.message || 'Failed to generate AI odds. Please try again.');
+    } finally {
+      setGeneratingOdds(false);
+    }
+  };
+
+  const handleAcceptOdds = () => {
+    // Odds accepted, they'll be included in the submission
+    setShowOddsPreview(false);
+  };
+
+  const handleRejectOdds = () => {
+    // User rejected AI odds
+    setAiOdds(null);
+    setShowOddsPreview(false);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -98,114 +159,137 @@ const CreateMarket = ({ onMarketCreated }) => {
     }
 
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setError('Please login to create a market');
-        setLoading(false);
-        return;
-      }
+      const marketData = {
+        question: question.trim(),
+        options: validOptions,
+        close_date: deadline,
+        category_id: selectedCategory || null,
+        subcategory_id: selectedSubcategory || null,
+        ai_odds: aiOdds // Include AI odds if generated
+      };
 
       const response = await fetch(`${API_URL}/api/markets`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({
-          question: question.trim(),
-          deadline,
-          options: validOptions,
-          category_id: selectedCategory || null,
-          subcategory_id: selectedSubcategory || null
-        })
+        body: JSON.stringify(marketData)
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create market');
+        throw new Error(data.error || 'Failed to create market');
       }
 
-      const data = await response.json();
-      
       // Reset form
       setQuestion('');
       setDeadline('');
       setOptions(['Yes', 'No']);
       setSelectedCategory('');
       setSelectedSubcategory('');
-      
+      setAiOdds(null);
+      setShowOddsPreview(false);
+
       if (onMarketCreated) {
         onMarketCreated(data.market);
       }
 
       alert('Market created successfully!');
-    } catch (err) {
-      setError(err.message);
+    } catch (error) {
+      console.error('Error creating market:', error);
+      setError(error.message || 'Failed to create market');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-6">
-      <h2 className="text-2xl font-bold mb-6">Create New Market</h2>
+    <div className="create-market-container">
+      <h2>Create New Market</h2>
       
-      {error && (
-        <div className="mb-4 p-4 bg-red-100 text-red-700 rounded">
-          {error}
-        </div>
-      )}
+      {error && <div className="error-message">{error}</div>}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Question */}
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Market Question *
-          </label>
+      <form onSubmit={handleSubmit} className="create-market-form">
+        {/* Question Field */}
+        <div className="form-group">
+          <label htmlFor="question">Market Question *</label>
           <input
             type="text"
+            id="question"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             placeholder="Will it rain tomorrow in New York?"
-            className="w-full border rounded-lg px-4 py-2"
             required
           />
         </div>
 
-        {/* Category */}
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Category (Optional)
-          </label>
+        {/* AI Odds Generation Button */}
+        <div className="form-group">
+          <button
+            type="button"
+            onClick={handleGenerateOdds}
+            disabled={generatingOdds || !question.trim()}
+            className="ai-odds-button"
+          >
+            {generatingOdds ? '🤖 Generating AI Odds...' : '🤖 Generate AI Odds'}
+          </button>
+        </div>
+
+        {/* AI Odds Preview */}
+        {showOddsPreview && aiOdds && (
+          <div className="ai-odds-preview">
+            <h3>🤖 AI Predicted Odds:</h3>
+            <div className="odds-display">
+              {Object.entries(aiOdds).map(([option, probability]) => (
+                <div key={option} className="odds-item">
+                  <span className="option-name">{option}:</span>
+                  <span className="probability">{(probability * 100).toFixed(1)}%</span>
+                </div>
+              ))}
+            </div>
+            <div className="odds-actions">
+              <button type="button" onClick={handleAcceptOdds} className="accept-odds">
+                ✓ Accept Odds
+              </button>
+              <button type="button" onClick={handleRejectOdds} className="reject-odds">
+                ✗ Reject Odds
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Category Selection */}
+        <div className="form-group">
+          <label htmlFor="category">Category (Optional)</label>
           <select
+            id="category"
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="w-full border rounded-lg px-4 py-2"
           >
             <option value="">No Category</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.icon} {category.name}
+            {categories.map(cat => (
+              <option key={cat.id} value={cat.id}>
+                {cat.icon} {cat.name}
               </option>
             ))}
           </select>
         </div>
 
-        {/* Subcategory */}
+        {/* Subcategory Selection */}
         {selectedCategory && subcategories.length > 0 && (
-          <div>
-            <label className="block text-sm font-medium mb-2">
-              Subcategory (Optional)
-            </label>
+          <div className="form-group">
+            <label htmlFor="subcategory">Subcategory (Optional)</label>
             <select
+              id="subcategory"
               value={selectedSubcategory}
               onChange={(e) => setSelectedSubcategory(e.target.value)}
-              className="w-full border rounded-lg px-4 py-2"
             >
               <option value="">No Subcategory</option>
-              {subcategories.map((subcategory) => (
-                <option key={subcategory.id} value={subcategory.id}>
-                  {subcategory.name}
+              {subcategories.map(sub => (
+                <option key={sub.id} value={sub.id}>
+                  {sub.name}
                 </option>
               ))}
             </select>
@@ -213,79 +297,67 @@ const CreateMarket = ({ onMarketCreated }) => {
         )}
 
         {/* Deadline */}
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Deadline *
-          </label>
+        <div className="form-group">
+          <label htmlFor="deadline">Deadline *</label>
           <input
             type="datetime-local"
+            id="deadline"
             value={deadline}
             onChange={(e) => setDeadline(e.target.value)}
-            className="w-full border rounded-lg px-4 py-2"
             required
-            min={new Date().toISOString().slice(0, 16)}
           />
         </div>
 
-        {/* Options */}
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Answer Options * (minimum 2)
-          </label>
-          <div className="space-y-2">
-            {options.map((option, index) => (
-              <div key={index} className="flex gap-2">
-                <input
-                  type="text"
-                  value={option}
-                  onChange={(e) => handleOptionChange(index, e.target.value)}
-                  placeholder={`Option ${index + 1}`}
-                  className="flex-1 border rounded-lg px-4 py-2"
-                  required
-                />
-                {options.length > 2 && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveOption(index)}
-                    className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200"
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          
+        {/* Answer Options */}
+        <div className="form-group">
+          <label>Answer Options * (minimum 2)</label>
+          {options.map((option, index) => (
+            <div key={index} className="option-input-group">
+              <input
+                type="text"
+                value={option}
+                onChange={(e) => handleOptionChange(index, e.target.value)}
+                placeholder={`Option ${index + 1}`}
+                required
+              />
+              {options.length > 2 && (
+                <button
+                  type="button"
+                  onClick={() => handleRemoveOption(index)}
+                  className="remove-option"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
           {options.length < 10 && (
             <button
               type="button"
               onClick={handleAddOption}
-              className="mt-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+              className="add-option"
             >
               + Add Option
             </button>
           )}
         </div>
 
-        {/* Submit */}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400"
-        >
+        {/* Submit Button */}
+        <button type="submit" disabled={loading} className="submit-button">
           {loading ? 'Creating Market...' : 'Create Market'}
         </button>
       </form>
 
-      {/* Help Text */}
-      <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-        <h3 className="font-semibold mb-2">Tips for creating good markets:</h3>
-        <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
+      {/* Tips Section */}
+      <div className="tips-section">
+        <h3>Tips for creating good markets:</h3>
+        <ul>
           <li>Make your question clear and unambiguous</li>
           <li>Choose a reasonable deadline (not too far in the future)</li>
           <li>Provide distinct answer options</li>
           <li>Select a relevant category to help users find your market</li>
           <li>Subcategories make your market even easier to discover</li>
+          <li>Use AI odds generation to get initial probability estimates</li>
         </ul>
       </div>
     </div>
