@@ -1,52 +1,46 @@
-import { useState, useEffect } from 'react';
-import './App.css';
+import React, { useState, useEffect } from 'react';
+import CategoryManagement from './components/CategoryManagement';
+import CreateMarket from './CreateMarket';
 
-const API_URL = 'https://api.binary-bets.com';
+const API_URL = import.meta.env.VITE_API_URL || 'https://api.binary-bets.com';
 
 function App() {
   const [user, setUser] = useState(null);
-  const [activeTab, setActiveTab] = useState('bets');
   const [markets, setMarkets] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [leaderboard, setLeaderboard] = useState([]);
   const [userBets, setUserBets] = useState([]);
+  const [reportedBets, setReportedBets] = useState([]);
+  const [activeTab, setActiveTab] = useState('bets');
+  
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState('login');
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedBet, setSelectedBet] = useState(null);
-  const [betAmount, setBetAmount] = useState('');
-  const [betPosition, setBetPosition] = useState('');
-  const [reportedBets, setReportedBets] = useState([]);
+  const [authForm, setAuthForm] = useState({ username: '', email: '', password: '', confirmPassword: '' });
   
-  const [authForm, setAuthForm] = useState({
-    username: '',
-    email: '',
-    password: '',
-    confirmPassword: ''
-  });
-
+  const [selectedBet, setSelectedBet] = useState(null);
+  const [betPosition, setBetPosition] = useState('');
+  const [betAmount, setBetAmount] = useState('');
+  
   const [formData, setFormData] = useState({
     question: '',
-    category_id: 1,
+    category_id: '',
     close_date: '',
     bet_type: 'binary',
     options: ['Yes', 'No'],
     ai_odds: null
   });
-
+  
   const [generatingOdds, setGeneratingOdds] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
-    
-    if (token && savedUser) {
+    if (savedUser) {
       setUser(JSON.parse(savedUser));
     }
     
-    fetchCategories();
     fetchMarkets();
+    fetchCategories();
     fetchLeaderboard();
   }, []);
 
@@ -63,11 +57,10 @@ function App() {
     try {
       const response = await fetch(`${API_URL}/api/categories`);
       const data = await response.json();
-      setCategories(data.categories || []);
       console.log('Categories loaded:', data.categories);
+      setCategories(data.categories || []);
     } catch (error) {
       console.error('Error fetching categories:', error);
-      setCategories([]);
     }
   };
 
@@ -77,8 +70,7 @@ function App() {
       const data = await response.json();
       setMarkets(data.markets || []);
     } catch (error) {
-      console.error('Error fetching bets:', error);
-      setMarkets([]);
+      console.error('Error fetching markets:', error);
     }
   };
 
@@ -89,7 +81,6 @@ function App() {
       setLeaderboard(data.leaderboard || []);
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
-      setLeaderboard([]);
     }
   };
 
@@ -104,7 +95,6 @@ function App() {
       setUserBets(data.bets || []);
     } catch (error) {
       console.error('Error fetching user bets:', error);
-      setUserBets([]);
     }
   };
 
@@ -119,59 +109,98 @@ function App() {
       setReportedBets(data.reports || []);
     } catch (error) {
       console.error('Error fetching reported bets:', error);
-      setReportedBets([]);
     }
   };
 
   const handleAuth = async (e) => {
     e.preventDefault();
-    
+
     if (authMode === 'register' && authForm.password !== authForm.confirmPassword) {
-      alert('Passwords do not match!');
+      alert('Passwords do not match');
       return;
     }
 
     try {
-      const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/signup';
+      const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
       const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: authForm.username,
           email: authForm.email,
-          password: authForm.password,
-          password_confirm: authForm.confirmPassword
+          password: authForm.password
         })
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        if (authMode === 'register') {
-          alert(data.message || 'Account created! Please check your email to verify your account.');
-          setAuthMode('login');
-          setAuthForm({ username: '', email: '', password: '', confirmPassword: '' });
-        } else {
-          localStorage.setItem('token', data.token);
-          localStorage.setItem('user', JSON.stringify(data.user));
-          setUser(data.user);
-          setShowAuthModal(false);
-          setAuthForm({ username: '', email: '', password: '', confirmPassword: '' });
-        }
+        setUser(data.user);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        localStorage.setItem('token', data.token);
+        setShowAuthModal(false);
+        setAuthForm({ username: '', email: '', password: '', confirmPassword: '' });
       } else {
         alert(data.error || 'Authentication failed');
       }
     } catch (error) {
       console.error('Auth error:', error);
-      alert('Authentication failed');
+      alert('Authentication failed: ' + error.message);
     }
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
     setUser(null);
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
     setActiveTab('bets');
+  };
+
+  const handleCreateBet = async (e) => {
+    e.preventDefault();
+
+    if (!formData.question || !formData.close_date) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/markets`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          question: formData.question,
+          deadline: formData.close_date,
+          options: formData.options.filter(opt => opt.trim()),
+          category_id: formData.category_id || null,
+          subcategory_id: formData.subcategory_id || null
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert('Bet created successfully!');
+        setFormData({
+          question: '',
+          category_id: '',
+          close_date: '',
+          bet_type: 'binary',
+          options: ['Yes', 'No'],
+          ai_odds: null
+        });
+        setActiveTab('bets');
+        fetchMarkets();
+      } else {
+        alert(data.error || 'Failed to create bet');
+      }
+    } catch (error) {
+      console.error('Error creating bet:', error);
+      alert('Failed to create bet: ' + error.message);
+    }
   };
 
   const handleGenerateOdds = async () => {
@@ -184,94 +213,45 @@ function App() {
     try {
       const response = await fetch(`${API_URL}/api/generate-odds`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question: formData.question,
-          options: formData.options
+          options: formData.options.filter(opt => opt.trim())
         })
       });
 
       const data = await response.json();
-      
+
       if (response.ok) {
         setFormData({ ...formData, ai_odds: data });
       } else {
-        alert('Failed to generate odds: ' + data.error);
+        alert(data.error || 'Failed to generate odds');
       }
     } catch (error) {
       console.error('Error generating odds:', error);
-      alert('Failed to generate odds');
+      alert('Failed to generate odds: ' + error.message);
     } finally {
       setGeneratingOdds(false);
     }
   };
 
-  const handleCreateBet = async (e) => {
-    e.preventDefault();
-    
-    try {
-      const response = await fetch(`${API_URL}/api/markets`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          question: formData.question,
-          category_id: formData.category_id,
-          close_date: formData.close_date,
-          market_type: formData.bet_type,
-          options: formData.bet_type === 'multiple' ? formData.options : undefined,
-          ai_odds: formData.ai_odds
-        })
-      });
-
-      if (response.ok) {
-        setShowCreateModal(false);
-        setFormData({
-          question: '',
-          category_id: 1,
-          close_date: '',
-          bet_type: 'binary',
-          options: ['Yes', 'No'],
-          ai_odds: null
-        });
-        fetchMarkets();
-        alert('Bet created successfully!');
-      } else {
-        const data = await response.json();
-        alert(data.error || 'Failed to create bet');
-      }
-    } catch (error) {
-      console.error('Error creating bet:', error);
-      alert('Failed to create bet');
-    }
-  };
-
   const handlePlaceBet = async () => {
     if (!betAmount || parseFloat(betAmount) <= 0) {
-      alert('Please enter a valid amount');
+      alert('Please enter a valid bet amount');
+      return;
+    }
+
+    if (parseFloat(betAmount) > user.balance) {
+      alert('Insufficient balance');
       return;
     }
 
     try {
       const amount = parseFloat(betAmount);
-      let odds = 2.0;
+      const odds = selectedBet.market_type === 'binary' 
+        ? (betPosition === 'yes' ? parseFloat(selectedBet.yes_odds || 2.0) : parseFloat(selectedBet.no_odds || 2.0))
+        : parseFloat(selectedBet.options?.find(o => o.option_text.toLowerCase() === betPosition)?.odds || 2.0);
       
-      if (selectedBet.market_type === 'binary') {
-        odds = betPosition === 'yes' 
-          ? parseFloat(selectedBet.yes_odds || 2.0)
-          : parseFloat(selectedBet.no_odds || 2.0);
-      } else {
-        const selectedOption = selectedBet.options?.find(
-          o => o.option_text.toLowerCase() === betPosition
-        );
-        odds = parseFloat(selectedOption?.odds || 2.0);
-      }
-
       const potential_payout = amount * odds;
 
       const response = await fetch(`${API_URL}/api/bets`, {
@@ -282,10 +262,8 @@ function App() {
         },
         body: JSON.stringify({
           market_id: selectedBet.id,
-          prediction: betPosition,
-          amount: amount,
-          odds: odds,
-          potential_payout: potential_payout
+          option_id: selectedBet.options?.find(o => o.option_text.toLowerCase() === betPosition)?.id,
+          amount: amount
         })
       });
 
@@ -418,6 +396,11 @@ function App() {
     }
   };
 
+  const handleMarketCreated = (market) => {
+    setActiveTab('bets');
+    fetchMarkets();
+  };
+
   const filteredMarkets = selectedCategory === 'all' 
     ? markets 
     : markets.filter(m => m.category_id === selectedCategory);
@@ -476,12 +459,20 @@ function App() {
         </button>
 
         {user?.is_admin && (
-          <button 
-            className={activeTab === 'admin' ? 'active admin-btn' : 'admin-btn'} 
-            onClick={() => setActiveTab('admin')}
-          >
-            🛡️ Admin
-          </button>
+          <>
+            <button 
+              className={activeTab === 'admin' ? 'active admin-btn' : 'admin-btn'} 
+              onClick={() => setActiveTab('admin')}
+            >
+              🛡️ Admin
+            </button>
+            <button 
+              className={activeTab === 'categories' ? 'active admin-btn' : 'admin-btn'} 
+              onClick={() => setActiveTab('categories')}
+            >
+              📁 Categories
+            </button>
+          </>
         )}
       </nav>
 
@@ -521,6 +512,11 @@ function App() {
                       }}>
                         {categories.find(c => c.id === market.category_id)?.icon || '📌'} {categories.find(c => c.id === market.category_id)?.name || 'Other'}
                       </span>
+                      {market.subcategory_name && (
+                        <span className="subcategory-badge">
+                          {market.subcategory_name}
+                        </span>
+                      )}
                       <span className="close-date">
                         Closes: {new Date(market.deadline).toLocaleDateString('en-US', { 
                           year: 'numeric', 
@@ -544,25 +540,12 @@ function App() {
                     </div>
 
                     <div className="odds-display">
-                      {market.market_type === 'binary' ? (
-                        <>
-                          <div className="odds-option">
-                            <span className="option-label">YES</span>
-                            <span className="odds-value">{parseFloat(market.yes_odds || 2.0).toFixed(2)}x</span>
-                          </div>
-                          <div className="odds-option">
-                            <span className="option-label">NO</span>
-                            <span className="odds-value">{parseFloat(market.no_odds || 2.0).toFixed(2)}x</span>
-                          </div>
-                        </>
-                      ) : (
-                        market.options?.map(option => (
-                          <div key={option.id} className="odds-option">
-                            <span className="option-label">{option.option_text}</span>
-                            <span className="odds-value">{parseFloat(option.odds || 2.0).toFixed(2)}x</span>
-                          </div>
-                        ))
-                      )}
+                      {market.options?.map(option => (
+                        <div key={option.id} className="odds-option">
+                          <span className="option-label">{option.option_text}</span>
+                          <span className="odds-value">${parseFloat(option.total_amount || 0).toFixed(2)}</span>
+                        </div>
+                      ))}
                     </div>
 
                     <div className="market-actions">
@@ -611,27 +594,19 @@ function App() {
               <div className="bets-list">
                 {userBets.map(bet => (
                   <div key={bet.id} className="bet-card">
-                    <h4>{bet.market_question}</h4>
+                    <h4>{bet.question}</h4>
                     <div className="bet-details">
                       <div className="bet-detail">
                         <span className="label">Position:</span>
-                        <span className={`position ${bet.prediction?.toLowerCase()}`}>{bet.prediction}</span>
+                        <span className={`position ${bet.option_text?.toLowerCase()}`}>{bet.option_text}</span>
                       </div>
                       <div className="bet-detail">
                         <span className="label">Amount:</span>
                         <span className="value">${parseFloat(bet.amount).toFixed(2)}</span>
                       </div>
                       <div className="bet-detail">
-                        <span className="label">Odds:</span>
-                        <span className="value">{parseFloat(bet.odds || 2.0).toFixed(2)}x</span>
-                      </div>
-                      <div className="bet-detail">
-                        <span className="label">Potential Win:</span>
-                        <span className="value win">${parseFloat(bet.potential_payout || bet.amount * 2).toFixed(2)}</span>
-                      </div>
-                      <div className="bet-detail">
                         <span className="label">Status:</span>
-                        <span className={`status ${bet.status}`}>{bet.status}</span>
+                        <span className={`status ${bet.market_status}`}>{bet.market_status}</span>
                       </div>
                       <div className="bet-detail">
                         <span className="label">Placed:</span>
@@ -646,140 +621,7 @@ function App() {
         )}
 
         {activeTab === 'create' && user && (
-          <div className="create-section">
-            <h2>Create New Bet</h2>
-            
-            <form onSubmit={handleCreateBet} className="create-form">
-              <div className="form-group">
-                <label>Question</label>
-                <input
-                  type="text"
-                  value={formData.question}
-                  onChange={(e) => setFormData({...formData, question: e.target.value})}
-                  placeholder="Will Bitcoin reach $100k by end of 2025?"
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Category</label>
-                <select
-                  value={formData.category_id}
-                  onChange={(e) => setFormData({...formData, category_id: parseInt(e.target.value)})}
-                  required
-                >
-                  {categories.length === 0 ? (
-                    <option value="">Loading categories...</option>
-                  ) : (
-                    categories.map(cat => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.icon} {cat.name}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Close Date</label>
-                <input
-                  type="date"
-                  value={formData.close_date ? formData.close_date.split('T')[0] : ''}
-                  onChange={(e) => setFormData({...formData, close_date: e.target.value})}
-                  min={new Date().toISOString().split('T')[0]}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Bet Type</label>
-                <select
-                  value={formData.bet_type}
-                  onChange={(e) => {
-                    const newType = e.target.value;
-                    setFormData({
-                      ...formData, 
-                      bet_type: newType,
-                      options: newType === 'binary' ? ['Yes', 'No'] : ['', '', '']
-                    });
-                  }}
-                >
-                  <option value="binary">Yes/No</option>
-                  <option value="multiple">Multiple Choice</option>
-                </select>
-              </div>
-
-              {formData.bet_type === 'multiple' && (
-                <div className="form-group">
-                  <label>Options (2-10 options)</label>
-                  <div className="options-list">
-                    {formData.options.map((option, index) => (
-                      <div key={index} className="option-row">
-                        <input
-                          type="text"
-                          value={option}
-                          onChange={(e) => handleOptionChange(index, e.target.value)}
-                          placeholder={`Option ${index + 1}`}
-                          required
-                        />
-                        {formData.options.length > 2 && (
-                          <button
-                            type="button"
-                            className="btn-remove"
-                            onClick={() => handleRemoveOption(index)}
-                            title="Remove option"
-                          >
-                            ❌
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    {formData.options.length < 10 && (
-                      <button
-                        type="button"
-                        className="btn-add-option"
-                        onClick={handleAddOption}
-                      >
-                        ➕ Add Option
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div className="ai-odds-section">
-                <button 
-                  type="button" 
-                  className="btn-ai" 
-                  onClick={handleGenerateOdds}
-                  disabled={generatingOdds || !formData.question}
-                >
-                  {generatingOdds ? '⏳ Generating...' : '🤖 Generate AI Odds'}
-                </button>
-
-                {formData.ai_odds && (
-                  <div className="ai-odds-preview">
-                    <h4>AI-Generated Odds:</h4>
-                    <div className="odds-grid">
-                      {Object.entries(formData.ai_odds.odds || {}).map(([key, value]) => (
-                        <div key={key} className="odds-item">
-                          <span className="odds-label">{key.toUpperCase()}</span>
-                          <span className="odds-percentage">{value}%</span>
-                        </div>
-                      ))}
-                    </div>
-                    {formData.ai_odds.reasoning && (
-                      <p className="odds-reasoning">{formData.ai_odds.reasoning}</p>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <button type="submit" className="btn-primary btn-large">
-                Create Bet
-              </button>
-            </form>
-          </div>
+          <CreateMarket onMarketCreated={handleMarketCreated} />
         )}
 
         {activeTab === 'leaderboard' && (
@@ -793,14 +635,18 @@ function App() {
                   <span className="username">{player.username}</span>
                   <span className="balance">${parseFloat(player.balance).toFixed(2)}</span>
                   <span className="profit" style={{ 
-                    color: player.balance >= 10000 ? '#10B981' : '#EF4444' 
+                    color: player.balance >= 1000 ? '#10B981' : '#EF4444' 
                   }}>
-                    {player.balance >= 10000 ? '+' : ''}{(player.balance - 10000).toFixed(2)}
+                    {player.balance >= 1000 ? '+' : ''}{(player.balance - 1000).toFixed(2)}
                   </span>
                 </div>
               ))}
             </div>
           </div>
+        )}
+
+        {activeTab === 'categories' && user?.is_admin && (
+          <CategoryManagement />
         )}
 
         {activeTab === 'admin' && user?.is_admin && (
@@ -954,32 +800,15 @@ function App() {
             <div className="bet-form">
               <label>Choose Position:</label>
               <div className="position-buttons">
-                {selectedBet.market_type === 'binary' ? (
-                  <>
-                    <button
-                      className={betPosition === 'yes' ? 'active yes' : 'yes'}
-                      onClick={() => setBetPosition('yes')}
-                    >
-                      YES ({parseFloat(selectedBet.yes_odds || 2.0).toFixed(2)}x)
-                    </button>
-                    <button
-                      className={betPosition === 'no' ? 'active no' : 'no'}
-                      onClick={() => setBetPosition('no')}
-                    >
-                      NO ({parseFloat(selectedBet.no_odds || 2.0).toFixed(2)}x)
-                    </button>
-                  </>
-                ) : (
-                  selectedBet.options?.map(option => (
-                    <button
-                      key={option.id}
-                      className={betPosition === option.option_text.toLowerCase() ? 'active' : ''}
-                      onClick={() => setBetPosition(option.option_text.toLowerCase())}
-                    >
-                      {option.option_text} ({parseFloat(option.odds || 2.0).toFixed(2)}x)
-                    </button>
-                  ))
-                )}
+                {selectedBet.options?.map(option => (
+                  <button
+                    key={option.id}
+                    className={betPosition === option.option_text.toLowerCase() ? 'active' : ''}
+                    onClick={() => setBetPosition(option.option_text.toLowerCase())}
+                  >
+                    {option.option_text}
+                  </button>
+                ))}
               </div>
 
               {betPosition && (
@@ -998,12 +827,6 @@ function App() {
                   {betAmount && parseFloat(betAmount) > 0 && (
                     <div className="bet-summary">
                       <p>You're betting: <strong>${parseFloat(betAmount).toFixed(2)}</strong></p>
-                      <p>Potential win: <strong className="win">
-                        ${(parseFloat(betAmount) * (selectedBet.market_type === 'binary' 
-                          ? (betPosition === 'yes' ? parseFloat(selectedBet.yes_odds || 2.0) : parseFloat(selectedBet.no_odds || 2.0))
-                          : parseFloat(selectedBet.options?.find(o => o.option_text.toLowerCase() === betPosition)?.odds || 2.0)
-                        )).toFixed(2)}
-                      </strong></p>
                     </div>
                   )}
 
