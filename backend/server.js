@@ -228,7 +228,13 @@ app.get('/api/markets', async (req, res) => {
       ORDER BY m.created_at DESC
     `);
 
-    res.status(200).json({ markets: result.rows });
+    // Convert 'multi-choice' to 'multiple' for frontend
+    const markets = result.rows.map(market => ({
+      ...market,
+      market_type: market.market_type === 'multi-choice' ? 'multiple' : market.market_type
+    }));
+
+    res.status(200).json({ markets });
   } catch (error) {
     console.error('❌ Get markets error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -371,12 +377,26 @@ app.delete('/api/markets/:id', authenticateToken, async (req, res) => {
 // BET ENDPOINTS
 // ==========================================
 
-// Get user's bets (FIXED: includes option_id)
+// Get user's bets (FIXED: uses correct column names)
 app.get('/api/bets', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
-        b.*,
+        b.id,
+        b.user_id,
+        b.market_id,
+        b.amount,
+        b.odds,
+        b.bet_type as prediction,
+        b.placed_at as created_at,
+        b.won,
+        b.option_id,
+        (b.amount * b.odds) as potential_payout,
+        CASE 
+          WHEN m.status = 'resolved' AND b.won = true THEN 'won'
+          WHEN m.status = 'resolved' AND b.won = false THEN 'lost'
+          ELSE 'pending'
+        END as status,
         m.question as market_question,
         m.status as market_status,
         m.winning_outcome,
@@ -385,7 +405,7 @@ app.get('/api/bets', authenticateToken, async (req, res) => {
       JOIN markets m ON b.market_id = m.id
       LEFT JOIN market_options mo ON b.option_id = mo.id
       WHERE b.user_id = $1
-      ORDER BY b.created_at DESC
+      ORDER BY b.placed_at DESC
     `, [req.user.userId]);
 
     res.status(200).json({ bets: result.rows });
@@ -442,7 +462,7 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
     if (market.market_type === 'binary') {
       odds = prediction === 'yes' ? parseFloat(market.yes_odds) : parseFloat(market.no_odds);
       potential_payout = amount * odds;
-    } else if (market.market_type === 'multiple' && option_id) {
+    } else if (market.market_type === 'multi-choice' && option_id) {
       const optionResult = await pool.query(
         'SELECT odds FROM market_options WHERE id = $1',
         [option_id]
@@ -455,10 +475,10 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
 
     const betResult = await pool.query(
       `INSERT INTO bets 
-       (user_id, market_id, amount, prediction, option_id, odds, potential_payout, status) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending') 
+       (user_id, market_id, amount, bet_type, option_id, odds) 
+       VALUES ($1, $2, $3, $4, $5, $6) 
        RETURNING *`,
-      [req.user.userId, market_id, amount, prediction, option_id, odds, potential_payout]
+      [req.user.userId, market_id, amount, prediction, option_id, odds]
     );
 
     await pool.query(
