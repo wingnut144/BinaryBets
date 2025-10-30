@@ -18,6 +18,16 @@ function App() {
   const [activeTab, setActiveTab] = useState('bets');
   const [newsArticles, setNewsArticles] = useState([]);
   const [loadingNews, setLoadingNews] = useState(false);
+  
+  // Sidebar widgets (admin configurable)
+  const [sidebarWidgets, setSidebarWidgets] = useState([]);
+  const [editingWidget, setEditingWidget] = useState(null);
+  const [showWidgetForm, setShowWidgetForm] = useState(false);
+  const [widgetForm, setWidgetForm] = useState({
+    title: '',
+    content: '',
+    icon: '📌'
+  });
 
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState('login');
@@ -26,17 +36,6 @@ function App() {
   const [selectedBet, setSelectedBet] = useState(null);
   const [betPosition, setBetPosition] = useState('');
   const [betAmount, setBetAmount] = useState('');
-
-  const [formData, setFormData] = useState({
-    question: '',
-    category_id: '',
-    close_date: '',
-    bet_type: 'binary',
-    options: ['Yes', 'No'],
-    ai_odds: null
-  });
-
-  const [generatingOdds, setGeneratingOdds] = useState(false);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
@@ -47,6 +46,7 @@ function App() {
     fetchMarkets();
     fetchCategories();
     fetchLeaderboard();
+    loadSidebarWidgets();
   }, []);
 
   useEffect(() => {
@@ -67,11 +67,14 @@ function App() {
 
   const fetchMarkets = async () => {
     try {
+      console.log('🔍 Fetching markets...');
       const response = await fetch(`${API_URL}/api/markets`);
       const data = await response.json();
+      console.log('📊 Markets received:', data.markets?.length || 0, 'markets');
+      console.log('📋 Markets data:', data.markets);
       setMarkets(data.markets || []);
     } catch (error) {
-      console.error('Error fetching markets:', error);
+      console.error('❌ Error fetching markets:', error);
     }
   };
 
@@ -126,14 +129,12 @@ function App() {
   const fetchRelevantNews = async () => {
     setLoadingNews(true);
     try {
-      // Count bets by category
       const categoryCounts = {};
       markets.forEach(market => {
         const catId = market.category_id;
         categoryCounts[catId] = (categoryCounts[catId] || 0) + 1;
       });
 
-      // Sort categories by popularity
       const sortedCategories = Object.entries(categoryCounts)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3)
@@ -143,7 +144,6 @@ function App() {
         })
         .filter(Boolean);
 
-      // Fetch news for top categories
       const allArticles = [];
       for (const categoryName of sortedCategories) {
         try {
@@ -168,6 +168,84 @@ function App() {
     } finally {
       setLoadingNews(false);
     }
+  };
+
+  // Sidebar widget management
+  const loadSidebarWidgets = () => {
+    const saved = localStorage.getItem('sidebarWidgets');
+    if (saved) {
+      setSidebarWidgets(JSON.parse(saved));
+    }
+  };
+
+  const saveSidebarWidgets = (widgets) => {
+    localStorage.setItem('sidebarWidgets', JSON.stringify(widgets));
+    setSidebarWidgets(widgets);
+  };
+
+  const handleAddWidget = () => {
+    if (sidebarWidgets.length >= 4) {
+      alert('Maximum 4 custom widgets allowed');
+      return;
+    }
+    setWidgetForm({ title: '', content: '', icon: '📌' });
+    setEditingWidget(null);
+    setShowWidgetForm(true);
+  };
+
+  const handleEditWidget = (widget) => {
+    setWidgetForm(widget);
+    setEditingWidget(widget.id);
+    setShowWidgetForm(true);
+  };
+
+  const handleSaveWidget = () => {
+    if (!widgetForm.title.trim() || !widgetForm.content.trim()) {
+      alert('Please fill in all fields');
+      return;
+    }
+
+    let updatedWidgets;
+    if (editingWidget) {
+      updatedWidgets = sidebarWidgets.map(w => 
+        w.id === editingWidget ? { ...widgetForm, id: editingWidget } : w
+      );
+    } else {
+      const newWidget = {
+        ...widgetForm,
+        id: Date.now(),
+        order: sidebarWidgets.length
+      };
+      updatedWidgets = [...sidebarWidgets, newWidget];
+    }
+
+    saveSidebarWidgets(updatedWidgets);
+    setShowWidgetForm(false);
+    setWidgetForm({ title: '', content: '', icon: '📌' });
+    setEditingWidget(null);
+  };
+
+  const handleDeleteWidget = (widgetId) => {
+    if (confirm('Are you sure you want to delete this widget?')) {
+      const updatedWidgets = sidebarWidgets.filter(w => w.id !== widgetId);
+      saveSidebarWidgets(updatedWidgets);
+    }
+  };
+
+  const handleMoveWidget = (widgetId, direction) => {
+    const index = sidebarWidgets.findIndex(w => w.id === widgetId);
+    if (
+      (direction === 'up' && index === 0) ||
+      (direction === 'down' && index === sidebarWidgets.length - 1)
+    ) {
+      return;
+    }
+
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    const updatedWidgets = [...sidebarWidgets];
+    [updatedWidgets[index], updatedWidgets[newIndex]] = [updatedWidgets[newIndex], updatedWidgets[index]];
+    
+    saveSidebarWidgets(updatedWidgets);
   };
 
   const handleLogin = async (e) => {
@@ -267,7 +345,6 @@ function App() {
         fetchMarkets();
         fetchUserBets();
         
-        // Update user balance
         const updatedUser = { ...user, balance: data.newBalance };
         setUser(updatedUser);
         localStorage.setItem('user', JSON.stringify(updatedUser));
@@ -285,36 +362,10 @@ function App() {
     setActiveTab('bets');
   };
 
-  const handleReportBet = async (betId, reason) => {
-    if (!reason) return;
-
-    try {
-      const response = await fetch(`${API_URL}/api/bets/${betId}/report`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${user.token}`
-        },
-        body: JSON.stringify({ reason })
-      });
-
-      if (response.ok) {
-        alert('Bet reported successfully');
-      } else {
-        alert('Failed to report bet');
-      }
-    } catch (error) {
-      console.error('Error reporting bet:', error);
-      alert('Failed to report bet');
-    }
-  };
-
   const handleCategoryClick = (categoryId) => {
     if (selectedCategory === categoryId) {
-      // Toggle expansion
       setExpandedCategory(expandedCategory === categoryId ? null : categoryId);
     } else {
-      // Select category and expand
       setSelectedCategory(categoryId);
       setSelectedSubcategory(null);
       setExpandedCategory(categoryId);
@@ -417,6 +468,12 @@ function App() {
             >
               📁 Categories
             </button>
+            <button
+              className={activeTab === 'widgets' ? 'active admin-btn' : 'admin-btn'} 
+              onClick={() => setActiveTab('widgets')}
+            >
+              🎨 Sidebar Widgets
+            </button>
           </>
         )}
       </nav>
@@ -466,6 +523,56 @@ function App() {
           </div>
 
           <div className="page-layout">
+            {/* SIDEBAR ON LEFT */}
+            <aside className="sidebar">
+              {/* Disclaimer Widget (Always First) */}
+              <div className="disclaimer-widget">
+                <h3>⚠️ Important Notice</h3>
+                <p>
+                  This site is for <strong>entertainment purposes only</strong>. 
+                  No real money is involved. All bets use virtual currency and 
+                  are meant for fun and prediction practice.
+                </p>
+              </div>
+
+              {/* News Widget */}
+              <div className="news-widget widget">
+                <h3>📰 Trending News</h3>
+                {loadingNews ? (
+                  <div className="news-loading">Loading news...</div>
+                ) : newsArticles.length > 0 ? (
+                  newsArticles.map((article, idx) => (
+                    <div key={idx} className="news-item">
+                      <span className="news-category">{article.category}</span>
+                      <h4 className="news-title">{article.title}</h4>
+                      <div className="news-source">
+                        <span>{article.source?.name || 'Unknown'}</span>
+                        <span className="news-date">
+                          {new Date(article.publishedAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="news-empty">
+                    <p>No news available at the moment.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Custom Widgets (Admin Created) */}
+              {sidebarWidgets.map((widget) => (
+                <div key={widget.id} className="custom-widget widget">
+                  <h3>{widget.icon} {widget.title}</h3>
+                  <div 
+                    className="custom-widget-content"
+                    dangerouslySetInnerHTML={{ __html: widget.content.replace(/\n/g, '<br />') }}
+                  />
+                </div>
+              ))}
+            </aside>
+
+            {/* MAIN CONTENT ON RIGHT */}
             <main className="main-content">
               <div className="bets-section">
                 <div className="markets-grid">
@@ -550,41 +657,6 @@ function App() {
                 </div>
               </div>
             </main>
-
-            <aside className="sidebar">
-              <div className="disclaimer-widget">
-                <h3>⚠️ Important Notice</h3>
-                <p>
-                  This site is for <strong>entertainment purposes only</strong>. 
-                  No real money is involved. All bets use virtual currency and 
-                  are meant for fun and prediction practice.
-                </p>
-              </div>
-
-              <div className="news-widget">
-                <h3>📰 Trending News</h3>
-                {loadingNews ? (
-                  <div className="news-loading">Loading news...</div>
-                ) : newsArticles.length > 0 ? (
-                  newsArticles.map((article, idx) => (
-                    <div key={idx} className="news-item">
-                      <span className="news-category">{article.category}</span>
-                      <h4 className="news-title">{article.title}</h4>
-                      <div className="news-source">
-                        <span>{article.source?.name || 'Unknown'}</span>
-                        <span className="news-date">
-                          {new Date(article.publishedAt).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="news-empty">
-                    <p>No news available at the moment.</p>
-                  </div>
-                )}
-              </div>
-            </aside>
           </div>
         </>
       )}
@@ -640,6 +712,71 @@ function App() {
         </main>
       )}
 
+      {activeTab === 'widgets' && user?.is_admin && (
+        <main className="main">
+          <div className="widget-management">
+            <h2>🎨 Sidebar Widget Management</h2>
+            
+            <div className="widget-list">
+              <h3>Custom Widgets ({sidebarWidgets.length}/4)</h3>
+              {sidebarWidgets.map((widget, index) => (
+                <div key={widget.id} className="widget-item">
+                  <div className="widget-order-controls">
+                    <button
+                      className="btn-order"
+                      onClick={() => handleMoveWidget(widget.id, 'up')}
+                      disabled={index === 0}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      className="btn-order"
+                      onClick={() => handleMoveWidget(widget.id, 'down')}
+                      disabled={index === sidebarWidgets.length - 1}
+                    >
+                      ↓
+                    </button>
+                  </div>
+                  <div className="widget-item-content">
+                    <div className="widget-item-header">
+                      <div className="widget-item-title">
+                        {widget.icon} {widget.title}
+                      </div>
+                      <div className="widget-item-actions">
+                        <button className="button-secondary" onClick={() => handleEditWidget(widget)}>
+                          ✏️ Edit
+                        </button>
+                        <button className="button-secondary" onClick={() => handleDeleteWidget(widget.id)}>
+                          🗑️ Delete
+                        </button>
+                      </div>
+                    </div>
+                    <div className="widget-item-preview">
+                      {widget.content.substring(0, 100)}
+                      {widget.content.length > 100 && '...'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {sidebarWidgets.length < 4 ? (
+              <div className="add-widget-section">
+                <h3>➕ Add New Widget</h3>
+                <p>You can add up to {4 - sidebarWidgets.length} more widget{4 - sidebarWidgets.length !== 1 ? 's' : ''}</p>
+                <button className="button-primary" onClick={handleAddWidget}>
+                  Add Widget
+                </button>
+              </div>
+            ) : (
+              <div className="widget-limit-warning">
+                ⚠️ Maximum of 4 custom widgets reached. Delete a widget to add a new one.
+              </div>
+            )}
+          </div>
+        </main>
+      )}
+
       {activeTab === 'admin' && user?.is_admin && (
         <main className="main">
           <div className="admin-section">
@@ -665,6 +802,54 @@ function App() {
 
       {activeTab === 'categories' && user?.is_admin && (
         <CategoryManagement />
+      )}
+
+      {/* Widget Form Modal */}
+      {showWidgetForm && (
+        <div className="modal-overlay" onClick={() => setShowWidgetForm(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2>{editingWidget ? 'Edit Widget' : 'Add New Widget'}</h2>
+            <form className="widget-form" onSubmit={(e) => { e.preventDefault(); handleSaveWidget(); }}>
+              <label>
+                Icon (emoji)
+                <input
+                  type="text"
+                  placeholder="📌"
+                  maxLength="2"
+                  value={widgetForm.icon}
+                  onChange={e => setWidgetForm({...widgetForm, icon: e.target.value})}
+                />
+              </label>
+              <label>
+                Title
+                <input
+                  type="text"
+                  placeholder="Widget Title"
+                  value={widgetForm.title}
+                  onChange={e => setWidgetForm({...widgetForm, title: e.target.value})}
+                  required
+                />
+              </label>
+              <label>
+                Content
+                <textarea
+                  placeholder="Widget content (HTML allowed)"
+                  value={widgetForm.content}
+                  onChange={e => setWidgetForm({...widgetForm, content: e.target.value})}
+                  required
+                />
+              </label>
+              <div className="widget-form-actions">
+                <button type="button" className="button-secondary" onClick={() => setShowWidgetForm(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="button-primary">
+                  {editingWidget ? 'Save Changes' : 'Add Widget'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {showAuthModal && (
