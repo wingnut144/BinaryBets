@@ -69,6 +69,31 @@ body {
   background-clip: text;
   cursor: pointer;
   user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: transform 0.2s ease;
+}
+
+.logo:hover {
+  transform: scale(1.05);
+}
+
+.dice-logo {
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(102, 126, 234, 0.2));
+  transition: transform 0.3s ease;
+}
+
+.logo:hover .dice-logo {
+  transform: rotate(10deg);
+}
+
+.logo-text {
+  background: var(--primary-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .nav-tabs {
