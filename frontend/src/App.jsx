@@ -516,6 +516,45 @@ function App() {
                         </div>
                       </div>
 
+                      {/* Betting Options with AI Odds */}
+                      {market.options && market.options.length > 0 && (
+                        <div className="betting-options">
+                          <div className="options-label">Betting Options:</div>
+                          <div className="options-grid">
+                            {market.options.map(option => {
+                              const totalPool = parseFloat(market.yes_total || 0) + parseFloat(market.no_total || 0);
+                              let odds = 0.5;
+                              
+                              // Calculate current odds based on pool
+                              if (totalPool > 0) {
+                                const optionTotal = option.option_text.toLowerCase() === 'yes' 
+                                  ? parseFloat(market.yes_total || 0)
+                                  : parseFloat(market.no_total || 0);
+                                odds = optionTotal / totalPool;
+                              } else if (market.ai_odds && market.ai_odds.odds) {
+                                // Use AI odds if no bets yet
+                                odds = market.ai_odds.odds[option.option_text] || 0.5;
+                              }
+
+                              const percentage = (odds * 100).toFixed(0);
+                              
+                              return (
+                                <div key={option.id} className="option-card">
+                                  <div className="option-name">{option.option_text}</div>
+                                  <div className="option-odds">
+                                    <span className="odds-percentage">{percentage}%</span>
+                                    <span className="odds-label">odds</span>
+                                  </div>
+                                  {totalPool === 0 && market.ai_odds && (
+                                    <div className="ai-badge">AI Prediction</div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
                       {getMarketStatus(market) === 'live' ? (
                         <div className="market-actions">
                           <button
