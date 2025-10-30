@@ -1,152 +1,632 @@
 /* ==========================================
-   CREATE MARKET - IMPROVED LAYOUT
-   Add this to the end of App.css
+   BINARY BETS - MODERN 2025 DESIGN
+   Unified Purple/Blue Gradient Theme
    ========================================== */
 
-.create-market-container {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 40px 60px;
+/* ==========================================
+   BASE STYLES & RESET
+   ========================================== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-.create-market-content {
+:root {
+  --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --primary-color: #667eea;
+  --primary-dark: #5568d3;
+  --secondary-color: #764ba2;
+  --accent-color: #a855f7;
+  --success-color: #10b981;
+  --error-color: #ef4444;
+  --warning-color: #f59e0b;
+  --background: #f8fafc;
+  --surface: #ffffff;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --border-color: #e2e8f0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--background);
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+/* ==========================================
+   MODERN CATEGORY BADGES (2025 STYLE)
+   ========================================== */
+.categories-bar {
+  display: flex;
+  gap: 12px;
+  padding: 20px;
+  overflow-x: auto;
   background: var(--surface);
-  border-radius: 24px;
-  padding: 48px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  margin: 20px 0;
 }
 
-.create-market-content h2 {
-  font-size: 32px;
+.category-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+  border: 2px solid transparent;
+  border-radius: 24px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary-color);
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+}
+
+.category-badge::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--primary-gradient);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 0;
+}
+
+.category-badge:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary-color);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.2);
+}
+
+.category-badge:hover::before {
+  opacity: 0.1;
+}
+
+.category-badge.active {
+  background: var(--primary-gradient);
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+}
+
+.category-badge.active::before {
+  opacity: 1;
+}
+
+.category-badge .emoji {
+  font-size: 18px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+  position: relative;
+  z-index: 1;
+}
+
+.category-badge .name {
+  position: relative;
+  z-index: 1;
+}
+
+.category-badge .count {
+  background: rgba(255, 255, 255, 0.3);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  position: relative;
+  z-index: 1;
+}
+
+.category-badge.active .count {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* ==========================================
+   MODERN HEADER & NAVIGATION
+   ========================================== */
+.header {
+  background: var(--primary-gradient);
+  color: white;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.2);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(10px);
+}
+
+.header-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 24px;
   font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.logo .icon {
+  font-size: 32px;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 12px 20px;
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+}
+
+.balance {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fbbf24;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* ==========================================
+   MODERN TABS (2025 STYLE)
+   ========================================== */
+.tabs {
+  display: flex;
+  gap: 8px;
+  padding: 24px;
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  margin: 20px 0;
+  overflow-x: auto;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 24px;
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  position: relative;
+}
+
+.tab::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--primary-gradient);
+  opacity: 0;
+  border-radius: 10px;
+  transition: opacity 0.3s ease;
+  z-index: 0;
+}
+
+.tab:hover {
+  color: var(--primary-color);
+  background: linear-gradient(135deg, #667eea10 0%, #764ba210 100%);
+}
+
+.tab.active {
+  background: var(--primary-gradient);
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+}
+
+.tab.active::before {
+  opacity: 1;
+}
+
+.tab .emoji {
+  font-size: 18px;
+  position: relative;
+  z-index: 1;
+}
+
+.tab .label {
+  position: relative;
+  z-index: 1;
+}
+
+/* ==========================================
+   AI ODDS GENERATION (MODERN 2025)
+   ========================================== */
+.ai-odds-button {
+  background: var(--primary-gradient);
+  color: white;
+  padding: 16px 32px;
+  border: none;
+  border-radius: 16px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.ai-odds-button::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+.ai-odds-button:hover::before {
+  width: 300px;
+  height: 300px;
+}
+
+.ai-odds-button:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(102, 126, 234, 0.4);
+}
+
+.ai-odds-button:active:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.ai-odds-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ai-odds-button .icon {
+  font-size: 24px;
+  position: relative;
+  z-index: 1;
+  animation: sparkle 2s infinite;
+}
+
+@keyframes sparkle {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(-10deg) scale(1.1); }
+  75% { transform: rotate(10deg) scale(1.1); }
+}
+
+.ai-odds-button .text {
+  position: relative;
+  z-index: 1;
+}
+
+/* ==========================================
+   AI ODDS PREVIEW (GLASSMORPHISM 2025)
+   ========================================== */
+.ai-odds-preview {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+  backdrop-filter: blur(20px);
+  border: 2px solid;
+  border-image: var(--primary-gradient) 1;
+  border-radius: 24px;
+  padding: 28px;
+  margin: 24px 0;
+  animation: slideInScale 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.15);
+}
+
+@keyframes slideInScale {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ai-odds-preview h3 {
   background: var(--primary-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  margin-bottom: 32px;
-}
-
-.market-form {
+  margin-bottom: 20px;
+  font-size: 22px;
+  font-weight: 800;
   display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.options-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.option-row {
-  display: flex;
-  gap: 12px;
   align-items: center;
+  gap: 12px;
 }
 
-.option-row input {
-  flex: 1;
-  padding: 14px;
-  border: 2px solid var(--border-color);
-  border-radius: 12px;
-  font-size: 15px;
+.odds-display {
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+.odds-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 2px solid var(--border-color);
   transition: all 0.3s ease;
 }
 
-.option-row input:focus {
+.odds-item:last-child {
+  border-bottom: none;
+}
+
+.odds-item:hover {
+  background: linear-gradient(135deg, #667eea05 0%, #764ba205 100%);
+  border-radius: 12px;
+}
+
+.option-name {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.probability {
+  font-size: 24px;
+  font-weight: 900;
+  background: var(--primary-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.5px;
+}
+
+.odds-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.accept-odds,
+.reject-odds {
+  padding: 14px 28px;
+  border: none;
+  border-radius: 14px;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.accept-odds {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.3);
+}
+
+.accept-odds:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4);
+}
+
+.reject-odds {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);
+}
+
+.reject-odds:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.4);
+}
+
+/* ==========================================
+   MODERN BUTTONS (2025 STYLE)
+   ========================================== */
+.button-primary {
+  background: var(--primary-gradient);
+  color: white;
+  padding: 16px 32px;
+  border: none;
+  border-radius: 16px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+}
+
+.button-primary:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+}
+
+.button-secondary {
+  background: white;
+  color: var(--primary-color);
+  border: 2px solid var(--primary-color);
+  padding: 14px 30px;
+  border-radius: 16px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.button-secondary:hover {
+  background: var(--primary-color);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+}
+
+/* ==========================================
+   MODERN FORM INPUTS (2025 STYLE)
+   ========================================== */
+.form-group {
+  margin-bottom: 24px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 10px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 16px;
+  border: 2px solid var(--border-color);
+  border-radius: 14px;
+  font-size: 15px;
+  transition: all 0.3s ease;
+  background: white;
+  color: var(--text-primary);
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
   outline: none;
   border-color: var(--primary-color);
   box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
 }
 
-.option-input {
-  padding: 14px;
-  border: 2px solid var(--border-color);
-  border-radius: 12px;
-  font-size: 15px;
-  background: #f8fafc;
-  color: #64748b;
-  cursor: not-allowed;
-}
-
-.remove-option-btn {
-  padding: 10px 14px;
-  background: transparent;
-  border: 2px solid #ef4444;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  font-size: 16px;
-}
-
-.remove-option-btn:hover {
-  background: #ef4444;
-  transform: scale(1.1);
-}
-
-.add-option-btn {
-  margin-top: 8px;
-  width: 100%;
-  padding: 12px !important;
-  font-size: 14px !important;
-}
-
-.helper-text {
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  font-style: italic;
-}
-
-.btn-large {
-  padding: 18px 36px !important;
-  font-size: 18px !important;
-  margin-top: 16px;
-}
-
-.tips-section {
-  margin-top: 48px;
-  padding: 32px;
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.05), rgba(118, 75, 162, 0.05));
+/* ==========================================
+   MODERN CARDS (2025 STYLE)
+   ========================================== */
+.card {
+  background: white;
   border-radius: 20px;
-  border: 2px solid rgba(102, 126, 234, 0.1);
+  padding: 28px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid var(--border-color);
 }
 
-.tips-section h3 {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--primary-color);
-  margin-bottom: 16px;
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
 }
 
-.tips-section ul {
-  list-style: none;
-  padding: 0;
-}
-
-.tips-section li {
-  padding: 12px 0;
-  padding-left: 32px;
-  position: relative;
-  color: var(--text-secondary);
-  line-height: 1.6;
-}
-
-.tips-section li:before {
-  content: "✓";
-  position: absolute;
-  left: 0;
-  color: var(--success-color);
-  font-weight: bold;
-  font-size: 18px;
-}
-
+/* ==========================================
+   RESPONSIVE DESIGN
+   ========================================== */
 @media (max-width: 768px) {
-  .create-market-container {
-    padding: 20px;
+  .categories-bar {
+    padding: 16px;
+    gap: 8px;
   }
   
-  .create-market-content {
-    padding: 24px;
+  .category-badge {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+  
+  .tabs {
+    padding: 16px;
+    gap: 6px;
+  }
+  
+  .tab {
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+  
+  .ai-odds-button {
+    padding: 14px 24px;
+    font-size: 15px;
+  }
+  
+  .card {
+    padding: 20px;
   }
 }
+
+/* ==========================================
+   LOADING ANIMATIONS (2025 STYLE)
+   ========================================== */
+.loading {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: white;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ==========================================
+   MODERN TOOLTIPS & BADGES
+   ========================================== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--primary-gradient);
+  color: white;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+/* ==========================================
+   UTILITY CLASSES
+   ========================================== */
+.gradient-text {
+  background: var(--primary-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.glass-effect {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+/* Build: 1761778333 */
+/* Cache bust 1761836497 */
+
+/* Force rebuild: 1761836953374835637 */

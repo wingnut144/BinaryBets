@@ -1,8 +1,7 @@
-x-github: &gh "wingnut144"
-
 services:
   postgres:
     image: postgres:15
+    container_name: binarybets-postgres
     environment:
       POSTGRES_USER: binaryuser
       POSTGRES_PASSWORD: binarypass
@@ -19,10 +18,11 @@ services:
 
   backend:
     image: node:18-alpine
+    container_name: binarybets-backend
     working_dir: /app
     command: >
       sh -c "apk add --no-cache git &&
-             git clone --depth 1 https://github.com/*gh/binary-bets.git /tmp/repo &&
+             git clone --depth 1 https://github.com/wingnut144/BinaryBets.git /tmp/repo &&
              cp -r /tmp/repo/backend/* /app/ &&
              npm install &&
              npm start"
@@ -32,22 +32,47 @@ services:
       DATABASE_URL: postgresql://binaryuser:binarypass@postgres:5432/binarybets
       PORT: 5000
       NEWS_API_KEY: 219d788b390f4918a2d0f963a21460d9
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key}
+      RESOLVER_TOKEN: ${RESOLVER_TOKEN:-resolver-token-change-this}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
 
-  frontend:
+  market-resolver:
     image: node:18-alpine
+    container_name: binarybets-resolver
     working_dir: /app
     command: >
       sh -c "apk add --no-cache git &&
-             git clone --depth 1 https://github.com/*gh/binary-bets.git /tmp/repo &&
+             git clone --depth 1 https://github.com/wingnut144/BinaryBets.git /tmp/repo &&
+             cp -r /tmp/repo/resolver/* /app/ &&
+             npm install &&
+             node market-resolver.js"
+    environment:
+      BACKEND_URL: http://backend:5000
+      RESOLVER_INTERVAL: 60000
+      RESOLVER_TOKEN: ${RESOLVER_TOKEN:-resolver-token-change-this}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  frontend:
+    image: node:18-alpine
+    container_name: binarybets-frontend
+    working_dir: /app
+    command: >
+      sh -c "apk add --no-cache git &&
+             git clone --depth 1 https://github.com/wingnut144/BinaryBets.git /tmp/repo &&
              cp -r /tmp/repo/frontend/* /app/ &&
              npm install &&
              npm run build &&
              npx serve -s dist -l 3000"
     ports:
       - "3000:3000"
+    environment:
+      VITE_API_URL: https://api.binary-bets.com
     depends_on:
       - backend
 
@@ -60,7 +85,7 @@ services:
       PGPASSWORD: binarypass
     command: >
       sh -c "apk add --no-cache curl bash &&
-             curl -sSL https://raw.githubusercontent.com/*gh/binary-bets/main/init.sql |
+             curl -sSL https://raw.githubusercontent.com/wingnut144/BinaryBets/main/init.sql |
              psql -h postgres -U binaryuser -d binarybets"
 
 volumes:
