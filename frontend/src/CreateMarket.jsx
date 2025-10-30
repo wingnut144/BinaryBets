@@ -101,7 +101,7 @@ function CreateMarket({ onMarketCreated }) {
         body: JSON.stringify({
           question: formData.question,
           options: formData.options.filter(opt => opt.trim()),
-          close_date: formData.close_date,
+          deadline: formData.close_date,
           category_id: formData.category_id || null,
           subcategory_id: formData.subcategory_id || null,
           ai_odds: formData.ai_odds
@@ -111,7 +111,7 @@ function CreateMarket({ onMarketCreated }) {
       const data = await response.json();
 
       if (response.ok) {
-        alert('Market created successfully!');
+        alert('Bet created successfully!');
         setFormData({
           question: '',
           category_id: '',
@@ -125,23 +125,23 @@ function CreateMarket({ onMarketCreated }) {
           onMarketCreated(data.market);
         }
       } else {
-        alert(data.error || 'Failed to create market');
+        alert(data.error || 'Failed to create bet');
       }
     } catch (error) {
-      console.error('Error creating market:', error);
-      alert('Failed to create market');
+      console.error('Error creating bet:', error);
+      alert('Failed to create bet');
     }
   };
 
   return (
     <div className="create-market-container">
       <div className="create-market-content">
-        <h2>Create New Market</h2>
+        <h2>Create New Bet</h2>
 
         <form onSubmit={handleSubmit} className="market-form">
           {/* Question */}
           <div className="form-group">
-            <label htmlFor="question">Market Question *</label>
+            <label htmlFor="question">Bet Question *</label>
             <input
               id="question"
               type="text"
@@ -151,62 +151,6 @@ function CreateMarket({ onMarketCreated }) {
               required
             />
           </div>
-
-          {/* AI Odds Button */}
-          <button
-            type="button"
-            onClick={handleGenerateOdds}
-            disabled={generatingOdds || !formData.question}
-            className="ai-odds-button"
-          >
-            {generatingOdds ? (
-              <>
-                <span className="loading"></span>
-                <span className="text">Generating...</span>
-              </>
-            ) : (
-              <>
-                <span className="icon">🤖</span>
-                <span className="text">Generate AI Odds</span>
-              </>
-            )}
-          </button>
-
-          {/* AI Odds Preview */}
-          {formData.ai_odds && (
-            <div className="ai-odds-preview">
-              <h3>
-                <span>🎯</span>
-                AI-Generated Probabilities
-              </h3>
-              <div className="odds-display">
-                {Object.entries(formData.ai_odds.odds).map(([option, probability]) => (
-                  <div key={option} className="odds-item">
-                    <span className="option-name">{option}</span>
-                    <span className="probability">{(probability * 100).toFixed(1)}%</span>
-                  </div>
-                ))}
-              </div>
-              <div className="odds-actions">
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, ai_odds: null })}
-                  className="reject-odds"
-                >
-                  <span>❌</span>
-                  <span>Reject</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {}}
-                  className="accept-odds"
-                >
-                  <span>✅</span>
-                  <span>Use These Odds</span>
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Category */}
           <div className="form-group">
@@ -338,21 +282,77 @@ function CreateMarket({ onMarketCreated }) {
             )}
           </div>
 
-          {/* Submit Button */}
+          {/* AI Odds Preview */}
+          {formData.ai_odds && (
+            <div className="ai-odds-preview">
+              <h3>
+                <span>🎯</span>
+                AI-Generated Probabilities
+              </h3>
+              <div className="odds-display">
+                {Object.entries(formData.ai_odds.odds).map(([option, probability]) => (
+                  <div key={option} className="odds-item">
+                    <span className="option-name">{option}</span>
+                    <span className="probability">{(probability * 100).toFixed(1)}%</span>
+                  </div>
+                ))}
+              </div>
+              <div className="odds-actions">
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, ai_odds: null })}
+                  className="reject-odds"
+                >
+                  <span>❌</span>
+                  <span>Reject</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {}}
+                  className="accept-odds"
+                >
+                  <span>✅</span>
+                  <span>Use These Odds</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* AI Odds Button - MOVED RIGHT ABOVE SUBMIT */}
+          <button
+            type="button"
+            onClick={handleGenerateOdds}
+            disabled={generatingOdds || !formData.question}
+            className="ai-odds-button"
+          >
+            {generatingOdds ? (
+              <>
+                <span className="loading"></span>
+                <span className="text">Generating...</span>
+              </>
+            ) : (
+              <>
+                <span className="icon">🤖</span>
+                <span className="text">Generate AI Odds</span>
+              </>
+            )}
+          </button>
+
+          {/* Submit Button - Changed from "Create Market" to "Create Bet" */}
           <button type="submit" className="button-primary btn-large">
-            Create Market
+            Create Bet
           </button>
         </form>
 
         {/* Tips Section */}
         <div className="tips-section">
-          <h3>Tips for creating good markets:</h3>
+          <h3>Tips for creating good bets:</h3>
           <ul>
             <li>Make your question clear and unambiguous</li>
             <li>Choose a reasonable deadline (not too far in the future)</li>
             <li>Provide distinct answer options</li>
-            <li>Select a relevant category to help users find your market</li>
-            <li>Subcategories make your market even easier to discover</li>
+            <li>Select a relevant category to help users find your bet</li>
+            <li>Subcategories make your bet even easier to discover</li>
             <li>Use AI odds generation to get initial probability estimates</li>
           </ul>
         </div>
