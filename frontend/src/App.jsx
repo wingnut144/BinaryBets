@@ -22,17 +22,6 @@ function App() {
   const [selectedBet, setSelectedBet] = useState(null);
   const [betPosition, setBetPosition] = useState('');
   const [betAmount, setBetAmount] = useState('');
-  
-  const [formData, setFormData] = useState({
-    question: '',
-    category_id: '',
-    close_date: '',
-    bet_type: 'binary',
-    options: ['Yes', 'No'],
-    ai_odds: null
-  });
-  
-  const [generatingOdds, setGeneratingOdds] = useState(false);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
@@ -157,85 +146,6 @@ function App() {
     setActiveTab('bets');
   };
 
-  const handleCreateBet = async (e) => {
-    e.preventDefault();
-
-    if (!formData.question || !formData.close_date) {
-      alert('Please fill in all required fields');
-      return;
-    }
-
-    try {
-      const response = await fetch(`${API_URL}/api/markets`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          question: formData.question,
-          deadline: formData.close_date,
-          options: formData.options.filter(opt => opt.trim()),
-          category_id: formData.category_id || null,
-          subcategory_id: formData.subcategory_id || null
-        })
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        alert('Bet created successfully!');
-        setFormData({
-          question: '',
-          category_id: '',
-          close_date: '',
-          bet_type: 'binary',
-          options: ['Yes', 'No'],
-          ai_odds: null
-        });
-        setActiveTab('bets');
-        fetchMarkets();
-      } else {
-        alert(data.error || 'Failed to create bet');
-      }
-    } catch (error) {
-      console.error('Error creating bet:', error);
-      alert('Failed to create bet: ' + error.message);
-    }
-  };
-
-  const handleGenerateOdds = async () => {
-    if (!formData.question) {
-      alert('Please enter a question first');
-      return;
-    }
-
-    setGeneratingOdds(true);
-    try {
-      const response = await fetch(`${API_URL}/api/generate-odds`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: formData.question,
-          options: formData.options.filter(opt => opt.trim())
-        })
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setFormData({ ...formData, ai_odds: data });
-      } else {
-        alert(data.error || 'Failed to generate odds');
-      }
-    } catch (error) {
-      console.error('Error generating odds:', error);
-      alert('Failed to generate odds: ' + error.message);
-    } finally {
-      setGeneratingOdds(false);
-    }
-  };
-
   const handlePlaceBet = async () => {
     if (!betAmount || parseFloat(betAmount) <= 0) {
       alert('Please enter a valid bet amount');
@@ -248,12 +158,12 @@ function App() {
     }
 
     try {
-      const amount = parseFloat(betAmount);
-      const odds = selectedBet.market_type === 'binary' 
-        ? (betPosition === 'yes' ? parseFloat(selectedBet.yes_odds || 2.0) : parseFloat(selectedBet.no_odds || 2.0))
-        : parseFloat(selectedBet.options?.find(o => o.option_text.toLowerCase() === betPosition)?.odds || 2.0);
+      const selectedOption = selectedBet.options?.find(o => o.option_text.toLowerCase() === betPosition);
       
-      const potential_payout = amount * odds;
+      if (!selectedOption) {
+        alert('Please select an option');
+        return;
+      }
 
       const response = await fetch(`${API_URL}/api/bets`, {
         method: 'POST',
@@ -263,8 +173,8 @@ function App() {
         },
         body: JSON.stringify({
           market_id: selectedBet.id,
-          option_id: selectedBet.options?.find(o => o.option_text.toLowerCase() === betPosition)?.id,
-          amount: amount
+          option_id: selectedOption.id,
+          amount: parseFloat(betAmount)
         })
       });
 
@@ -374,29 +284,6 @@ function App() {
     }
   };
 
-  const handleOptionChange = (index, value) => {
-    const newOptions = [...formData.options];
-    newOptions[index] = value;
-    setFormData({ ...formData, options: newOptions });
-  };
-
-  const handleAddOption = () => {
-    if (formData.options.length < 10) {
-      setFormData({ ...formData, options: [...formData.options, ''] });
-    } else {
-      alert('Maximum 10 options allowed');
-    }
-  };
-
-  const handleRemoveOption = (index) => {
-    if (formData.options.length > 2) {
-      const newOptions = formData.options.filter((_, i) => i !== index);
-      setFormData({ ...formData, options: newOptions });
-    } else {
-      alert('Minimum 2 options required');
-    }
-  };
-
   const handleMarketCreated = (market) => {
     setActiveTab('bets');
     fetchMarkets();
@@ -492,7 +379,6 @@ function App() {
                   key={cat.id}
                   className={selectedCategory === cat.id ? 'active' : ''}
                   onClick={() => setSelectedCategory(cat.id)}
-                  style={{ backgroundColor: selectedCategory === cat.id ? cat.color : 'transparent' }}
                 >
                   {cat.icon} {cat.name}
                 </button>
@@ -505,79 +391,100 @@ function App() {
                   <p>No active bets at the moment. Be the first to create one!</p>
                 </div>
               ) : (
-                filteredMarkets.map(market => (
-                  <div key={market.id} className="market-card">
-                    <div className="market-header">
-                      <span className="category-badge" style={{ 
-                        backgroundColor: categories.find(c => c.id === market.category_id)?.color || '#6B7280' 
-                      }}>
-                        {categories.find(c => c.id === market.category_id)?.icon || '📌'} {categories.find(c => c.id === market.category_id)?.name || 'Other'}
-                      </span>
-                      {market.subcategory_name && (
-                        <span className="subcategory-badge">
-                          {market.subcategory_name}
-                        </span>
-                      )}
-                      <span className="close-date">
+                filteredMarkets.map(market => {
+                  const isLive = new Date(market.deadline) > new Date();
+                  
+                  return (
+                    <div key={market.id} className="market-card">
+                      {/* Status Badge - Top Right */}
+                      <div className={`market-status-badge ${isLive ? 'live' : 'closed'}`}>
+                        {isLive ? '🟢 LIVE' : '🔴 CLOSED'}
+                      </div>
+
+                      {/* Header - Categories with Spacing */}
+                      <div className="market-header">
+                        <div className="market-categories">
+                          {/* Category Badge */}
+                          <span className="category-badge">
+                            {categories.find(c => c.id === market.category_id)?.icon || '📌'}{' '}
+                            {categories.find(c => c.id === market.category_id)?.name || 'Other'}
+                          </span>
+                          
+                          {/* Subcategory Badge - Separate */}
+                          {market.subcategory_name && (
+                            <span className="subcategory-badge">
+                              {market.subcategory_name}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Question */}
+                      <h3>{market.question}</h3>
+                      
+                      {/* Stats - Better Spacing */}
+                      <div className="market-stats">
+                        <div className="stat">
+                          <span className="stat-label">Total Pool</span>
+                          <span className="stat-value">${parseFloat(market.total_bet_amount || 0).toFixed(2)}</span>
+                        </div>
+                        <div className="stat">
+                          <span className="stat-label">Participants</span>
+                          <span className="stat-value">{market.total_bets || 0}</span>
+                        </div>
+                      </div>
+
+                      {/* Options */}
+                      <div className="odds-display">
+                        {market.options?.map(option => (
+                          <div key={option.id} className="odds-option">
+                            <span className="option-label">{option.option_text}</span>
+                            <span className="odds-value">${parseFloat(option.total_amount || 0).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Close Date - Moved to Bottom */}
+                      <div className="close-date">
                         Closes: {new Date(market.deadline).toLocaleDateString('en-US', { 
                           year: 'numeric', 
-                          month: '2-digit', 
-                          day: '2-digit' 
+                          month: 'short', 
+                          day: 'numeric' 
                         })}
-                      </span>
-                    </div>
-                    
-                    <h3>{market.question}</h3>
-                    
-                    <div className="market-stats">
-                      <div className="stat">
-                        <span className="stat-label">Total Pool</span>
-                        <span className="stat-value">${parseFloat(market.total_bet_amount || 0).toFixed(2)}</span>
                       </div>
-                      <div className="stat">
-                        <span className="stat-label">Participants</span>
-                        <span className="stat-value">{market.total_bets || 0}</span>
+
+                      {/* Actions */}
+                      <div className="market-actions">
+                        {user ? (
+                          <>
+                            <button 
+                              className="button-primary" 
+                              onClick={() => {
+                                setSelectedBet(market);
+                                setBetPosition('');
+                                setBetAmount('');
+                              }}
+                              disabled={!isLive}
+                            >
+                              {isLive ? 'Place Bet' : 'Closed'}
+                            </button>
+                            <button 
+                              className="btn-report" 
+                              onClick={() => handleReportBet(market.id)}
+                              title="Report this bet"
+                            >
+                              🚩
+                            </button>
+                          </>
+                        ) : (
+                          <button className="button-secondary" onClick={() => setShowAuthModal(true)}>
+                            Login to Bet
+                          </button>
+                        )}
                       </div>
                     </div>
-
-                    <div className="odds-display">
-                      {market.options?.map(option => (
-                        <div key={option.id} className="odds-option">
-                          <span className="option-label">{option.option_text}</span>
-                          <span className="odds-value">${parseFloat(option.total_amount || 0).toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="market-actions">
-                      {user ? (
-                        <>
-                          <button 
-                            className="button-primary" 
-                            onClick={() => {
-                              setSelectedBet(market);
-                              setBetPosition('');
-                              setBetAmount('');
-                            }}
-                          >
-                            Place Bet
-                          </button>
-                          <button 
-                            className="button-secondary" 
-                            onClick={() => handleReportBet(market.id)}
-                            title="Report this bet"
-                          >
-                            🚩 Report
-                          </button>
-                        </>
-                      ) : (
-                        <button className="button-secondary" onClick={() => setShowAuthModal(true)}>
-                          Login to Bet
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -832,7 +739,7 @@ function App() {
                   )}
 
                   <button 
-                    className="btn-primary btn-large" 
+                    className="button-primary btn-large" 
                     onClick={handlePlaceBet}
                     disabled={!betAmount || parseFloat(betAmount) <= 0 || parseFloat(betAmount) > user.balance}
                   >
