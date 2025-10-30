@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import './App.css';
 
@@ -321,8 +320,24 @@ function App() {
 
   const getMarketStatus = (market) => {
     if (market.resolved) return 'closed';
-    if (new Date(market.closes_at) < new Date()) return 'closed';
+    const closeDate = market.closes_at || market.deadline;
+    if (closeDate && new Date(closeDate) < new Date()) return 'closed';
     return 'live';
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'No date set';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'Invalid Date';
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric',
+        year: 'numeric'
+      });
+    } catch (e) {
+      return 'Invalid Date';
+    }
   };
 
   return (
@@ -496,7 +511,7 @@ function App() {
                         <div className="info-item">
                           <div className="info-label">Closes</div>
                           <div className="info-value">
-                            {new Date(market.closes_at).toLocaleDateString()}
+                            {formatDate(market.closes_at || market.deadline)}
                           </div>
                         </div>
                       </div>
