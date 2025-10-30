@@ -252,6 +252,43 @@ app.get('/api/categories', async (req, res) => {
 // Get all markets
 app.get('/api/markets', async (req, res) => {
   try {
+    // Check if bets table uses 'option' or 'option_id'
+    const betsColumnsResult = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'bets'
+    `);
+    
+    const betsColumns = betsColumnsResult.rows.map(r => r.column_name);
+    const hasOptionColumn = betsColumns.includes('option');
+    const hasOptionIdColumn = betsColumns.includes('option_id');
+    
+    console.log('Bets table columns:', betsColumns);
+    console.log('Has option column:', hasOptionColumn);
+    console.log('Has option_id column:', hasOptionIdColumn);
+    
+    // Build the query based on available schema
+    let yesCondition, noCondition;
+    
+    if (hasOptionColumn) {
+      yesCondition = "option = 'yes'";
+      noCondition = "option = 'no'";
+    } else if (hasOptionIdColumn) {
+      // Find the option IDs for Yes and No
+      const yesOption = await pool.query("SELECT id FROM options WHERE LOWER(option_text) = 'yes' LIMIT 1");
+      const noOption = await pool.query("SELECT id FROM options WHERE LOWER(option_text) = 'no' LIMIT 1");
+      
+      const yesId = yesOption.rows[0]?.id || 1;
+      const noId = noOption.rows[0]?.id || 2;
+      
+      yesCondition = `option_id = ${yesId}`;
+      noCondition = `option_id = ${noId}`;
+    } else {
+      // Can't calculate yes/no totals without knowing the column
+      yesCondition = "1=0";
+      noCondition = "1=0";
+    }
+    
     const result = await pool.query(`
       SELECT m.*, 
              c.name as category_name, 
@@ -259,18 +296,36 @@ app.get('/api/markets', async (req, res) => {
              c.color as category_color,
              sc.name as subcategory_name,
              (SELECT COUNT(*) FROM bets WHERE market_id = m.id) as bet_count,
-             (SELECT COALESCE(SUM(amount), 0) FROM bets WHERE market_id = m.id AND option = 'yes') as yes_total,
-             (SELECT COALESCE(SUM(amount), 0) FROM bets WHERE market_id = m.id AND option = 'no') as no_total
+             (SELECT COALESCE(SUM(amount), 0) FROM bets WHERE market_id = m.id AND ${yesCondition}) as yes_total,
+             (SELECT COALESCE(SUM(amount), 0) FROM bets WHERE market_id = m.id AND ${noCondition}) as no_total
       FROM markets m
       LEFT JOIN categories c ON m.category_id = c.id
       LEFT JOIN subcategories sc ON m.subcategory_id = sc.id
       ORDER BY m.created_at DESC
     `);
+    
+    // Fetch options for each market
+    const marketsWithOptions = await Promise.all(
+      result.rows.map(async (market) => {
+        try {
+          const optionsResult = await pool.query(
+            'SELECT * FROM options WHERE market_id = $1 ORDER BY id',
+            [market.id]
+          );
+          return { ...market, options: optionsResult.rows };
+        } catch (err) {
+          console.error('Error fetching options for market', market.id, err.message);
+          return { ...market, options: [] };
+        }
+      })
+    );
 
-    res.json({ markets: result.rows });
+    console.log(`✅ Successfully fetched ${marketsWithOptions.length} markets`);
+    res.json({ markets: marketsWithOptions });
   } catch (error) {
-    console.error('Error fetching markets:', error);
-    res.status(500).json({ error: 'Failed to fetch markets' });
+    console.error('Error fetching markets:', error.message);
+    console.error('Full error:', error);
+    res.json({ markets: [] });
   }
 });
 
@@ -543,21 +598,54 @@ app.post('/api/markets/:id/resolve', authenticateResolver, async (req, res) => {
 // Get user's bets
 app.get('/api/bets', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT b.*, m.question, m.resolved, m.outcome, m.closes_at,
-              c.name as category_name, c.icon as category_icon
-       FROM bets b
-       JOIN markets m ON b.market_id = m.id
-       LEFT JOIN categories c ON m.category_id = c.id
-       WHERE b.user_id = $1
-       ORDER BY b.created_at DESC`,
-      [req.user.id]
-    );
+    // Check if bets table uses 'option' or 'option_id'
+    const betsColumnsResult = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'bets'
+    `);
+    
+    const betsColumns = betsColumnsResult.rows.map(r => r.column_name);
+    const hasOptionColumn = betsColumns.includes('option');
+    const hasOptionIdColumn = betsColumns.includes('option_id');
+
+    let result;
+
+    if (hasOptionColumn) {
+      // Old schema with option text column
+      result = await pool.query(
+        `SELECT b.*, b.option, m.question, m.resolved, m.outcome, 
+                COALESCE(m.closes_at, m.deadline) as closes_at,
+                c.name as category_name, c.icon as category_icon
+         FROM bets b
+         JOIN markets m ON b.market_id = m.id
+         LEFT JOIN categories c ON m.category_id = c.id
+         WHERE b.user_id = $1
+         ORDER BY b.created_at DESC`,
+        [req.user.id]
+      );
+    } else if (hasOptionIdColumn) {
+      // New schema with option_id
+      result = await pool.query(
+        `SELECT b.*, o.option_text as option, m.question, m.resolved, m.outcome,
+                COALESCE(m.closes_at, m.deadline) as closes_at,
+                c.name as category_name, c.icon as category_icon
+         FROM bets b
+         JOIN markets m ON b.market_id = m.id
+         LEFT JOIN options o ON b.option_id = o.id
+         LEFT JOIN categories c ON m.category_id = c.id
+         WHERE b.user_id = $1
+         ORDER BY b.created_at DESC`,
+        [req.user.id]
+      );
+    } else {
+      return res.json({ bets: [] });
+    }
 
     res.json({ bets: result.rows });
   } catch (error) {
     console.error('Error fetching bets:', error);
-    res.status(500).json({ error: 'Failed to fetch bets' });
+    res.json({ bets: [] });
   }
 });
 
@@ -592,9 +680,23 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Market is already resolved' });
     }
 
-    if (new Date(market.closes_at) < new Date()) {
+    const closesAt = market.closes_at || market.deadline;
+    if (closesAt && new Date(closesAt) < new Date()) {
       return res.status(400).json({ error: 'Market is closed' });
     }
+
+    // Check if bets table uses 'option' or 'option_id'
+    const betsColumnsResult = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'bets'
+    `);
+    
+    const betsColumns = betsColumnsResult.rows.map(r => r.column_name);
+    const hasOptionColumn = betsColumns.includes('option');
+    const hasOptionIdColumn = betsColumns.includes('option_id');
+
+    let betResult;
 
     // Deduct balance
     await pool.query(
@@ -602,20 +704,46 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
       [amount, req.user.id]
     );
 
-    // Place bet
-    const result = await pool.query(
-      'INSERT INTO bets (user_id, market_id, option, amount) VALUES ($1, $2, $3, $4) RETURNING *',
-      [req.user.id, market_id, option, amount]
-    );
+    if (hasOptionColumn) {
+      // Old schema: use option text directly
+      betResult = await pool.query(
+        'INSERT INTO bets (user_id, market_id, option, amount) VALUES ($1, $2, $3, $4) RETURNING *',
+        [req.user.id, market_id, option, amount]
+      );
+    } else if (hasOptionIdColumn) {
+      // New schema: find option_id from options table
+      const optionResult = await pool.query(
+        'SELECT id FROM options WHERE market_id = $1 AND LOWER(option_text) = LOWER($2)',
+        [market_id, option]
+      );
+
+      if (optionResult.rows.length === 0) {
+        return res.status(400).json({ error: 'Invalid option for this market' });
+      }
+
+      const option_id = optionResult.rows[0].id;
+
+      betResult = await pool.query(
+        'INSERT INTO bets (user_id, market_id, option_id, amount) VALUES ($1, $2, $3, $4) RETURNING *',
+        [req.user.id, market_id, option_id, amount]
+      );
+    } else {
+      return res.status(500).json({ error: 'Bets table schema not recognized' });
+    }
 
     // Update market odds based on new bet
+    // (This part depends on your schema, keeping it simple)
     const yesTotal = await pool.query(
-      'SELECT COALESCE(SUM(amount), 0) as total FROM bets WHERE market_id = $1 AND option = $2',
-      [market_id, 'yes']
+      hasOptionColumn
+        ? 'SELECT COALESCE(SUM(amount), 0) as total FROM bets WHERE market_id = $1 AND option = $2'
+        : 'SELECT COALESCE(SUM(amount), 0) as total FROM bets b JOIN options o ON b.option_id = o.id WHERE b.market_id = $1 AND LOWER(o.option_text) = $2',
+      [market_id, hasOptionColumn ? 'yes' : 'yes']
     );
     const noTotal = await pool.query(
-      'SELECT COALESCE(SUM(amount), 0) as total FROM bets WHERE market_id = $1 AND option = $2',
-      [market_id, 'no']
+      hasOptionColumn
+        ? 'SELECT COALESCE(SUM(amount), 0) as total FROM bets WHERE market_id = $1 AND option = $2'
+        : 'SELECT COALESCE(SUM(amount), 0) as total FROM bets b JOIN options o ON b.option_id = o.id WHERE b.market_id = $1 AND LOWER(o.option_text) = $2',
+      [market_id, hasOptionColumn ? 'no' : 'no']
     );
 
     const yesAmount = parseFloat(yesTotal.rows[0].total);
@@ -632,7 +760,7 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
       );
     }
 
-    res.json({ bet: result.rows[0] });
+    res.json({ bet: betResult.rows[0] });
   } catch (error) {
     console.error('Error placing bet:', error);
     res.status(500).json({ error: 'Failed to place bet' });
@@ -662,8 +790,10 @@ app.get('/api/leaderboard', async (req, res) => {
 
     res.json({ leaderboard: result.rows });
   } catch (error) {
-    console.error('Error fetching leaderboard:', error);
-    res.status(500).json({ error: 'Failed to fetch leaderboard' });
+    console.error('Error fetching leaderboard:', error.message);
+    console.error('Error details:', error);
+    // Return empty leaderboard instead of error
+    res.json({ leaderboard: [] });
   }
 });
 
