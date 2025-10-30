@@ -221,10 +221,9 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json({ user: result.rows[0] });
-  } catch (error) {
-    console.error('Get user error:', error);
-    res.status(500).json({ error: 'Failed to get user info' });
+    const user = result.rows[0];
+user.balance = parseFloat(user.balance) || 0;
+res.json({ user });
   }
 });
 
