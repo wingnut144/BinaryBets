@@ -112,14 +112,24 @@ app.post('/api/auth/register', async (req, res) => {
   const { username, email, password } = req.body;
 
   try {
-    // Check if user exists
-    const userCheck = await pool.query(
-      'SELECT * FROM users WHERE email = $1 OR username = $2',
-      [email, username]
+    // Check for existing email
+    const emailCheck = await pool.query(
+      'SELECT id FROM users WHERE email = $1',
+      [email]
     );
 
-    if (userCheck.rows.length > 0) {
-      return res.status(400).json({ error: 'User already exists' });
+    if (emailCheck.rows.length > 0) {
+      return res.status(400).json({ error: 'This email is already registered' });
+    }
+
+    // Check for existing username
+    const usernameCheck = await pool.query(
+      'SELECT id FROM users WHERE username = $1',
+      [username]
+    );
+
+    if (usernameCheck.rows.length > 0) {
+      return res.status(400).json({ error: 'This username is already taken' });
     }
 
     // Hash password
@@ -146,7 +156,7 @@ app.post('/api/auth/register', async (req, res) => {
         id: user.id,
         username: user.username,
         email: user.email,
-        balance: user.balance,
+        balance: parseFloat(user.balance) || 1000,
         is_admin: user.is_admin
       }
     });
@@ -189,7 +199,7 @@ app.post('/api/auth/login', async (req, res) => {
         id: user.id,
         username: user.username,
         email: user.email,
-        balance: user.balance,
+        balance: parseFloat(user.balance) || 0,
         is_admin: user.is_admin
       }
     });
@@ -431,6 +441,16 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
   const { question, category_id, subcategory_id, closes_at, description } = req.body;
 
   try {
+    // Validate closes_at is not today
+    const closesDate = new Date(closes_at);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    closesDate.setHours(0, 0, 0, 0);
+    
+    if (closesDate <= today) {
+      return res.status(400).json({ error: 'Market must close at least tomorrow or later' });
+    }
+
     // Generate AI odds
     const aiOdds = await generateAIOdds(question);
 
