@@ -58,7 +58,17 @@ function App() {
     setTimeout(() => setToast(null), 5000);
   };
 
-  // Fetch data on mount
+  // Copy category link to clipboard
+  const copyShareLink = (category) => {
+    const url = `${window.location.origin}${window.location.pathname}?category=${category.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      showToast(`Link copied! Share ${category.name} markets with this link.`);
+    }).catch(() => {
+      showToast('Failed to copy link', 'error');
+    });
+  };
+
+  // Fetch data on mount and check URL parameters
   useEffect(() => {
     fetchMarkets();
     fetchCategories();
@@ -67,6 +77,26 @@ function App() {
     if (token) {
       fetchUserData(token);
     }
+
+    // Check for category in URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const categoryId = urlParams.get('category');
+    if (categoryId) {
+      // Wait for categories to load, then set selected category
+      const checkCategories = setInterval(() => {
+        if (categories.length > 0) {
+          const category = categories.find(c => c.id === parseInt(categoryId));
+          if (category) {
+            setSelectedCategory(category);
+            setActiveTab('markets');
+          }
+          clearInterval(checkCategories);
+        }
+      }, 100);
+      
+      // Cleanup after 5 seconds
+      setTimeout(() => clearInterval(checkCategories), 5000);
+    }
   }, []);
 
   // Filter markets when category changes
@@ -74,8 +104,18 @@ function App() {
     if (selectedCategory) {
       const filtered = markets.filter(m => m.category_id === selectedCategory.id);
       setFilteredMarkets(filtered);
+      
+      // Update URL parameter
+      const url = new URL(window.location);
+      url.searchParams.set('category', selectedCategory.id);
+      window.history.pushState({}, '', url);
     } else {
       setFilteredMarkets(markets);
+      
+      // Remove category parameter from URL
+      const url = new URL(window.location);
+      url.searchParams.delete('category');
+      window.history.pushState({}, '', url);
     }
   }, [selectedCategory, markets]);
 
@@ -599,15 +639,24 @@ function App() {
                         ))}
                       </div>
                     )}
-                    <button 
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        setSelectedCategory(category);
-                        setActiveTab('markets');
-                      }}
-                    >
-                      View Markets
-                    </button>
+                    <div className="category-card-actions">
+                      <button 
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setSelectedCategory(category);
+                          setActiveTab('markets');
+                        }}
+                      >
+                        View Markets
+                      </button>
+                      <button 
+                        className="btn btn-share"
+                        onClick={() => copyShareLink(category)}
+                        title="Copy link to share"
+                      >
+                        🔗 Share
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
