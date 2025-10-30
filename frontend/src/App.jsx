@@ -415,19 +415,19 @@ function App() {
           {user ? (
             <div className="user-section">
               <span className="balance">💰 ${parseFloat(user.balance).toFixed(2)}</span>
-              <button onClick={handleLogout} className="btn-secondary">
+              <button onClick={handleLogout} className="button-secondary">
                 Logout ({user.username})
               </button>
             </div>
           ) : (
-            <button onClick={() => setShowAuthModal(true)} className="btn-primary">
+            <button onClick={() => setShowAuthModal(true)} className="button-primary">
               Login / Sign Up
             </button>
           )}
         </div>
       </header>
 
-      <nav className="nav">
+      <nav className="tabs">
         <button 
           className={activeTab === 'bets' ? 'active' : ''} 
           onClick={() => setActiveTab('bets')}
@@ -480,7 +480,7 @@ function App() {
       <main className="main">
         {activeTab === 'bets' && (
           <div className="bets-section">
-            <div className="category-filters">
+            <div className="categories-bar">
               <button
                 className={selectedCategory === 'all' ? 'active' : ''}
                 onClick={() => setSelectedCategory('all')}
@@ -553,7 +553,7 @@ function App() {
                       {user ? (
                         <>
                           <button 
-                            className="btn-primary" 
+                            className="button-primary" 
                             onClick={() => {
                               setSelectedBet(market);
                               setBetPosition('');
@@ -563,7 +563,7 @@ function App() {
                             Place Bet
                           </button>
                           <button 
-                            className="btn-report" 
+                            className="button-secondary" 
                             onClick={() => handleReportBet(market.id)}
                             title="Report this bet"
                           >
@@ -571,7 +571,7 @@ function App() {
                           </button>
                         </>
                       ) : (
-                        <button className="btn-secondary" onClick={() => setShowAuthModal(true)}>
+                        <button className="button-secondary" onClick={() => setShowAuthModal(true)}>
                           Login to Bet
                         </button>
                       )}
@@ -676,13 +676,13 @@ function App() {
                         {report.status === 'pending' && (
                           <div className="report-actions">
                             <button 
-                              className="btn-danger" 
+                              className="button-primary" 
                               onClick={() => handleResolveReport(report.id, 'approve')}
                             >
                               ✅ Approve & Delete Bet
                             </button>
                             <button 
-                              className="btn-secondary" 
+                              className="button-secondary" 
                               onClick={() => handleResolveReport(report.id, 'dismiss')}
                             >
                               ❌ Dismiss Report
@@ -710,7 +710,7 @@ function App() {
                         </p>
                       </div>
                       <button 
-                        className="btn-danger" 
+                        className="button-primary" 
                         onClick={() => handleAdminDeleteBet(market.id)}
                       >
                         🗑️ Delete
@@ -772,7 +772,7 @@ function App() {
                 </div>
               )}
               
-              <button type="submit" className="btn-primary">
+              <button type="submit" className="button-primary">
                 {authMode === 'login' ? 'Login' : 'Sign Up'}
               </button>
             </form>
