@@ -68,7 +68,7 @@ function App() {
     });
   };
 
-  // Fetch data on mount and check URL parameters
+  // Fetch data on mount
   useEffect(() => {
     fetchMarkets();
     fetchCategories();
@@ -77,27 +77,26 @@ function App() {
     if (token) {
       fetchUserData(token);
     }
-
-    // Check for category in URL parameters
-    const urlParams = new URLSearchParams(window.location.search);
-    const categoryId = urlParams.get('category');
-    if (categoryId) {
-      // Wait for categories to load, then set selected category
-      const checkCategories = setInterval(() => {
-        if (categories.length > 0) {
-          const category = categories.find(c => c.id === parseInt(categoryId));
-          if (category) {
-            setSelectedCategory(category);
-            setActiveTab('markets');
-          }
-          clearInterval(checkCategories);
-        }
-      }, 100);
-      
-      // Cleanup after 5 seconds
-      setTimeout(() => clearInterval(checkCategories), 5000);
-    }
   }, []);
+
+  // Check URL parameters after categories load
+  useEffect(() => {
+    if (categories.length > 0) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const categoryId = urlParams.get('category');
+      
+      if (categoryId) {
+        const category = categories.find(c => c.id === parseInt(categoryId));
+        if (category) {
+          setSelectedCategory(category);
+          setActiveTab('markets');
+          console.log('✅ Category selected from URL:', category.name);
+        } else {
+          console.warn('⚠️ Category not found:', categoryId);
+        }
+      }
+    }
+  }, [categories]); // Trigger when categories load
 
   // Filter markets when category changes
   useEffect(() => {
