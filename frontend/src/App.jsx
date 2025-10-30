@@ -711,7 +711,7 @@ function App() {
                         </div>
                         <div className="info-item">
                           <div className="info-label">Amount</div>
-                          <div className="info-value">${parseFloat(bet.amount).toFixed(2)}</div>
+                          <div className="info-value">${parseFloat(bet.amount || 0).toFixed(2)}</div>
                         </div>
                         <div className="info-item">
                           <div className="info-label">Status</div>
@@ -834,11 +834,11 @@ function App() {
                             {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
                           </td>
                           <td style={{ padding: '12px', fontWeight: '600' }}>{player.username}</td>
-                          <td style={{ padding: '12px', textAlign: 'right' }}>${parseFloat(player.balance).toFixed(2)}</td>
-                          <td style={{ padding: '12px', textAlign: 'right' }}>{player.total_bets}</td>
-                          <td style={{ padding: '12px', textAlign: 'right' }}>{player.wins}</td>
+                          <td style={{ padding: '12px', textAlign: 'right' }}>${parseFloat(player.balance || 0).toFixed(2)}</td>
+                          <td style={{ padding: '12px', textAlign: 'right' }}>{player.total_bets || 0}</td>
+                          <td style={{ padding: '12px', textAlign: 'right' }}>{player.wins || 0}</td>
                           <td style={{ padding: '12px', textAlign: 'right', color: 'var(--success-color)', fontWeight: '600' }}>
-                            ${parseFloat(player.winnings).toFixed(2)}
+                            ${parseFloat(player.winnings || 0).toFixed(2)}
                           </td>
                         </tr>
                       ))}
