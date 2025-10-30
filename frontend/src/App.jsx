@@ -21,7 +21,7 @@ function App() {
   const [betPosition, setBetPosition] = useState('');
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState('login');
-  const [authForm, setAuthForm] = useState({ username: '', email: '', password: '' });
+  const [authForm, setAuthForm] = useState({ username: '', email: '', password: '', confirmEmail: '', confirmPassword: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showCreateMarket, setShowCreateMarket] = useState(false);
@@ -182,12 +182,36 @@ function App() {
     setError('');
     setSuccess('');
 
+    // Validate registration fields
+    if (authMode === 'register') {
+      if (authForm.email !== authForm.confirmEmail) {
+        setError('Emails do not match');
+        return;
+      }
+      if (authForm.password !== authForm.confirmPassword) {
+        setError('Passwords do not match');
+        return;
+      }
+      if (authForm.password.length < 6) {
+        setError('Password must be at least 6 characters');
+        return;
+      }
+      if (authForm.username.length < 3) {
+        setError('Username must be at least 3 characters');
+        return;
+      }
+    }
+
     try {
       const endpoint = authMode === 'login' ? '/auth/login' : '/auth/register';
       const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(authForm)
+        body: JSON.stringify({
+          username: authForm.username,
+          email: authForm.email,
+          password: authForm.password
+        })
       });
 
       const data = await response.json();
@@ -197,7 +221,7 @@ function App() {
         setToken(data.token);
         setUser(data.user);
         setShowAuthModal(false);
-        setAuthForm({ username: '', email: '', password: '' });
+        setAuthForm({ username: '', email: '', password: '', confirmEmail: '', confirmPassword: '' });
         setSuccess(authMode === 'login' ? 'Logged in successfully!' : 'Account created successfully!');
       } else {
         setError(data.error || 'Authentication failed');
@@ -841,51 +865,144 @@ function App() {
       {showAuthModal && (
         <div className="modal-overlay" onClick={() => setShowAuthModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>
+            <h2>{authMode === 'login' ? 'Login' : 'Create Account'}</h2>
             <form onSubmit={handleAuth}>
               {authMode === 'register' && (
-                <div className="form-group">
-                  <label>Username</label>
-                  <input
-                    type="text"
-                    value={authForm.username}
-                    onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
-                    required
-                  />
+                <>
+                  <div className="form-group">
+                    <label>Username *</label>
+                    <input
+                      type="text"
+                      value={authForm.username}
+                      onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
+                      placeholder="Choose a username"
+                      required
+                      minLength="3"
+                      maxLength="20"
+                    />
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                      This will be displayed on leaderboards and bets
+                    </p>
+                  </div>
+                  <div className="form-group">
+                    <label>Email *</label>
+                    <input
+                      type="email"
+                      value={authForm.email}
+                      onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
+                      placeholder="your.email@example.com"
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Confirm Email *</label>
+                    <input
+                      type="email"
+                      value={authForm.confirmEmail || ''}
+                      onChange={(e) => setAuthForm({ ...authForm, confirmEmail: e.target.value })}
+                      placeholder="Confirm your email"
+                      required
+                    />
+                    {authForm.confirmEmail && authForm.email !== authForm.confirmEmail && (
+                      <p style={{ fontSize: '12px', color: '#e74c3c', marginTop: '4px' }}>
+                        ⚠️ Emails do not match
+                      </p>
+                    )}
+                  </div>
+                  <div className="form-group">
+                    <label>Password *</label>
+                    <input
+                      type="password"
+                      value={authForm.password}
+                      onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                      placeholder="Choose a secure password"
+                      required
+                      minLength="6"
+                    />
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                      Minimum 6 characters
+                    </p>
+                  </div>
+                  <div className="form-group">
+                    <label>Confirm Password *</label>
+                    <input
+                      type="password"
+                      value={authForm.confirmPassword || ''}
+                      onChange={(e) => setAuthForm({ ...authForm, confirmPassword: e.target.value })}
+                      placeholder="Confirm your password"
+                      required
+                    />
+                    {authForm.confirmPassword && authForm.password !== authForm.confirmPassword && (
+                      <p style={{ fontSize: '12px', color: '#e74c3c', marginTop: '4px' }}>
+                        ⚠️ Passwords do not match
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
+              {authMode === 'login' && (
+                <>
+                  <div className="form-group">
+                    <label>Email</label>
+                    <input
+                      type="email"
+                      value={authForm.email}
+                      onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
+                      placeholder="your.email@example.com"
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Password</label>
+                    <input
+                      type="password"
+                      value={authForm.password}
+                      onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                      placeholder="Enter your password"
+                      required
+                    />
+                  </div>
+                </>
+              )}
+              {error && (
+                <div style={{ 
+                  padding: '12px', 
+                  background: '#fee', 
+                  border: '1px solid #fcc',
+                  borderRadius: '8px',
+                  color: '#c33',
+                  fontSize: '14px',
+                  marginBottom: '16px'
+                }}>
+                  {error}
                 </div>
               )}
-              <div className="form-group">
-                <label>Email</label>
-                <input
-                  type="email"
-                  value={authForm.email}
-                  onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Password</label>
-                <input
-                  type="password"
-                  value={authForm.password}
-                  onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
-                  required
-                />
-              </div>
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowAuthModal(false)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary">
-                  {authMode === 'login' ? 'Login' : 'Sign Up'}
+                <button 
+                  type="submit" 
+                  className="btn btn-primary"
+                  disabled={authMode === 'register' && (
+                    authForm.email !== authForm.confirmEmail || 
+                    authForm.password !== authForm.confirmPassword ||
+                    !authForm.username
+                  )}
+                >
+                  {authMode === 'login' ? 'Login' : 'Create Account'}
                 </button>
               </div>
             </form>
             <p style={{ textAlign: 'center', marginTop: '16px' }}>
               {authMode === 'login' ? "Don't have an account? " : "Already have an account? "}
               <button
-                onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-                style={{ background: 'none', border: 'none', color: 'var(--primary-color)', cursor: 'pointer', textDecoration: 'underline' }}
+                onClick={() => {
+                  setAuthMode(authMode === 'login' ? 'register' : 'login');
+                  setAuthForm({ email: '', password: '', username: '', confirmEmail: '', confirmPassword: '' });
+                  setError('');
+                }}
+                style={{ background: 'none', border: 'none', color: 'var(--primary-color)', cursor: 'pointer', textDecoration: 'underline', fontWeight: '600' }}
               >
                 {authMode === 'login' ? 'Sign Up' : 'Login'}
               </button>
