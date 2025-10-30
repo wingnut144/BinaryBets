@@ -127,7 +127,7 @@ app.post('/api/auth/register', async (req, res) => {
 
     // Create user with starting balance
     const result = await pool.query(
-      'INSERT INTO users (username, email, password, balance) VALUES ($1, $2, $3, $4) RETURNING id, username, email, balance, is_admin',
+      'INSERT INTO users (username, email, password_hash, balance) VALUES ($1, $2, $3, $4) RETURNING id, username, email, balance, is_admin',
       [username, email, hashedPassword, 1000]
     );
 
@@ -171,7 +171,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const user = result.rows[0];
-    const validPassword = await bcrypt.compare(password, user.password);
+    const validPassword = await bcrypt.compare(password, user.password_hash);
 
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -778,9 +778,7 @@ app.get('/api/leaderboard', async (req, res) => {
         u.id,
         u.username,
         u.balance,
-        COUNT(DISTINCT b.id) as total_bets,
-        COUNT(DISTINCT CASE WHEN b.won = true THEN b.id END) as wins,
-        COALESCE(SUM(CASE WHEN b.won = true THEN b.amount ELSE 0 END), 0) as winnings
+        COUNT(DISTINCT b.id) as total_bets
       FROM users u
       LEFT JOIN bets b ON u.id = b.user_id
       GROUP BY u.id, u.username, u.balance
