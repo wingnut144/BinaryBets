@@ -346,7 +346,15 @@ function App() {
       <header className="header">
         <nav className="nav-container">
           <div className="logo" onClick={() => { setActiveTab('markets'); setSelectedCategory(null); setSelectedSubcategory(null); }}>
-            Binary Bets
+            <svg className="dice-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="32" height="32">
+              <rect x="10" y="10" width="80" height="80" rx="12" fill="white" stroke="#667eea" strokeWidth="4"/>
+              <circle cx="30" cy="30" r="6" fill="#e74c3c"/>
+              <circle cx="70" cy="30" r="6" fill="#e74c3c"/>
+              <circle cx="50" cy="50" r="6" fill="#e74c3c"/>
+              <circle cx="30" cy="70" r="6" fill="#e74c3c"/>
+              <circle cx="70" cy="70" r="6" fill="#e74c3c"/>
+            </svg>
+            <span className="logo-text">Binary Bets</span>
           </div>
 
           <div className="nav-tabs">
