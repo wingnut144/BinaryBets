@@ -24,6 +24,13 @@ function App() {
   const [authForm, setAuthForm] = useState({ username: '', email: '', password: '', confirmEmail: '', confirmPassword: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [toast, setToast] = useState(null); // { message, type: 'success' | 'error' }
+
+  // Show toast notification
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000); // Auto-hide after 4 seconds
+  };
   const [showCreateMarket, setShowCreateMarket] = useState(false);
   const [newMarket, setNewMarket] = useState({
     question: '',
@@ -222,7 +229,8 @@ function App() {
         setUser(data.user);
         setShowAuthModal(false);
         setAuthForm({ username: '', email: '', password: '', confirmEmail: '', confirmPassword: '' });
-        setSuccess(authMode === 'login' ? 'Logged in successfully!' : 'Account created successfully!');
+        setError(''); // Clear any errors
+        showToast(authMode === 'login' ? '👋 Welcome back!' : '🎉 Account created successfully!', 'success');
       } else {
         setError(data.error || 'Authentication failed');
       }
@@ -258,17 +266,17 @@ function App() {
       const data = await response.json();
 
       if (response.ok) {
-        setSuccess('Bet placed successfully!');
+        showToast('🎉 Bet placed successfully!', 'success');
         setShowBetModal(false);
         setBetAmount('');
         setBetPosition('');
         fetchUser();
         fetchMarkets();
       } else {
-        setError(data.error || 'Failed to place bet');
+        showToast(data.error || 'Failed to place bet', 'error');
       }
     } catch (error) {
-      setError('Network error. Please try again.');
+      showToast('Network error. Please try again.', 'error');
     }
   };
 
@@ -289,7 +297,7 @@ function App() {
       const data = await response.json();
 
       if (response.ok) {
-        setSuccess('Market created successfully!');
+        showToast('🎯 Market created successfully!', 'success');
         setShowCreateMarket(false);
         setNewMarket({
           question: '',
@@ -299,11 +307,12 @@ function App() {
           description: ''
         });
         fetchMarkets();
+        setActiveTab('markets');
       } else {
-        setError(data.error || 'Failed to create market');
+        showToast(data.error || 'Failed to create market', 'error');
       }
     } catch (error) {
-      setError('Network error. Please try again.');
+      showToast('Network error. Please try again.', 'error');
     }
   };
 
@@ -1050,7 +1059,7 @@ function App() {
                     step="0.01"
                   />
                   <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                    Available balance: ${user.balance.toFixed(2)}
+                    Available balance: ${user.balance?.toFixed(2) || '0.00'}
                   </p>
                 </div>
 
@@ -1069,6 +1078,16 @@ function App() {
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`toast toast-${toast.type}`}>
+          <div className="toast-content">
+            {toast.message}
+          </div>
+          <button className="toast-close" onClick={() => setToast(null)}>×</button>
         </div>
       )}
     </div>
