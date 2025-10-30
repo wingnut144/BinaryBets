@@ -2,36 +2,31 @@ import React, { useState, useEffect } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://api.binary-bets.com';
 
-const CreateMarket = ({ onMarketCreated }) => {
-  const [question, setQuestion] = useState('');
-  const [deadline, setDeadline] = useState('');
-  const [options, setOptions] = useState(['Yes', 'No']);
+function CreateMarket({ onMarketCreated }) {
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [selectedSubcategory, setSelectedSubcategory] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  
-  // AI Odds Generation
+  const [formData, setFormData] = useState({
+    question: '',
+    category_id: '',
+    subcategory_id: '',
+    close_date: '',
+    bet_type: 'binary',
+    options: ['Yes', 'No'],
+    ai_odds: null
+  });
   const [generatingOdds, setGeneratingOdds] = useState(false);
-  const [aiOdds, setAiOdds] = useState(null);
-  const [showOddsPreview, setShowOddsPreview] = useState(false);
 
-  // Fetch categories on mount
   useEffect(() => {
     fetchCategories();
   }, []);
 
-  // Fetch subcategories when category changes
   useEffect(() => {
-    if (selectedCategory) {
-      fetchSubcategories(selectedCategory);
+    if (formData.category_id) {
+      fetchSubcategories(formData.category_id);
     } else {
       setSubcategories([]);
-      setSelectedSubcategory('');
     }
-  }, [selectedCategory]);
+  }, [formData.category_id]);
 
   const fetchCategories = async () => {
     try {
@@ -53,40 +48,13 @@ const CreateMarket = ({ onMarketCreated }) => {
     }
   };
 
-  const handleAddOption = () => {
-    if (options.length < 10) {
-      setOptions([...options, '']);
-    }
-  };
-
-  const handleRemoveOption = (index) => {
-    if (options.length > 2) {
-      setOptions(options.filter((_, i) => i !== index));
-    }
-  };
-
-  const handleOptionChange = (index, value) => {
-    const newOptions = [...options];
-    newOptions[index] = value;
-    setOptions(newOptions);
-  };
-
-  // AI Odds Generation
   const handleGenerateOdds = async () => {
-    if (!question.trim()) {
-      setError('Please enter a question first');
-      return;
-    }
-
-    const validOptions = options.filter(opt => opt.trim());
-    if (validOptions.length < 2) {
-      setError('Please provide at least 2 options');
+    if (!formData.question) {
+      alert('Please enter a question first');
       return;
     }
 
     setGeneratingOdds(true);
-    setError('');
-
     try {
       const response = await fetch(`${API_URL}/api/generate-odds`, {
         method: 'POST',
@@ -95,273 +63,302 @@ const CreateMarket = ({ onMarketCreated }) => {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
         body: JSON.stringify({
-          question: question.trim(),
-          options: validOptions
+          question: formData.question,
+          options: formData.options.filter(opt => opt.trim())
         })
       });
 
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate odds');
+      if (response.ok) {
+        setFormData({ ...formData, ai_odds: data });
+      } else {
+        alert(data.error || 'Failed to generate odds');
       }
-
-      setAiOdds(data.odds);
-      setShowOddsPreview(true);
     } catch (error) {
       console.error('Error generating odds:', error);
-      setError(error.message || 'Failed to generate AI odds. Please try again.');
+      alert('Failed to generate odds');
     } finally {
       setGeneratingOdds(false);
     }
   };
 
-  const handleAcceptOdds = () => {
-    // Odds accepted, they'll be included in the submission
-    setShowOddsPreview(false);
-  };
-
-  const handleRejectOdds = () => {
-    // User rejected AI odds
-    setAiOdds(null);
-    setShowOddsPreview(false);
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
 
-    // Validate
-    if (!question.trim()) {
-      setError('Please enter a question');
-      setLoading(false);
-      return;
-    }
-
-    if (!deadline) {
-      setError('Please select a deadline');
-      setLoading(false);
-      return;
-    }
-
-    const validOptions = options.filter(opt => opt.trim());
-    if (validOptions.length < 2) {
-      setError('Please provide at least 2 options');
-      setLoading(false);
-      return;
-    }
-
-    if (new Date(deadline) <= new Date()) {
-      setError('Deadline must be in the future');
-      setLoading(false);
+    if (!formData.question || !formData.close_date) {
+      alert('Please fill in all required fields');
       return;
     }
 
     try {
-      const marketData = {
-        question: question.trim(),
-        options: validOptions,
-        close_date: deadline,
-        category_id: selectedCategory || null,
-        subcategory_id: selectedSubcategory || null,
-        ai_odds: aiOdds // Include AI odds if generated
-      };
-
       const response = await fetch(`${API_URL}/api/markets`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify(marketData)
+        body: JSON.stringify({
+          question: formData.question,
+          options: formData.options.filter(opt => opt.trim()),
+          close_date: formData.close_date,
+          category_id: formData.category_id || null,
+          subcategory_id: formData.subcategory_id || null,
+          ai_odds: formData.ai_odds
+        })
       });
 
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create market');
+      if (response.ok) {
+        alert('Market created successfully!');
+        setFormData({
+          question: '',
+          category_id: '',
+          subcategory_id: '',
+          close_date: '',
+          bet_type: 'binary',
+          options: ['Yes', 'No'],
+          ai_odds: null
+        });
+        if (onMarketCreated) {
+          onMarketCreated(data.market);
+        }
+      } else {
+        alert(data.error || 'Failed to create market');
       }
-
-      // Reset form
-      setQuestion('');
-      setDeadline('');
-      setOptions(['Yes', 'No']);
-      setSelectedCategory('');
-      setSelectedSubcategory('');
-      setAiOdds(null);
-      setShowOddsPreview(false);
-
-      if (onMarketCreated) {
-        onMarketCreated(data.market);
-      }
-
-      alert('Market created successfully!');
     } catch (error) {
       console.error('Error creating market:', error);
-      setError(error.message || 'Failed to create market');
-    } finally {
-      setLoading(false);
+      alert('Failed to create market');
     }
   };
 
   return (
     <div className="create-market-container">
-      <h2>Create New Market</h2>
-      
-      {error && <div className="error-message">{error}</div>}
+      <div className="create-market-content">
+        <h2>Create New Market</h2>
 
-      <form onSubmit={handleSubmit} className="create-market-form">
-        {/* Question Field */}
-        <div className="form-group">
-          <label htmlFor="question">Market Question *</label>
-          <input
-            type="text"
-            id="question"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Will it rain tomorrow in New York?"
-            required
-          />
-        </div>
+        <form onSubmit={handleSubmit} className="market-form">
+          {/* Question */}
+          <div className="form-group">
+            <label htmlFor="question">Market Question *</label>
+            <input
+              id="question"
+              type="text"
+              value={formData.question}
+              onChange={(e) => setFormData({ ...formData, question: e.target.value })}
+              placeholder="Will it rain tomorrow in New York?"
+              required
+            />
+          </div>
 
-        {/* AI Odds Generation Button */}
-        <div className="form-group">
+          {/* AI Odds Button */}
           <button
             type="button"
             onClick={handleGenerateOdds}
-            disabled={generatingOdds || !question.trim()}
+            disabled={generatingOdds || !formData.question}
             className="ai-odds-button"
           >
-            {generatingOdds ? '🤖 Generating AI Odds...' : '🤖 Generate AI Odds'}
+            {generatingOdds ? (
+              <>
+                <span className="loading"></span>
+                <span className="text">Generating...</span>
+              </>
+            ) : (
+              <>
+                <span className="icon">🤖</span>
+                <span className="text">Generate AI Odds</span>
+              </>
+            )}
           </button>
-        </div>
 
-        {/* AI Odds Preview */}
-        {showOddsPreview && aiOdds && (
-          <div className="ai-odds-preview">
-            <h3>🤖 AI Predicted Odds:</h3>
-            <div className="odds-display">
-              {Object.entries(aiOdds).map(([option, probability]) => (
-                <div key={option} className="odds-item">
-                  <span className="option-name">{option}:</span>
-                  <span className="probability">{(probability * 100).toFixed(1)}%</span>
-                </div>
-              ))}
+          {/* AI Odds Preview */}
+          {formData.ai_odds && (
+            <div className="ai-odds-preview">
+              <h3>
+                <span>🎯</span>
+                AI-Generated Probabilities
+              </h3>
+              <div className="odds-display">
+                {Object.entries(formData.ai_odds.odds).map(([option, probability]) => (
+                  <div key={option} className="odds-item">
+                    <span className="option-name">{option}</span>
+                    <span className="probability">{(probability * 100).toFixed(1)}%</span>
+                  </div>
+                ))}
+              </div>
+              <div className="odds-actions">
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, ai_odds: null })}
+                  className="reject-odds"
+                >
+                  <span>❌</span>
+                  <span>Reject</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {}}
+                  className="accept-odds"
+                >
+                  <span>✅</span>
+                  <span>Use These Odds</span>
+                </button>
+              </div>
             </div>
-            <div className="odds-actions">
-              <button type="button" onClick={handleAcceptOdds} className="accept-odds">
-                ✓ Accept Odds
-              </button>
-              <button type="button" onClick={handleRejectOdds} className="reject-odds">
-                ✗ Reject Odds
-              </button>
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* Category Selection */}
-        <div className="form-group">
-          <label htmlFor="category">Category (Optional)</label>
-          <select
-            id="category"
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-          >
-            <option value="">No Category</option>
-            {categories.map(cat => (
-              <option key={cat.id} value={cat.id}>
-                {cat.icon} {cat.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Subcategory Selection */}
-        {selectedCategory && subcategories.length > 0 && (
+          {/* Category */}
           <div className="form-group">
-            <label htmlFor="subcategory">Subcategory (Optional)</label>
+            <label htmlFor="category">Category (Optional)</label>
             <select
-              id="subcategory"
-              value={selectedSubcategory}
-              onChange={(e) => setSelectedSubcategory(e.target.value)}
+              id="category"
+              value={formData.category_id}
+              onChange={(e) => setFormData({ 
+                ...formData, 
+                category_id: e.target.value,
+                subcategory_id: '' 
+              })}
             >
-              <option value="">No Subcategory</option>
-              {subcategories.map(sub => (
-                <option key={sub.id} value={sub.id}>
-                  {sub.name}
+              <option value="">Select a category...</option>
+              {categories.map(cat => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.icon} {cat.name}
                 </option>
               ))}
             </select>
           </div>
-        )}
 
-        {/* Deadline */}
-        <div className="form-group">
-          <label htmlFor="deadline">Deadline *</label>
-          <input
-            type="datetime-local"
-            id="deadline"
-            value={deadline}
-            onChange={(e) => setDeadline(e.target.value)}
-            required
-          />
-        </div>
-
-        {/* Answer Options */}
-        <div className="form-group">
-          <label>Answer Options * (minimum 2)</label>
-          {options.map((option, index) => (
-            <div key={index} className="option-input-group">
-              <input
-                type="text"
-                value={option}
-                onChange={(e) => handleOptionChange(index, e.target.value)}
-                placeholder={`Option ${index + 1}`}
-                required
-              />
-              {options.length > 2 && (
-                <button
-                  type="button"
-                  onClick={() => handleRemoveOption(index)}
-                  className="remove-option"
-                >
-                  ✕
-                </button>
-              )}
+          {/* Subcategory */}
+          {subcategories.length > 0 && (
+            <div className="form-group">
+              <label htmlFor="subcategory">Subcategory (Optional)</label>
+              <select
+                id="subcategory"
+                value={formData.subcategory_id}
+                onChange={(e) => setFormData({ ...formData, subcategory_id: e.target.value })}
+              >
+                <option value="">Select a subcategory...</option>
+                {subcategories.map(subcat => (
+                  <option key={subcat.id} value={subcat.id}>
+                    {subcat.name}
+                  </option>
+                ))}
+              </select>
             </div>
-          ))}
-          {options.length < 10 && (
-            <button
-              type="button"
-              onClick={handleAddOption}
-              className="add-option"
-            >
-              + Add Option
-            </button>
           )}
+
+          {/* Deadline - DATE ONLY */}
+          <div className="form-group">
+            <label htmlFor="deadline">Deadline *</label>
+            <input
+              id="deadline"
+              type="date"
+              value={formData.close_date}
+              onChange={(e) => setFormData({ ...formData, close_date: e.target.value })}
+              min={new Date().toISOString().split('T')[0]}
+              required
+            />
+          </div>
+
+          {/* Bet Type Selector */}
+          <div className="form-group">
+            <label htmlFor="bet-type">Bet Type *</label>
+            <select
+              id="bet-type"
+              value={formData.bet_type}
+              onChange={(e) => {
+                const newType = e.target.value;
+                setFormData({ 
+                  ...formData, 
+                  bet_type: newType,
+                  options: newType === 'binary' ? ['Yes', 'No'] : ['Option 1', 'Option 2', 'Option 3'],
+                  ai_odds: null
+                });
+              }}
+            >
+              <option value="binary">Yes/No (Binary)</option>
+              <option value="multiple">Multiple Choice</option>
+            </select>
+          </div>
+
+          {/* Answer Options */}
+          <div className="form-group">
+            <label>Answer Options * (minimum 2)</label>
+            <div className="options-list">
+              {formData.options.map((option, index) => (
+                <div key={index} className="option-row">
+                  <input
+                    type="text"
+                    value={option}
+                    onChange={(e) => {
+                      const newOptions = [...formData.options];
+                      newOptions[index] = e.target.value;
+                      setFormData({ ...formData, options: newOptions });
+                    }}
+                    placeholder={`Option ${index + 1}`}
+                    disabled={formData.bet_type === 'binary'}
+                    className={formData.bet_type === 'binary' ? 'option-input' : ''}
+                    required
+                  />
+                  {formData.bet_type === 'multiple' && formData.options.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newOptions = formData.options.filter((_, i) => i !== index);
+                        setFormData({ ...formData, options: newOptions });
+                      }}
+                      className="remove-option-btn"
+                      title="Remove option"
+                    >
+                      ❌
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            
+            {formData.bet_type === 'multiple' && formData.options.length < 10 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({ 
+                    ...formData, 
+                    options: [...formData.options, `Option ${formData.options.length + 1}`] 
+                  });
+                }}
+                className="button-secondary add-option-btn"
+              >
+                + Add Option
+              </button>
+            )}
+            
+            {formData.bet_type === 'binary' && (
+              <p className="helper-text">Yes/No options are fixed for binary bets</p>
+            )}
+          </div>
+
+          {/* Submit Button */}
+          <button type="submit" className="button-primary btn-large">
+            Create Market
+          </button>
+        </form>
+
+        {/* Tips Section */}
+        <div className="tips-section">
+          <h3>Tips for creating good markets:</h3>
+          <ul>
+            <li>Make your question clear and unambiguous</li>
+            <li>Choose a reasonable deadline (not too far in the future)</li>
+            <li>Provide distinct answer options</li>
+            <li>Select a relevant category to help users find your market</li>
+            <li>Subcategories make your market even easier to discover</li>
+            <li>Use AI odds generation to get initial probability estimates</li>
+          </ul>
         </div>
-
-        {/* Submit Button */}
-        <button type="submit" disabled={loading} className="submit-button">
-          {loading ? 'Creating Market...' : 'Create Market'}
-        </button>
-      </form>
-
-      {/* Tips Section */}
-      <div className="tips-section">
-        <h3>Tips for creating good markets:</h3>
-        <ul>
-          <li>Make your question clear and unambiguous</li>
-          <li>Choose a reasonable deadline (not too far in the future)</li>
-          <li>Provide distinct answer options</li>
-          <li>Select a relevant category to help users find your market</li>
-          <li>Subcategories make your market even easier to discover</li>
-          <li>Use AI odds generation to get initial probability estimates</li>
-        </ul>
       </div>
     </div>
   );
-};
+}
 
 export default CreateMarket;
