@@ -1,20 +1,21 @@
 FROM node:18-alpine
 
-# Install git
+# Install git if needed for npm packages
 RUN apk add --no-cache git
 
 WORKDIR /app
 
-# Clone the repository
-ARG GITHUB_REPO
-ARG GITHUB_BRANCH=main
-RUN git clone --depth 1 --branch ${GITHUB_BRANCH} ${GITHUB_REPO} /tmp/repo && \
-    cp -r /tmp/repo/backend/* /app/ && \
-    rm -rf /tmp/repo
+# Copy package files
+COPY package*.json ./
 
 # Install dependencies
 RUN npm install
 
+# Copy application code
+COPY . .
+
+# Expose port
 EXPOSE 5000
 
+# Start application
 CMD ["npm", "start"]
