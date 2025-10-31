@@ -706,7 +706,7 @@ function MarketCard({ market, user, onBet, getCategoryIcon, getCategoryName, get
         <>
           {market.options && market.options.length > 0 && (
             <div className="betting-options">
-              <div className="options-label">Current Odds</div>
+              <div className="options-label">Betting Options & Odds</div>
               <div className="options-grid">
                 {market.options.map(option => (
                   <div key={option.id} className="option-card">
@@ -917,19 +917,20 @@ function CreateMarket({ categories, onSuccess }) {
         </div>
 
         <div className="form-group">
-          <label>Category</label>
+          <label>Category *</label>
           <select
             value={form.category_id}
             onChange={e => setForm({...form, category_id: e.target.value})}
             required
           >
-            <option value="">Select category...</option>
+            <option value="">Select a category (required)...</option>
             {categories.map(cat => (
               <option key={cat.id} value={cat.id}>
                 {cat.icon} {cat.name}
               </option>
             ))}
           </select>
+          <span className="form-hint">Required - choose the main category for this market</span>
         </div>
 
         <div className="form-group">
