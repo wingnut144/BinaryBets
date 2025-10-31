@@ -268,67 +268,66 @@ app.get('/api/categories', async (req, res) => {
 // Get all markets with options
 app.get('/api/markets', async (req, res) => {
   try {
-    // Simplified query - only uses 'options' table (not market_options)
-    const result = await pool.query(`
-      SELECT 
-        m.id,
-        m.question,
-        m.category_id,
-        m.deadline,
-        m.status,
-        m.outcome,
-        m.created_at,
-        m.resolved_at,
-        COALESCE(SUM(b.amount), 0) as total_pool,
-        COUNT(DISTINCT b.id) as bet_count,
-        json_agg(
-          DISTINCT jsonb_build_object(
-            'id', o.id,
-            'name', o.name,
-            'odds', COALESCE(o.odds, 1.0),
-            'bet_count', (
-              SELECT COUNT(*) 
-              FROM bets b2 
-              WHERE b2.option_id = o.id
-            )
-          )
-        ) FILTER (WHERE o.id IS NOT NULL) as options
-      FROM markets m
-      LEFT JOIN options o ON m.id = o.market_id
-      LEFT JOIN bets b ON m.id = b.market_id
-      WHERE m.status = 'active' OR m.status = 'resolved'
-      GROUP BY m.id
-      ORDER BY m.created_at DESC
+    // Simple approach: get markets first, then add options and stats
+    const marketsResult = await pool.query(`
+      SELECT * FROM markets 
+      WHERE status = 'active' OR status = 'resolved'
+      ORDER BY created_at DESC
     `);
 
-    const markets = result.rows.map(market => ({
-      ...market,
-      total_pool: parseFloat(market.total_pool) || 0,
-      bet_count: parseInt(market.bet_count) || 0,
-      options: market.options || []
-    }));
+    const markets = [];
+
+    for (const market of marketsResult.rows) {
+      // Get options for this market
+      let options = [];
+      try {
+        const optionsResult = await pool.query(`
+          SELECT id, name, odds FROM options WHERE market_id = $1
+        `, [market.id]);
+        
+        // Add bet count to each option
+        for (const option of optionsResult.rows) {
+          const betCountResult = await pool.query(
+            'SELECT COUNT(*) as count FROM bets WHERE option_id = $1',
+            [option.id]
+          );
+          option.bet_count = parseInt(betCountResult.rows[0]?.count || 0);
+          option.odds = parseFloat(option.odds) || 1.0;
+        }
+        
+        options = optionsResult.rows;
+      } catch (err) {
+        console.log('Could not fetch options for market', market.id);
+        options = [];
+      }
+
+      // Get total pool and bet count
+      let totalPool = 0;
+      let betCount = 0;
+      try {
+        const statsResult = await pool.query(
+          'SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count FROM bets WHERE market_id = $1',
+          [market.id]
+        );
+        totalPool = parseFloat(statsResult.rows[0]?.total || 0);
+        betCount = parseInt(statsResult.rows[0]?.count || 0);
+      } catch (err) {
+        console.log('Could not fetch stats for market', market.id);
+      }
+
+      markets.push({
+        ...market,
+        options,
+        total_pool: totalPool,
+        bet_count: betCount
+      });
+    }
 
     res.json({ markets });
 
   } catch (error) {
     console.error('Markets fetch error:', error);
-    // Fallback: return markets without options if query fails
-    try {
-      const fallbackResult = await pool.query(
-        'SELECT * FROM markets WHERE status = $1 OR status = $2 ORDER BY created_at DESC',
-        ['active', 'resolved']
-      );
-      res.json({ 
-        markets: fallbackResult.rows.map(m => ({
-          ...m,
-          total_pool: 0,
-          bet_count: 0,
-          options: []
-        }))
-      });
-    } catch (fallbackError) {
-      res.json({ markets: [] });
-    }
+    res.json({ markets: [] });
   }
 });
 
