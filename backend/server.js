@@ -268,7 +268,7 @@ app.get('/api/categories', async (req, res) => {
 // Get all markets with options
 app.get('/api/markets', async (req, res) => {
   try {
-    // Try to get markets with options using LEFT JOIN
+    // Simplified query - only uses 'options' table (not market_options)
     const result = await pool.query(`
       SELECT 
         m.id,
@@ -283,20 +283,18 @@ app.get('/api/markets', async (req, res) => {
         COUNT(DISTINCT b.id) as bet_count,
         json_agg(
           DISTINCT jsonb_build_object(
-            'id', COALESCE(o.id, mo.id),
-            'name', COALESCE(o.name, mo.name),
-            'odds', COALESCE(o.odds, mo.odds, 1.0),
+            'id', o.id,
+            'name', o.name,
+            'odds', COALESCE(o.odds, 1.0),
             'bet_count', (
               SELECT COUNT(*) 
               FROM bets b2 
-              WHERE b2.option_id = COALESCE(o.id, mo.id)
-                OR b2.market_option_id = COALESCE(mo.id, o.id)
+              WHERE b2.option_id = o.id
             )
           )
-        ) FILTER (WHERE COALESCE(o.id, mo.id) IS NOT NULL) as options
+        ) FILTER (WHERE o.id IS NOT NULL) as options
       FROM markets m
       LEFT JOIN options o ON m.id = o.market_id
-      LEFT JOIN market_options mo ON m.id = mo.market_id
       LEFT JOIN bets b ON m.id = b.market_id
       WHERE m.status = 'active' OR m.status = 'resolved'
       GROUP BY m.id
@@ -350,27 +348,12 @@ app.get('/api/markets/:id', async (req, res) => {
 
     const market = marketResult.rows[0];
 
-    // Get options - try both table names
-    let options = [];
-    try {
-      const optionsResult = await pool.query(
-        'SELECT * FROM options WHERE market_id = $1',
-        [id]
-      );
-      options = optionsResult.rows;
-    } catch (err) {
-      try {
-        const optionsResult = await pool.query(
-          'SELECT * FROM market_options WHERE market_id = $1',
-          [id]
-        );
-        options = optionsResult.rows;
-      } catch (err2) {
-        options = [];
-      }
-    }
-
-    market.options = options;
+    // Get options
+    const optionsResult = await pool.query(
+      'SELECT * FROM options WHERE market_id = $1',
+      [id]
+    );
+    market.options = optionsResult.rows;
 
     res.json({ market });
 
@@ -439,19 +422,12 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
     const market = marketResult.rows[0];
 
     // Create options - try both table names for compatibility
+    // Create options
     for (const optionName of validOptions) {
-      try {
-        await pool.query(
-          `INSERT INTO options (market_id, name, odds) VALUES ($1, $2, 1.0)`,
-          [market.id, optionName.trim()]
-        );
-      } catch (optErr) {
-        // If 'options' table doesn't exist, try 'market_options'
-        await pool.query(
-          `INSERT INTO market_options (market_id, name, odds) VALUES ($1, $2, 1.0)`,
-          [market.id, optionName.trim()]
-        );
-      }
+      await pool.query(
+        `INSERT INTO options (market_id, name, odds) VALUES ($1, $2, 1.0)`,
+        [market.id, optionName.trim()]
+      );
     }
 
     res.json({ 
@@ -493,18 +469,12 @@ app.post('/api/markets/:id/resolve', authenticateToken, async (req, res) => {
           [id, outcome]
         );
         winningOption = optionResult.rows[0];
-      } catch (err) {
-        const optionResult = await pool.query(
-          'SELECT id FROM market_options WHERE market_id = $1 AND name = $2',
-          [id, outcome]
-        );
-        winningOption = optionResult.rows[0];
       }
 
       if (winningOption) {
         // Get winning bets
         const winningBets = await pool.query(
-          'SELECT * FROM bets WHERE market_id = $1 AND (option_id = $2 OR market_option_id = $2)',
+          'SELECT * FROM bets WHERE market_id = $1 AND option_id = $2',
           [id, winningOption.id]
         );
 
@@ -523,7 +493,7 @@ app.post('/api/markets/:id/resolve', authenticateToken, async (req, res) => {
 
         // Mark losing bets
         await pool.query(
-          'UPDATE bets SET status = $1 WHERE market_id = $2 AND (option_id != $3 AND market_option_id != $3)',
+          'UPDATE bets SET status = $1 WHERE market_id = $2 AND option_id != $3',
           ['lost', id, winningOption.id]
         );
       }
@@ -595,12 +565,6 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
         [option_id, market_id]
       );
       option = optionResult.rows[0];
-    } catch (err) {
-      const optionResult = await pool.query(
-        'SELECT * FROM market_options WHERE id = $1 AND market_id = $2',
-        [option_id, market_id]
-      );
-      option = optionResult.rows[0];
     }
 
     if (!option) {
@@ -616,7 +580,7 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
       [amount, req.user.id]
     );
 
-    // Create bet - handle both option_id and market_option_id
+    // Create bet
     const betResult = await pool.query(
       `INSERT INTO bets (user_id, market_id, option_id, amount, odds, potential_payout, status) 
        VALUES ($1, $2, $3, $4, $5, $6, 'pending') 
@@ -650,11 +614,10 @@ app.get('/api/bets/my', authenticateToken, async (req, res) => {
         b.*,
         m.question as market_question,
         m.status as market_status,
-        COALESCE(o.name, mo.name) as option_name
+        o.name as option_name
       FROM bets b
       JOIN markets m ON b.market_id = m.id
       LEFT JOIN options o ON b.option_id = o.id
-      LEFT JOIN market_options mo ON b.option_id = mo.id
       WHERE b.user_id = $1
       ORDER BY b.created_at DESC
     `, [req.user.id]);
