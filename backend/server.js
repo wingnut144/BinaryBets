@@ -17,11 +17,11 @@ app.use(express.json());
 
 // Database connection
 const pool = new Pool({
-  host: process.env.DB_HOST || 'postgres',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'binarybets',
-  user: process.env.DB_USER || 'binaryuser',
-  password: process.env.DB_PASSWORD || 'binarypass123'
+  host: process.env.POSTGRES_HOST || process.env.DB_HOST || 'postgres',
+  port: process.env.POSTGRES_PORT || process.env.DB_PORT || 5432,
+  database: process.env.POSTGRES_DB || process.env.DB_NAME || 'binarybets',
+  user: process.env.POSTGRES_USER || process.env.DB_USER || 'binaryuser',
+  password: process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || 'binarypass'
 });
 
 // Test database connection
