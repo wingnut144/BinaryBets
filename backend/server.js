@@ -462,14 +462,12 @@ app.post('/api/markets/:id/resolve', authenticateToken, async (req, res) => {
     // Process payouts if outcome is not 'Unresolved'
     if (outcome && outcome !== 'Unresolved') {
       // Get winning option
-      let winningOption;
-      try {
-        const optionResult = await pool.query(
-          'SELECT id FROM options WHERE market_id = $1 AND name = $2',
-          [id, outcome]
-        );
-        winningOption = optionResult.rows[0];
-      }
+      // Get winning option
+      const optionResult = await pool.query(
+        'SELECT id FROM options WHERE market_id = $1 AND name = $2',
+        [id, outcome]
+      );
+      const winningOption = optionResult.rows[0];
 
       if (winningOption) {
         // Get winning bets
@@ -557,15 +555,12 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Market has expired' });
     }
 
-    // Get option odds - try both table names
-    let option;
-    try {
-      const optionResult = await pool.query(
-        'SELECT * FROM options WHERE id = $1 AND market_id = $2',
-        [option_id, market_id]
-      );
-      option = optionResult.rows[0];
-    }
+    // Get option odds
+    const optionResult = await pool.query(
+      'SELECT * FROM options WHERE id = $1 AND market_id = $2',
+      [option_id, market_id]
+    );
+    const option = optionResult.rows[0];
 
     if (!option) {
       return res.status(404).json({ error: 'Option not found' });
