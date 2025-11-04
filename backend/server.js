@@ -504,6 +504,61 @@ app.post('/api/markets/:id/resolve', authenticateToken, async (req, res) => {
   }
 });
 
+// AI-powered market resolution (called by resolver service)
+app.post('/api/resolve-with-ai', async (req, res) => {
+  try {
+    const { market_id, question, category } = req.body;
+
+    // Verify resolver token
+    const resolverToken = req.headers['authorization']?.replace('Bearer ', '');
+    if (resolverToken !== process.env.RESOLVER_TOKEN) {
+      return res.status(403).json({ error: 'Invalid resolver token' });
+    }
+
+    if (!market_id || !question) {
+      return res.status(400).json({ error: 'market_id and question are required' });
+    }
+
+    // Get market to verify it exists and is active
+    const marketResult = await pool.query(
+      'SELECT * FROM markets WHERE id = $1',
+      [market_id]
+    );
+
+    if (marketResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Market not found' });
+    }
+
+    const market = marketResult.rows[0];
+
+    // Check if already resolved
+    if (market.status === 'resolved') {
+      return res.json({ 
+        outcome: market.outcome,
+        confidence: 1.0,
+        reasoning: 'Market already resolved',
+        already_resolved: true
+      });
+    }
+
+    // For now, return "Unresolved" - you can add AI logic here later
+    // This allows the resolver to continue working
+    const outcome = 'Unresolved';
+    const confidence = 0.5;
+    const reasoning = 'Automatic resolution - requires manual verification';
+
+    res.json({
+      outcome,
+      confidence,
+      reasoning
+    });
+
+  } catch (error) {
+    console.error('AI resolution error:', error);
+    res.status(500).json({ error: 'Failed to resolve with AI' });
+  }
+});
+
 // ============================================
 // BET ROUTES
 // ============================================
