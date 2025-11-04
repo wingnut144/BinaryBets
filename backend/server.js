@@ -1,10 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import pkg from 'pg';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
-import nodemailer from 'nodemailer';
 
 dotenv.config();
 
@@ -36,20 +35,6 @@ pool.connect((err, client, release) => {
     release();
   }
 });
-
-// Email transporter (optional - for future features)
-let emailTransporter = null;
-if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
-  emailTransporter = nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
-    port: parseInt(process.env.EMAIL_PORT) || 587,
-    secure: process.env.EMAIL_SECURE === 'true',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASSWORD,
-    },
-  });
-}
 
 // Check for AI API keys
 const hasClaudeAI = !!process.env.ANTHROPIC_API_KEY;
@@ -897,8 +882,7 @@ app.get('/health', (req, res) => {
     features: {
       dynamicOdds: true,
       aiNews: true,
-      resolverSupport: true,
-      emailNotifications: !!emailTransporter
+      resolverSupport: true
     }
   });
 });
