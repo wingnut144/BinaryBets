@@ -700,7 +700,7 @@ function MarketCard({ market, user, onBet, getCategoryIcon, getCategoryName, get
 
       {isResolved ? (
         <div className="outcome-badge">
-          Outcome: {market.outcome || 'Unresolved'}
+          Outcome: {market.outcome === 'Unresolved' ? 'No bets placed' : (market.outcome || 'No bets placed')}
         </div>
       ) : (
         <>
