@@ -297,7 +297,7 @@ app.get('/api/markets', async (req, res) => {
         
         options = optionsResult.rows;
       } catch (err) {
-        console.log('Could not fetch options for market', market.id);
+        // Silently handle - options will be empty
         options = [];
       }
 
@@ -312,7 +312,7 @@ app.get('/api/markets', async (req, res) => {
         totalPool = parseFloat(statsResult.rows[0]?.total || 0);
         betCount = parseInt(statsResult.rows[0]?.count || 0);
       } catch (err) {
-        console.log('Could not fetch stats for market', market.id);
+        // Silently handle
       }
 
       markets.push({
@@ -441,14 +441,35 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
 });
 
 // Resolve market (admin only)
-app.post('/api/markets/:id/resolve', authenticateToken, async (req, res) => {
+app.post('/api/markets/:id/resolve', async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
     const { id } = req.params;
     const { outcome } = req.body;
+
+    // Check authentication - accept either admin JWT or resolver token
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    
+    let isAuthorized = false;
+    
+    // Check if it's the resolver token
+    if (token === process.env.RESOLVER_TOKEN) {
+      isAuthorized = true;
+    } else {
+      // Check if it's a valid admin JWT
+      try {
+        const user = jwt.verify(token, JWT_SECRET);
+        if (user.role === 'admin') {
+          isAuthorized = true;
+        }
+      } catch (err) {
+        // Invalid JWT
+      }
+    }
+
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Invalid or expired token' });
+    }
 
     // Update market status
     await pool.query(
