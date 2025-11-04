@@ -272,7 +272,13 @@ function App() {
               className={`nav-tab ${currentView === 'markets' ? 'active' : ''}`}
               onClick={() => setCurrentView('markets')}
             >
-              🏛️ Markets
+              🏛️ Active Markets
+            </button>
+            <button 
+              className={`nav-tab ${currentView === 'closed' ? 'active' : ''}`}
+              onClick={() => setCurrentView('closed')}
+            >
+              🔒 Closed Markets
             </button>
             <button 
               className={`nav-tab ${currentView === 'mybets' ? 'active' : ''}`}
@@ -355,18 +361,7 @@ function App() {
             <p>This is a prediction market using play money. No real money is involved.</p>
           </div>
 
-          <div className="widget news-widget">
-            <div className="widget-icon">📰</div>
-            <h3>Recent Activity</h3>
-            <div className="news-item">
-              <div className="news-date">Today</div>
-              <div className="news-title">{markets.length} active markets</div>
-            </div>
-            <div className="news-item">
-              <div className="news-date">This Week</div>
-              <div className="news-title">Join the prediction community!</div>
-            </div>
-          </div>
+          <AINewsWidget markets={markets} categories={categories} />
         </aside>
 
         <main className="main-content">
@@ -382,11 +377,11 @@ function App() {
                   <h1>
                     {selectedCategory 
                       ? `${getCategoryIcon(selectedCategory)} ${getCategoryName(selectedCategory)} Markets`
-                      : '🏛️ All Markets'
+                      : '🏛️ Active Markets'
                     }
                   </h1>
                   
-                  {filteredMarkets.length === 0 ? (
+                  {filteredMarkets.filter(m => m.status === 'active').length === 0 ? (
                     <div className="empty-state">
                       <div className="empty-state-icon">📭</div>
                       <h3>No markets found</h3>
@@ -398,7 +393,7 @@ function App() {
                     </div>
                   ) : (
                     <div className="markets-grid">
-                      {filteredMarkets.map(market => (
+                      {filteredMarkets.filter(m => m.status === 'active').map(market => (
                         <MarketCard 
                           key={market.id}
                           market={market}
@@ -457,6 +452,15 @@ function App() {
                     ))}
                   </div>
                 </>
+              )}
+
+              {currentView === 'closed' && (
+                <ClosedMarkets 
+                  markets={markets.filter(m => m.status === 'resolved')}
+                  getCategoryIcon={getCategoryIcon}
+                  getCategoryName={getCategoryName}
+                  getCategoryColor={getCategoryColor}
+                />
               )}
 
               {currentView === 'mybets' && user && (
@@ -729,6 +733,31 @@ function MarketCard({ market, user, onBet, getCategoryIcon, getCategoryName, get
           >
             {isActive ? '🎲 Place Bet' : '🔒 Market Closed'}
           </button>
+
+          {isActive && (
+            <button
+              className="btn btn-secondary"
+              style={{width: '100%', marginTop: '8px'}}
+              onClick={() => {
+                const shareUrl = `${window.location.origin}?market=${market.id}`;
+                const shareText = encodeURIComponent(
+                  `🎲 Binary Bets - Prediction Market!\n\n` +
+                  `"${market.question}"\n\n` +
+                  `Join the fun! Create your own prediction markets and bet with play money. ` +
+                  `No real money involved - just for entertainment!\n\n` +
+                  `Current pool: $${market.total_pool?.toFixed(0) || 0} | ${market.bet_count || 0} bets placed\n\n` +
+                  `Make your prediction at:`
+                );
+                window.open(
+                  `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${shareText}`,
+                  '_blank',
+                  'width=600,height=400'
+                );
+              }}
+            >
+              📱 Share on Facebook
+            </button>
+          )}
         </>
       )}
     </div>
@@ -975,6 +1004,190 @@ function CreateMarket({ categories, onSuccess }) {
           Create Market
         </button>
       </form>
+    </>
+  );
+}
+
+// AI News Widget Component
+function AINewsWidget({ markets, categories }) {
+  const [news, setNews] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const generateNews = () => {
+      // Get top 3 most popular categories by bet count
+      const categoryCounts = {};
+      markets.forEach(market => {
+        if (market.category_id && market.status === 'active') {
+          categoryCounts[market.category_id] = (categoryCounts[market.category_id] || 0) + (market.bet_count || 0);
+        }
+      });
+
+      const topCategories = Object.entries(categoryCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([catId]) => parseInt(catId));
+
+      const newsItems = topCategories.map(catId => {
+        const category = categories.find(c => c.id === catId);
+        const categoryMarkets = markets.filter(m => m.category_id === catId && m.status === 'active');
+        const totalBets = categoryMarkets.reduce((sum, m) => sum + (m.bet_count || 0), 0);
+        
+        return {
+          category: category?.name || 'Unknown',
+          icon: category?.icon || '📊',
+          count: totalBets,
+          headline: `${category?.icon} ${totalBets} predictions in ${category?.name}`,
+          link: `/?category=${catId}`
+        };
+      });
+
+      setNews(newsItems);
+      setLoading(false);
+    };
+
+    if (markets.length > 0 && categories.length > 0) {
+      generateNews();
+    }
+  }, [markets, categories]);
+
+  if (loading || news.length === 0) {
+    return (
+      <div className="widget news-widget">
+        <div className="widget-icon">📰</div>
+        <h3>Trending Now</h3>
+        <div className="news-item">
+          <div className="news-date">Today</div>
+          <div className="news-title">{markets.filter(m => m.status === 'active').length} active markets</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="widget news-widget">
+      <div className="widget-icon">📰</div>
+      <h3>Trending Predictions</h3>
+      {news.map((item, index) => (
+        <div key={index} className="news-item">
+          <div className="news-date">Hot Now</div>
+          <a 
+            href={item.link} 
+            className="news-title"
+            style={{color: 'inherit', textDecoration: 'none'}}
+            onClick={(e) => {
+              e.preventDefault();
+              window.location.href = item.link;
+            }}
+          >
+            {item.headline} →
+          </a>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Closed Markets Component
+function ClosedMarkets({ markets, getCategoryIcon, getCategoryName, getCategoryColor }) {
+  if (markets.length === 0) {
+    return (
+      <>
+        <h1>🔒 Closed Markets</h1>
+        <div className="empty-state">
+          <div className="empty-state-icon">📭</div>
+          <h3>No closed markets yet</h3>
+          <p>Markets will appear here once they're resolved</p>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <h1>🔒 Closed Markets</h1>
+      <div className="markets-grid">
+        {markets.map(market => (
+          <div key={market.id} className="market-card">
+            <div className="market-header">
+              <span 
+                className="category-badge" 
+                style={{ background: getCategoryColor(market.category_id) }}
+              >
+                {getCategoryIcon(market.category_id)} {getCategoryName(market.category_id)}
+              </span>
+              <span className="status-badge resolved">
+                CLOSED
+              </span>
+            </div>
+
+            <h3 className="market-question">{market.question}</h3>
+
+            <div className="market-stats">
+              <div className="stat">
+                <div className="stat-label">Final Pool</div>
+                <div className="stat-value">${parseFloat(market.total_pool || 0).toFixed(0)}</div>
+              </div>
+              <div className="stat">
+                <div className="stat-label">Total Bets</div>
+                <div className="stat-value">{market.bet_count || 0}</div>
+              </div>
+              <div className="stat">
+                <div className="stat-label">Closed</div>
+                <div className="stat-value">
+                  {new Date(market.resolved_at || market.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </div>
+              </div>
+            </div>
+
+            <div className="outcome-badge" style={{
+              background: market.outcome === 'No bets placed' ? '#f3f4f6' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              color: market.outcome === 'No bets placed' ? '#6b7280' : 'white',
+              fontWeight: 'bold'
+            }}>
+              {market.outcome === 'Unresolved' || !market.outcome || market.bet_count === 0 
+                ? '📭 No bets placed' 
+                : `🏆 Winner: ${market.outcome}`
+              }
+            </div>
+
+            {market.options && market.options.length > 0 && (
+              <div className="betting-options" style={{marginTop: '16px'}}>
+                <div className="options-label">Final Odds</div>
+                <div className="options-grid">
+                  {market.options.map(option => (
+                    <div 
+                      key={option.id} 
+                      className="option-card"
+                      style={{
+                        background: option.name === market.outcome 
+                          ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                          : 'linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)',
+                        color: option.name === market.outcome ? 'white' : '#1f2937',
+                        border: option.name === market.outcome ? '2px solid #059669' : '2px solid #e5e7eb'
+                      }}
+                    >
+                      <div className="option-name">
+                        {option.name === market.outcome ? '👑 ' : ''}{option.name}
+                      </div>
+                      <div className="option-odds" style={{
+                        color: option.name === market.outcome ? 'white' : 'inherit'
+                      }}>
+                        {option.odds?.toFixed(2) || '1.00'}x
+                      </div>
+                      <div className="option-label" style={{
+                        color: option.name === market.outcome ? 'rgba(255,255,255,0.9)' : '#6b7280'
+                      }}>
+                        {option.bet_count || 0} bets
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </>
   );
 }
