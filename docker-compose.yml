@@ -29,6 +29,11 @@ services:
     ports:
       - "5000:5000"
     environment:
+      POSTGRES_USER: binaryuser
+      POSTGRES_PASSWORD: binarypass
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: binarybets
+      POSTGRES_PORT: 5432
       DATABASE_URL: postgresql://binaryuser:binarypass@postgres:5432/binarybets
       PORT: 5000
       NEWS_API_KEY: 219d788b390f4918a2d0f963a21460d9
