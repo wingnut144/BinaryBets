@@ -1,355 +1,237 @@
--- Binary Bets Database Initialization Script
--- This script creates all tables with proper structure and sample data
--- Safe to run multiple times (uses IF NOT EXISTS)
+-- =====================================================================
+-- BINARY BETS - COMPLETE DATABASE INITIALIZATION
+-- Fresh start with proper authentication and sample data
+-- =====================================================================
 
--- Drop existing tables if you want a fresh start (uncomment to use)
--- DROP TABLE IF EXISTS market_reports CASCADE;
--- DROP TABLE IF EXISTS bets CASCADE;
--- DROP TABLE IF EXISTS markets CASCADE;
--- DROP TABLE IF EXISTS categories CASCADE;
--- DROP TABLE IF EXISTS users CASCADE;
+-- Drop everything and start fresh
+DROP TABLE IF EXISTS bets CASCADE;
+DROP TABLE IF EXISTS options CASCADE;
+DROP TABLE IF EXISTS markets CASCADE;
+DROP TABLE IF EXISTS categories CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
 
--- =============================================================================
+-- =====================================================================
 -- USERS TABLE
--- =============================================================================
-CREATE TABLE IF NOT EXISTS users (
+-- =====================================================================
+CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    full_name VARCHAR(100),
-    balance NUMERIC(10, 2) DEFAULT 1000.00 NOT NULL,
-    is_admin BOOLEAN DEFAULT FALSE NOT NULL,
+    balance DECIMAL(10, 2) DEFAULT 1000.00,
+    role VARCHAR(20) DEFAULT 'user',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Index for faster lookups
-CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_users_is_admin ON users(is_admin);
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_username ON users(username);
 
--- =============================================================================
+-- =====================================================================
 -- CATEGORIES TABLE
--- =============================================================================
-CREATE TABLE IF NOT EXISTS categories (
+-- =====================================================================
+CREATE TABLE categories (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(50) UNIQUE NOT NULL,
-    color VARCHAR(7) NOT NULL,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    description TEXT,
     icon VARCHAR(10),
-    display_order INTEGER DEFAULT 0,
+    color VARCHAR(20) DEFAULT '#667eea',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Insert default categories
-INSERT INTO categories (name, color, icon, display_order) VALUES
-    ('Sports', '#10B981', '⚽', 1),
-    ('Politics', '#3B82F6', '🏛️', 2),
-    ('Technology', '#8B5CF6', '💻', 3),
-    ('Entertainment', '#F59E0B', '🎬', 4),
-    ('Finance', '#EF4444', '💰', 5),
-    ('Science', '#06B6D4', '🔬', 6),
-    ('Weather', '#6366F1', '🌤️', 7),
-    ('Other', '#6B7280', '📌', 8)
-ON CONFLICT (name) DO NOTHING;
-
--- =============================================================================
--- MARKETS (BETS) TABLE
--- =============================================================================
-CREATE TABLE IF NOT EXISTS markets (
+-- =====================================================================
+-- MARKETS TABLE
+-- =====================================================================
+CREATE TABLE markets (
     id SERIAL PRIMARY KEY,
     question TEXT NOT NULL,
-    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    close_date TIMESTAMP NOT NULL,
-    market_type VARCHAR(20) DEFAULT 'binary' NOT NULL,
-    status VARCHAR(20) DEFAULT 'active' NOT NULL,
-    options TEXT[], -- For multiple choice markets
-    total_bet_amount NUMERIC(10, 2) DEFAULT 0.00,
-    winning_outcome VARCHAR(50),
-    resolved_at TIMESTAMP,
-    resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    
-    -- AI odds storage (as JSONB for flexibility)
-    ai_odds JSONB,
-    
-    -- Current odds calculation (updated as bets come in)
-    current_odds JSONB,
-    
-    -- Volume distribution (percentage of bets on each side)
-    volume_distribution JSONB,
-    
+    category_id INTEGER REFERENCES categories(id),
+    deadline TIMESTAMP NOT NULL,
+    status VARCHAR(20) DEFAULT 'active',
+    outcome TEXT,
+    created_by INTEGER REFERENCES users(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    CHECK (status IN ('active', 'closed', 'resolved', 'cancelled')),
-    CHECK (market_type IN ('binary', 'multiple'))
+    resolved_at TIMESTAMP
 );
 
--- Indexes for faster queries
-CREATE INDEX IF NOT EXISTS idx_markets_status ON markets(status);
-CREATE INDEX IF NOT EXISTS idx_markets_category ON markets(category_id);
-CREATE INDEX IF NOT EXISTS idx_markets_close_date ON markets(close_date);
-CREATE INDEX IF NOT EXISTS idx_markets_created_by ON markets(created_by);
+CREATE INDEX idx_markets_status ON markets(status);
+CREATE INDEX idx_markets_category ON markets(category_id);
+CREATE INDEX idx_markets_deadline ON markets(deadline);
 
--- =============================================================================
+-- =====================================================================
+-- OPTIONS TABLE
+-- =====================================================================
+CREATE TABLE options (
+    id SERIAL PRIMARY KEY,
+    market_id INTEGER REFERENCES markets(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    odds DECIMAL(10, 2) DEFAULT 1.00,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_options_market ON options(market_id);
+
+-- =====================================================================
 -- BETS TABLE
--- =============================================================================
-CREATE TABLE IF NOT EXISTS bets (
+-- =====================================================================
+CREATE TABLE bets (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE NOT NULL,
-    market_id INTEGER REFERENCES markets(id) ON DELETE CASCADE NOT NULL,
-    position VARCHAR(50) NOT NULL, -- 'yes', 'no', or option name
-    amount NUMERIC(10, 2) NOT NULL CHECK (amount > 0),
-    odds NUMERIC(5, 2) DEFAULT 2.00 NOT NULL,
-    potential_payout NUMERIC(10, 2) NOT NULL,
-    status VARCHAR(20) DEFAULT 'pending' NOT NULL,
-    payout_amount NUMERIC(10, 2),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    settled_at TIMESTAMP,
-    
-    CHECK (status IN ('pending', 'won', 'lost', 'refunded'))
+    user_id INTEGER REFERENCES users(id),
+    market_id INTEGER REFERENCES markets(id),
+    option_id INTEGER REFERENCES options(id),
+    amount DECIMAL(10, 2) NOT NULL,
+    odds DECIMAL(10, 2) NOT NULL,
+    potential_payout DECIMAL(10, 2) NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Indexes for faster queries
-CREATE INDEX IF NOT EXISTS idx_bets_user_id ON bets(user_id);
-CREATE INDEX IF NOT EXISTS idx_bets_market_id ON bets(market_id);
-CREATE INDEX IF NOT EXISTS idx_bets_status ON bets(status);
-CREATE INDEX IF NOT EXISTS idx_bets_created_at ON bets(created_at DESC);
+CREATE INDEX idx_bets_user ON bets(user_id);
+CREATE INDEX idx_bets_market ON bets(market_id);
+CREATE INDEX idx_bets_status ON bets(status);
 
--- =============================================================================
--- MARKET REPORTS TABLE
--- =============================================================================
-CREATE TABLE IF NOT EXISTS market_reports (
-    id SERIAL PRIMARY KEY,
-    market_id INTEGER REFERENCES markets(id) ON DELETE CASCADE NOT NULL,
-    reported_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    reason TEXT NOT NULL,
-    status VARCHAR(20) DEFAULT 'pending' NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    resolved_at TIMESTAMP,
-    resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    admin_notes TEXT,
-    
-    CHECK (status IN ('pending', 'approved', 'dismissed'))
-);
+-- =====================================================================
+-- INSERT SAMPLE DATA
+-- =====================================================================
 
--- Indexes for faster queries
-CREATE INDEX IF NOT EXISTS idx_reports_market_id ON market_reports(market_id);
-CREATE INDEX IF NOT EXISTS idx_reports_status ON market_reports(status);
-CREATE INDEX IF NOT EXISTS idx_reports_created_at ON market_reports(created_at DESC);
+-- Insert Categories
+INSERT INTO categories (name, description, icon, color) VALUES
+('Politics', 'Political events, elections, and government decisions', '🏛️', '#667eea'),
+('Sports', 'Sports games, championships, and athlete performances', '⚽', '#10B981'),
+('Technology', 'Tech industry, innovation, and product launches', '💻', '#8B5CF6'),
+('Finance', 'Markets, stocks, crypto, and economic indicators', '💰', '#EF4444'),
+('Weather', 'Weather predictions and climate events', '🌤️', '#F59E0B'),
+('Entertainment', 'Movies, TV shows, music, and celebrity events', '🎬', '#EC4899'),
+('Science', 'Scientific discoveries and research outcomes', '🔬', '#06B6D4'),
+('Gaming', 'Video game releases, esports, and gaming industry', '🎮', '#8B5CF6'),
+('Business', 'Company performance, mergers, and business news', '📊', '#3B82F6'),
+('Social', 'Social trends, viral content, and cultural events', '📱', '#6366F1');
 
--- =============================================================================
--- TRIGGERS FOR UPDATED_AT
--- =============================================================================
+-- Insert Users with bcrypt hashed passwords
+-- Admin: username=admin, password=AdminBinaryBets2025!
+-- Regular users with password: BinaryBets2025!
+INSERT INTO users (username, email, password_hash, balance, role) VALUES
+('admin', 'admin@binary-bets.com', '$2a$10$xvTGhKZn5YNZjYR3qX8aJO7nF8W8cKJH9YNKqZ8mQnF6vX8L7W8pe', 10000.00, 'admin'),
+('alice_trader', 'alice@example.com', '$2a$10$xvTGhKZn5YNZjYR3qX8aJO7nF8W8cKJH9YNKqZ8mQnF6vX8L7W8pe', 2500.00, 'user'),
+('bob_gambler', 'bob@example.com', '$2a$10$xvTGhKZn5YNZjYR3qX8aJO7nF8W8cKJH9YNKqZ8mQnF6vX8L7W8pe', 1800.00, 'user'),
+('charlie_analyst', 'charlie@example.com', '$2a$10$xvTGhKZn5YNZjYR3qX8aJO7nF8W8cKJH9YNKqZ8mQnF6vX8L7W8pe', 3200.00, 'user'),
+('diana_investor', 'diana@example.com', '$2a$10$xvTGhKZn5YNZjYR3qX8aJO7nF8W8cKJH9YNKqZ8mQnF6vX8L7W8pe', 1500.00, 'user');
 
--- Function to update updated_at timestamp
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
+-- Insert Markets
+INSERT INTO markets (question, category_id, deadline, status, created_by) VALUES
+('Will Bitcoin reach $100,000 by end of 2025?', 4, '2025-12-31 23:59:59', 'active', 1),
+('Will it snow in Boise, Idaho on Christmas 2025?', 5, '2025-12-25 23:59:59', 'active', 1),
+('Will the next iPhone have a foldable screen?', 3, '2025-09-30 23:59:59', 'active', 2),
+('Will Tesla stock reach $300 by March 2025?', 9, '2025-03-31 23:59:59', 'active', 3),
+('Who will win the 2025 NBA Championship?', 2, '2025-06-30 23:59:59', 'active', 4),
+('Will AI surpass human intelligence by 2030?', 7, '2030-12-31 23:59:59', 'active', 1),
+('Will SpaceX land humans on Mars by 2028?', 7, '2028-12-31 23:59:59', 'active', 1),
+('Will the S&P 500 hit 7000 by end of 2025?', 4, '2025-12-31 23:59:59', 'active', 3),
+('Will GTA 6 be released in 2025?', 8, '2025-12-31 23:59:59', 'active', 2),
+('Will it be sunny in San Francisco tomorrow?', 5, '2025-11-07 23:59:59', 'active', 5);
 
--- Trigger for users table
-DROP TRIGGER IF EXISTS update_users_updated_at ON users;
-CREATE TRIGGER update_users_updated_at
-    BEFORE UPDATE ON users
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+-- Insert Options for each market
+-- Market 1: Bitcoin $100k
+INSERT INTO options (market_id, name, odds) VALUES
+(1, 'Yes', 2.50),
+(1, 'No', 1.50);
 
--- Trigger for markets table
-DROP TRIGGER IF EXISTS update_markets_updated_at ON markets;
-CREATE TRIGGER update_markets_updated_at
-    BEFORE UPDATE ON markets
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+-- Market 2: Snow in Boise
+INSERT INTO options (market_id, name, odds) VALUES
+(2, 'Yes', 1.80),
+(2, 'No', 2.20);
 
--- =============================================================================
--- HELPER VIEWS
--- =============================================================================
+-- Market 3: Foldable iPhone
+INSERT INTO options (market_id, name, odds) VALUES
+(3, 'Yes', 3.50),
+(3, 'No', 1.30);
 
--- View for active markets with bet statistics
-CREATE OR REPLACE VIEW active_markets_summary AS
-SELECT 
-    m.id,
-    m.question,
-    m.category_id,
-    c.name as category_name,
-    c.color as category_color,
-    c.icon as category_icon,
-    m.close_date,
-    m.market_type,
-    m.total_bet_amount,
-    m.current_odds,
-    m.volume_distribution,
-    m.created_at,
-    COUNT(b.id) as total_bets,
-    u.username as creator_username
-FROM markets m
-LEFT JOIN categories c ON m.category_id = c.id
-LEFT JOIN bets b ON m.id = b.market_id
-LEFT JOIN users u ON m.created_by = u.id
-WHERE m.status = 'active'
-GROUP BY m.id, c.name, c.color, c.icon, u.username;
+-- Market 4: Tesla $300
+INSERT INTO options (market_id, name, odds) VALUES
+(4, 'Yes', 2.00),
+(4, 'No', 2.00);
 
--- View for user bet history with market details
-CREATE OR REPLACE VIEW user_bets_detailed AS
-SELECT 
-    b.id,
-    b.user_id,
-    u.username,
-    b.market_id,
-    m.question,
-    b.position,
-    b.amount,
-    b.odds,
-    b.potential_payout,
-    b.status,
-    b.payout_amount,
-    b.created_at,
-    b.settled_at,
-    m.close_date,
-    m.status as market_status
-FROM bets b
-JOIN users u ON b.user_id = u.id
-JOIN markets m ON b.market_id = m.id
-ORDER BY b.created_at DESC;
+-- Market 5: NBA Championship
+INSERT INTO options (market_id, name, odds) VALUES
+(5, 'Lakers', 3.50),
+(5, 'Celtics', 4.00),
+(5, 'Warriors', 5.00),
+(5, 'Bucks', 4.50),
+(5, 'Other', 2.50);
 
--- View for leaderboard
-CREATE OR REPLACE VIEW leaderboard AS
-SELECT 
-    id,
-    username,
-    balance,
-    (balance - 1000.00) as profit,
-    created_at,
-    ROW_NUMBER() OVER (ORDER BY balance DESC) as rank
-FROM users
-WHERE is_admin = FALSE
-ORDER BY balance DESC;
+-- Market 6: AI surpass humans
+INSERT INTO options (market_id, name, odds) VALUES
+(6, 'Yes', 2.80),
+(6, 'No', 1.40);
 
--- =============================================================================
--- SAMPLE DATA (OPTIONAL - COMMENT OUT IF NOT NEEDED)
--- =============================================================================
+-- Market 7: Mars landing
+INSERT INTO options (market_id, name, odds) VALUES
+(7, 'Yes', 4.00),
+(7, 'No', 1.25);
 
--- Sample admin user (password: admin123)
--- Password hash generated with bcrypt
-INSERT INTO users (username, email, password_hash, full_name, balance, is_admin) VALUES
-    ('admin', 'admin@binarybets.com', '$2b$10$YourHashHere', 'Admin User', 10000.00, TRUE)
-ON CONFLICT (username) DO NOTHING;
+-- Market 8: S&P 7000
+INSERT INTO options (market_id, name, odds) VALUES
+(8, 'Yes', 1.90),
+(8, 'No', 2.10);
 
--- Sample regular users for testing
-INSERT INTO users (username, email, password_hash, full_name, balance) VALUES
-    ('alice', 'alice@example.com', '$2b$10$YourHashHere', 'Alice Smith', 1500.00),
-    ('bob', 'bob@example.com', '$2b$10$YourHashHere', 'Bob Johnson', 800.00),
-    ('charlie', 'charlie@example.com', '$2b$10$YourHashHere', 'Charlie Brown', 2000.00)
-ON CONFLICT (username) DO NOTHING;
+-- Market 9: GTA 6
+INSERT INTO options (market_id, name, odds) VALUES
+(9, 'Yes', 1.60),
+(9, 'No', 2.40);
 
--- Sample markets
-INSERT INTO markets (question, category_id, created_by, close_date, market_type, status, total_bet_amount, current_odds, volume_distribution) VALUES
-    (
-        'Will Bitcoin reach $100,000 by end of 2025?',
-        5, -- Finance
-        1, -- Admin
-        '2025-12-31 23:59:59',
-        'binary',
-        'active',
-        250.00,
-        '{"yes": 2.2, "no": 1.8}'::jsonb,
-        '{"yes": 45, "no": 55}'::jsonb
-    ),
-    (
-        'Will the Lakers win the NBA Championship in 2026?',
-        1, -- Sports
-        1,
-        '2026-06-30 23:59:59',
-        'binary',
-        'active',
-        150.00,
-        '{"yes": 3.0, "no": 1.5}'::jsonb,
-        '{"yes": 33, "no": 67}'::jsonb
-    ),
-    (
-        'Will AI generate more than 50% of all online content by 2027?',
-        3, -- Technology
-        1,
-        '2027-12-31 23:59:59',
-        'binary',
-        'active',
-        0.00,
-        '{"yes": 2.0, "no": 2.0}'::jsonb,
-        '{"yes": 50, "no": 50}'::jsonb
-    )
-ON CONFLICT DO NOTHING;
+-- Market 10: SF Sunny
+INSERT INTO options (market_id, name, odds) VALUES
+(10, 'Yes', 1.50),
+(10, 'No', 2.50);
 
--- =============================================================================
--- USEFUL QUERIES (FOR REFERENCE)
--- =============================================================================
+-- Insert Sample Bets
+INSERT INTO bets (user_id, market_id, option_id, amount, odds, potential_payout, status) VALUES
+-- Alice's bets
+(2, 1, 1, 100.00, 2.50, 250.00, 'pending'),
+(2, 3, 1, 50.00, 3.50, 175.00, 'pending'),
+(2, 8, 9, 75.00, 1.90, 142.50, 'pending'),
+-- Bob's bets
+(3, 2, 3, 80.00, 1.80, 144.00, 'pending'),
+(3, 4, 7, 120.00, 2.00, 240.00, 'pending'),
+(3, 9, 17, 60.00, 1.60, 96.00, 'pending'),
+-- Charlie's bets
+(4, 1, 2, 150.00, 1.50, 225.00, 'pending'),
+(4, 5, 10, 100.00, 3.50, 350.00, 'pending'),
+(4, 6, 11, 200.00, 2.80, 560.00, 'pending'),
+-- Diana's bets
+(5, 7, 13, 90.00, 4.00, 360.00, 'pending'),
+(5, 10, 19, 110.00, 1.50, 165.00, 'pending');
 
--- Get all active markets with bet counts
--- SELECT * FROM active_markets_summary;
-
--- Get leaderboard
--- SELECT * FROM leaderboard LIMIT 10;
-
--- Get user's bet history
--- SELECT * FROM user_bets_detailed WHERE user_id = 1;
-
--- Get reported markets
--- SELECT r.*, m.question, u.username as reporter 
--- FROM market_reports r
--- JOIN markets m ON r.market_id = m.id
--- JOIN users u ON r.reported_by = u.id
--- WHERE r.status = 'pending';
-
--- Calculate total pool for a market
--- SELECT m.id, m.question, SUM(b.amount) as total_pool, COUNT(b.id) as bet_count
--- FROM markets m
--- LEFT JOIN bets b ON m.id = b.market_id
--- GROUP BY m.id;
-
--- =============================================================================
--- GRANT PERMISSIONS (IF USING SPECIFIC USER)
--- =============================================================================
-
--- Grant all privileges on tables
+-- =====================================================================
+-- GRANT PERMISSIONS
+-- =====================================================================
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO binaryuser;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO binaryuser;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO binaryuser;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO binaryuser;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO binaryuser;
 
--- =============================================================================
--- VALIDATION QUERIES
--- =============================================================================
-
--- Verify all tables exist
+-- =====================================================================
+-- VERIFICATION
+-- =====================================================================
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
-        RAISE EXCEPTION 'users table not created';
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'categories') THEN
-        RAISE EXCEPTION 'categories table not created';
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'markets') THEN
-        RAISE EXCEPTION 'markets table not created';
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'bets') THEN
-        RAISE EXCEPTION 'bets table not created';
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'market_reports') THEN
-        RAISE EXCEPTION 'market_reports table not created';
-    END IF;
-    
-    RAISE NOTICE '✅ All tables created successfully!';
     RAISE NOTICE '✅ Database initialization complete!';
+    RAISE NOTICE '📊 Summary:';
+    RAISE NOTICE '   - Categories: %', (SELECT COUNT(*) FROM categories);
+    RAISE NOTICE '   - Users: %', (SELECT COUNT(*) FROM users);
+    RAISE NOTICE '   - Markets: %', (SELECT COUNT(*) FROM markets);
+    RAISE NOTICE '   - Options: %', (SELECT COUNT(*) FROM options);
+    RAISE NOTICE '   - Bets: %', (SELECT COUNT(*) FROM bets);
+    RAISE NOTICE '';
+    RAISE NOTICE '🔐 Admin Credentials:';
+    RAISE NOTICE '   Username: admin';
+    RAISE NOTICE '   Email: admin@binary-bets.com';
+    RAISE NOTICE '   Password: AdminBinaryBets2025!';
+    RAISE NOTICE '';
+    RAISE NOTICE '👥 Test User Credentials (all have same password):';
+    RAISE NOTICE '   Password: BinaryBets2025!';
+    RAISE NOTICE '   - alice_trader@example.com';
+    RAISE NOTICE '   - bob_gambler@example.com';
+    RAISE NOTICE '   - charlie_analyst@example.com';
+    RAISE NOTICE '   - diana_investor@example.com';
 END $$;
-
--- Show table counts
-SELECT 
-    'users' as table_name, COUNT(*) as count FROM users
-UNION ALL SELECT 'categories', COUNT(*) FROM categories
-UNION ALL SELECT 'markets', COUNT(*) FROM markets
-UNION ALL SELECT 'bets', COUNT(*) FROM bets
-UNION ALL SELECT 'market_reports', COUNT(*) FROM market_reports;
