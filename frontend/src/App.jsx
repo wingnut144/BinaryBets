@@ -38,11 +38,14 @@ function App() {
 
   // Close share menu when clicking outside
   useEffect(() => {
+    if (!showShareMenu) return;
+    
     const handleClickOutside = (event) => {
-      if (showShareMenu && !event.target.closest(".share-menu-container")) {
+      if (!event.target.closest(".share-menu-container")) {
         setShowShareMenu(null);
       }
     };
+    
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showShareMenu]);
