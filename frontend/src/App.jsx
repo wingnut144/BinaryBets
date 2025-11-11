@@ -35,6 +35,17 @@ function App() {
     if (token) {
       loadUser();
     }
+
+  // Close share menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showShareMenu && !event.target.closest(".share-menu-container")) {
+        setShowShareMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showShareMenu]);
     loadAINews();
   }, [token]);
 
@@ -807,7 +818,7 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
             {!user ? 'Login to Bet' : isExpired ? 'Market Closed' : 'Place Bet'}
           </button>
           {!isExpired && (
-            <div className="relative">
+            <div className="relative share-menu-container">
               <button
                 onClick={() => setShowShareMenu(showShareMenu === market.id ? null : market.id)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all flex items-center gap-2"
