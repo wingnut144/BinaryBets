@@ -811,7 +811,7 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all overflow-hidden">
+    <div className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all ">
       <div className="p-4 bg-gradient-to-r from-purple-500 to-pink-500">
         <div className="flex items-center justify-between mb-2">
           <span className="px-3 py-1 bg-white bg-opacity-90 rounded-full text-xs font-semibold text-gray-700 flex items-center gap-1">
@@ -880,7 +880,7 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
                 Share
               </button>
               {showShareMenu === market.id && (
-                <div className="absolute right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-10 min-w-[160px]">
+                <div className="absolute right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50 min-w-[160px]">
                   <button
                     onClick={(e) => handleSocialClick(e, 'facebook')}
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-3 text-sm font-medium text-gray-700"
