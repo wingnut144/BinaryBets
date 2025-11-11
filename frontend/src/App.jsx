@@ -635,12 +635,14 @@ function AINewsWidget({ news }) {
                   </p>
                 </div>
               </div>
-              {item.source_url && (
-                
+                <a
                   href={item.source_url}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-purple-600 hover:underline flex items-center gap-1 mt-2"
+                >
+                  📰 Read full article →
+                </a>
                 >
                   📰 Read full article →
                 </a>
