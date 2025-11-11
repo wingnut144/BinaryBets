@@ -928,6 +928,7 @@ function AINewsWidget({ news }) {
                 </div>
               </div>
               {item.source_url && (
+                <a
                 
                   href={item.source_url}
                   target="_blank"
