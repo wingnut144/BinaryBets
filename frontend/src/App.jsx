@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react';
 const API_URL = import.meta.env.VITE_API_URL || 'https://api.binary-bets.com';
 
 function App() {
-  // State Management
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [markets, setMarkets] = useState([]);
@@ -20,7 +19,6 @@ function App() {
   const [aiNews, setAiNews] = useState([]);
   const [showShareMenu, setShowShareMenu] = useState(null);
 
-  // Form States
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({ username: '', email: '', password: '' });
   const [createMarketForm, setCreateMarketForm] = useState({
@@ -31,7 +29,6 @@ function App() {
     useAiOdds: false
   });
 
-  // Load data on mount
   useEffect(() => {
     loadCategories();
     loadMarkets();
@@ -228,9 +225,7 @@ function App() {
       if (response.ok) {
         const data = await response.json();
         setUser(prev => ({ ...prev, balance: data.newBalance }));
-        
         await loadMarkets();
-        
         alert('Bet placed successfully! Odds have been updated.');
         setShowBetModal(false);
         setBetAmount('');
@@ -245,7 +240,6 @@ function App() {
     }
   };
 
-  // Multi-platform sharing
   const shareToSocial = (market, platform) => {
     const categoryName = categories.find(c => c.id === market.category_id)?.name || 'Prediction';
     const categoryIcon = categories.find(c => c.id === market.category_id)?.icon || '🎯';
@@ -285,7 +279,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
-      {/* Header - keeping existing header code */}
       <header className="bg-white shadow-lg sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
@@ -363,11 +356,10 @@ function App() {
         </div>
       </header>
 
-      {/* Category Tabs */}
       {(view === 'markets' || view === 'closed') && (
         <div className="bg-white border-b border-gray-200 shadow-sm sticky top-[72px] z-40">
           <div className="container mx-auto px-4 py-3">
-            <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
+            <div className="flex items-center gap-2 overflow-x-auto">
               <button
                 onClick={() => setSelectedCategory(null)}
                 className={`px-4 py-2 rounded-lg whitespace-nowrap font-medium transition-all flex items-center gap-2 ${
@@ -396,22 +388,16 @@ function App() {
         </div>
       )}
 
-      {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
         <div className="flex gap-6">
-          {/* Markets List */}
           <div className="flex-1">
             {view === 'markets' && (
               <div>
-                {/* Updated header with professional icon */}
-                <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3">
+                <h2 className="text-3xl font-bold text-gray-800 mb-6 flex items-center gap-3">
                   <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                   </svg>
-                  {selectedCategory 
-                    ? `${categories.find(c => c.id === selectedCategory)?.icon} ${categories.find(c => c.id === selectedCategory)?.name} Markets`
-                    : 'Active Prediction Markets'
-                  }
+                  Active Prediction Markets
                 </h2>
                 
                 {loading ? (
@@ -453,21 +439,127 @@ function App() {
 
             {view === 'closed' && (
               <div>
-                <h2 className="text-2xl font-bold text-gray-800 mb-6">
+                <h2 className="text-3xl font-bold text-gray-800 mb-6 flex items-center gap-3">
                   🏁 Closed Markets
                 </h2>
-                {/* ... existing closed markets code ... */}
+                {loading ? (
+                  <div className="text-center py-12">
+                    <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-600 border-t-transparent"></div>
+                  </div>
+                ) : getFilteredMarkets().length === 0 ? (
+                  <div className="text-center py-12 bg-white rounded-xl shadow-lg">
+                    <div className="text-6xl mb-4">🏁</div>
+                    <h3 className="text-xl font-semibold text-gray-700 mb-2">No Closed Markets</h3>
+                    <p className="text-gray-600">Markets will appear here after they close.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {getFilteredMarkets().map(market => (
+                      <ClosedMarketCard
+                        key={market.id}
+                        market={market}
+                        category={getCategoryBadge(market.category_id)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
-            {view === 'create' && (
+            {view === 'create' && user && (
               <div className="max-w-2xl mx-auto">
-                {/* ... existing create market form ... */}
+                <h2 className="text-3xl font-bold text-gray-800 mb-6">Create New Market</h2>
+                <form onSubmit={handleCreateMarket} className="bg-white rounded-xl shadow-lg p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Question</label>
+                    <input
+                      type="text"
+                      required
+                      value={createMarketForm.question}
+                      onChange={(e) => setCreateMarketForm({...createMarketForm, question: e.target.value})}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                      placeholder="Will X happen by Y date?"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                    <select
+                      required
+                      value={createMarketForm.category_id}
+                      onChange={(e) => setCreateMarketForm({...createMarketForm, category_id: e.target.value})}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                    >
+                      <option value="">Select a category</option>
+                      {categories.map(cat => (
+                        <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Deadline</label>
+                    <input
+                      type="datetime-local"
+                      required
+                      value={createMarketForm.deadline}
+                      onChange={(e) => setCreateMarketForm({...createMarketForm, deadline: e.target.value})}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Options</label>
+                    {createMarketForm.options.map((option, index) => (
+                      <input
+                        key={index}
+                        type="text"
+                        required
+                        value={option}
+                        onChange={(e) => {
+                          const newOptions = [...createMarketForm.options];
+                          newOptions[index] = e.target.value;
+                          setCreateMarketForm({...createMarketForm, options: newOptions});
+                        }}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent mb-2"
+                        placeholder={`Option ${index + 1}`}
+                      />
+                    ))}
+                    {createMarketForm.options.length < 6 && (
+                      <button
+                        type="button"
+                        onClick={() => setCreateMarketForm({...createMarketForm, options: [...createMarketForm.options, '']})}
+                        className="text-sm text-purple-600 hover:text-purple-700 font-medium"
+                      >
+                        + Add Option
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="useAiOdds"
+                      checked={createMarketForm.useAiOdds}
+                      onChange={(e) => setCreateMarketForm({...createMarketForm, useAiOdds: e.target.checked})}
+                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-600"
+                    />
+                    <label htmlFor="useAiOdds" className="text-sm text-gray-700">
+                      Use AI to generate initial odds
+                    </label>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all"
+                  >
+                    Create Market
+                  </button>
+                </form>
               </div>
             )}
           </div>
 
-          {/* AI News Sidebar */}
           {(view === 'markets' || view === 'closed') && (
             <div className="hidden lg:block w-80">
               <AINewsWidget news={aiNews} />
@@ -476,12 +568,181 @@ function App() {
         </div>
       </main>
 
-      {/* Modals - keeping existing modal code */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">
+                {authMode === 'login' ? 'Login' : 'Register'}
+              </h2>
+              <button onClick={() => setShowAuthModal(false)} className="text-gray-500 hover:text-gray-700">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex gap-2 mb-6">
+              <button
+                onClick={() => setAuthMode('login')}
+                className={`flex-1 py-2 rounded-lg font-medium transition-all ${
+                  authMode === 'login'
+                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
+                    : 'bg-gray-100 text-gray-700'
+                }`}
+              >
+                Login
+              </button>
+              <button
+                onClick={() => setAuthMode('register')}
+                className={`flex-1 py-2 rounded-lg font-medium transition-all ${
+                  authMode === 'register'
+                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
+                    : 'bg-gray-100 text-gray-700'
+                }`}
+              >
+                Register
+              </button>
+            </div>
+
+            {authMode === 'login' ? (
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={loginForm.email}
+                    onChange={(e) => setLoginForm({...loginForm, email: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={loginForm.password}
+                    onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all"
+                >
+                  Login
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleRegister} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
+                  <input
+                    type="text"
+                    required
+                    value={registerForm.username}
+                    onChange={(e) => setRegisterForm({...registerForm, username: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={registerForm.email}
+                    onChange={(e) => setRegisterForm({...registerForm, email: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={registerForm.password}
+                    onChange={(e) => setRegisterForm({...registerForm, password: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all"
+                >
+                  Register
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showBetModal && selectedMarket && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">Place Bet</h2>
+              <button onClick={() => setShowBetModal(false)} className="text-gray-500 hover:text-gray-700">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <p className="text-gray-700 mb-4">{selectedMarket.question}</p>
+
+            <div className="space-y-3 mb-4">
+              {selectedMarket.options && selectedMarket.options.map(option => (
+                <button
+                  key={option.id}
+                  onClick={() => setSelectedOption(option)}
+                  className={`w-full p-4 rounded-lg border-2 transition-all ${
+                    selectedOption?.id === option.id
+                      ? 'border-purple-600 bg-purple-50'
+                      : 'border-gray-200 hover:border-purple-300'
+                  }`}
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-gray-800">{option.name}</span>
+                    <span className="text-purple-600 font-bold">{parseFloat(option.odds || 1.0).toFixed(2)}x</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Bet Amount</label>
+              <input
+                type="number"
+                min="1"
+                step="0.01"
+                value={betAmount}
+                onChange={(e) => setBetAmount(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                placeholder="Enter amount"
+              />
+              {selectedOption && betAmount && (
+                <p className="text-sm text-gray-600 mt-2">
+                  Potential payout: ${(parseFloat(betAmount) * parseFloat(selectedOption.odds || 1.0)).toFixed(2)}
+                </p>
+              )}
+            </div>
+
+            <button
+              onClick={placeBet}
+              disabled={!betAmount || !selectedOption}
+              className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Place Bet
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// Updated Market Card Component with multi-platform sharing
 function MarketCard({ market, category, user, onBet, onShare, showShareMenu, setShowShareMenu }) {
   const deadline = new Date(market.deadline);
   const now = new Date();
@@ -514,9 +775,7 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
           <div className="mt-4">
             <div className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
               <span>Betting Options & Odds</span>
-              <span className="text-xs text-purple-600 font-normal">
-                (Updates with each bet)
-              </span>
+              <span className="text-xs text-purple-600 font-normal">(Updates with each bet)</span>
             </div>
             <div className="grid grid-cols-2 gap-3">
               {market.options.map(option => (
@@ -539,7 +798,6 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
           </div>
         )}
 
-        {/* Updated Actions with multi-platform sharing */}
         <div className="flex gap-2 mt-4">
           <button
             onClick={() => onBet(market)}
@@ -552,12 +810,13 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
             <div className="relative">
               <button
                 onClick={() => setShowShareMenu(showShareMenu === market.id ? null : market.id)}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition-all"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all flex items-center gap-2"
                 title="Share"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                 </svg>
+                Share
               </button>
               {showShareMenu === market.id && (
                 <div className="absolute right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-10 min-w-[160px]">
@@ -598,7 +857,40 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
   );
 }
 
-// Updated AI News Widget with professional icon
+function ClosedMarketCard({ market, category }) {
+  const hasWinner = market.outcome && market.outcome !== 'Unresolved';
+
+  return (
+    <div className="bg-white rounded-xl shadow-lg overflow-hidden opacity-75">
+      <div className="p-4 bg-gradient-to-r from-gray-500 to-gray-600">
+        <div className="flex items-center justify-between mb-2">
+          <span className="px-3 py-1 bg-white bg-opacity-90 rounded-full text-xs font-semibold text-gray-700">
+            {category.icon} {category.name}
+          </span>
+          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-500 text-white">
+            🏁 CLOSED
+          </span>
+        </div>
+        <h3 className="text-lg font-bold text-white">{market.question}</h3>
+      </div>
+
+      <div className="p-4">
+        {hasWinner && (
+          <div className="bg-green-100 border-2 border-green-300 rounded-lg p-3 mb-4">
+            <div className="text-center">
+              <div className="text-sm text-green-800 font-semibold mb-1">Winner</div>
+              <div className="text-xl font-bold text-green-600">{market.outcome}</div>
+            </div>
+          </div>
+        )}
+        <div className="text-center text-gray-600 text-sm">
+          <p>Total Bets: {market.total_bets || 0}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AINewsWidget({ news }) {
   return (
     <div className="bg-white rounded-xl shadow-lg p-6 sticky top-24">
@@ -608,7 +900,7 @@ function AINewsWidget({ news }) {
         </svg>
         <div>
           <h3 className="text-lg font-bold text-gray-800">AI Insights</h3>
-          <p className="text-xs text-gray-600">Trending Prediction Topics</p>
+          <p className="text-xs text-gray-600">Top trending prediction topics right now</p>
         </div>
       </div>
       
@@ -635,14 +927,12 @@ function AINewsWidget({ news }) {
                   </p>
                 </div>
               </div>
-                <a
+              {item.source_url && (
+                
                   href={item.source_url}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-purple-600 hover:underline flex items-center gap-1 mt-2"
-                >
-                  📰 Read full article →
-                </a>
                 >
                   📰 Read full article →
                 </a>
@@ -655,5 +945,4 @@ function AINewsWidget({ news }) {
   );
 }
 
-// Keep all other existing modal components...
 export default App;
