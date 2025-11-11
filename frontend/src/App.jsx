@@ -29,13 +29,25 @@ function App() {
     useAiOdds: false
   });
 
+  // Get min and max dates for deadline picker
+  const getMinDate = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0];
+  };
+
+  const getMaxDate = () => {
+    const fourYears = new Date();
+    fourYears.setFullYear(fourYears.getFullYear() + 4);
+    return fourYears.toISOString().split('T')[0];
+  };
+
   useEffect(() => {
     loadCategories();
     loadMarkets();
     if (token) {
       loadUser();
     }
-
     loadAINews();
   }, [token]);
 
@@ -166,6 +178,10 @@ function App() {
       return;
     }
 
+    // Convert date to datetime with end of day
+    const deadlineDate = new Date(createMarketForm.deadline);
+    deadlineDate.setHours(23, 59, 59, 999);
+
     try {
       const response = await fetch(`${API_URL}/api/markets`, {
         method: 'POST',
@@ -176,7 +192,7 @@ function App() {
         body: JSON.stringify({
           question: createMarketForm.question,
           category_id: parseInt(createMarketForm.category_id),
-          deadline: createMarketForm.deadline,
+          deadline: deadlineDate.toISOString(),
           options: createMarketForm.options.filter(opt => opt.trim() !== ''),
           useAiOdds: createMarketForm.useAiOdds
         })
@@ -242,6 +258,8 @@ function App() {
   };
 
   const shareToSocial = (market, platform) => {
+    console.log('Share button clicked!', platform, market.id);
+    
     const categoryName = categories.find(c => c.id === market.category_id)?.name || 'Prediction';
     const categoryIcon = categories.find(c => c.id === market.category_id)?.icon || '🎯';
     
@@ -261,6 +279,7 @@ function App() {
         break;
     }
     
+    console.log('Opening share URL:', shareUrl);
     window.open(shareUrl, '_blank', 'width=600,height=400');
     setShowShareMenu(null);
   };
@@ -499,14 +518,22 @@ function App() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Deadline</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Deadline Date
+                      <span className="text-xs text-gray-500 ml-2">(Market closes at end of this day)</span>
+                    </label>
                     <input
-                      type="datetime-local"
+                      type="date"
                       required
+                      min={getMinDate()}
+                      max={getMaxDate()}
                       value={createMarketForm.deadline}
                       onChange={(e) => setCreateMarketForm({...createMarketForm, deadline: e.target.value})}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
                     />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Must be between tomorrow and {new Date(getMaxDate()).toLocaleDateString()}
+                    </p>
                   </div>
 
                   <div>
@@ -537,17 +564,38 @@ function App() {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="useAiOdds"
-                      checked={createMarketForm.useAiOdds}
-                      onChange={(e) => setCreateMarketForm({...createMarketForm, useAiOdds: e.target.checked})}
-                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-600"
-                    />
-                    <label htmlFor="useAiOdds" className="text-sm text-gray-700">
-                      Use AI to generate initial odds
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                    <label className="block text-sm font-semibold text-gray-800 mb-3">
+                      Initial Odds Generation
                     </label>
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="oddsType"
+                          checked={!createMarketForm.useAiOdds}
+                          onChange={() => setCreateMarketForm({...createMarketForm, useAiOdds: false})}
+                          className="w-4 h-4 text-purple-600 border-gray-300 focus:ring-purple-600"
+                        />
+                        <div>
+                          <span className="text-sm font-medium text-gray-800">Equal Odds (50/50)</span>
+                          <p className="text-xs text-gray-600">All options start with equal probability</p>
+                        </div>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="oddsType"
+                          checked={createMarketForm.useAiOdds}
+                          onChange={() => setCreateMarketForm({...createMarketForm, useAiOdds: true})}
+                          className="w-4 h-4 text-purple-600 border-gray-300 focus:ring-purple-600"
+                        />
+                        <div>
+                          <span className="text-sm font-medium text-gray-800">🤖 AI-Generated Odds</span>
+                          <p className="text-xs text-gray-600">AI analyzes the question to set initial probabilities</p>
+                        </div>
+                      </label>
+                    </div>
                   </div>
 
                   <button
@@ -750,6 +798,18 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
   const isExpired = deadline < now;
   const timeUntil = isExpired ? 'Expired' : `Ends ${deadline.toLocaleDateString()}`;
 
+  const handleShareClick = (e) => {
+    e.stopPropagation();
+    console.log('Share button clicked for market:', market.id);
+    setShowShareMenu(showShareMenu === market.id ? null : market.id);
+  };
+
+  const handleSocialClick = (e, platform) => {
+    e.stopPropagation();
+    console.log('Social platform clicked:', platform);
+    onShare(market, platform);
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all overflow-hidden">
       <div className="p-4 bg-gradient-to-r from-purple-500 to-pink-500">
@@ -808,9 +868,9 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
             {!user ? 'Login to Bet' : isExpired ? 'Market Closed' : 'Place Bet'}
           </button>
           {!isExpired && (
-            <div className="relative relative">
+            <div className="relative">
               <button
-                onClick={() => setShowShareMenu(showShareMenu === market.id ? null : market.id)}
+                onClick={handleShareClick}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all flex items-center gap-2"
                 title="Share"
               >
@@ -822,7 +882,7 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
               {showShareMenu === market.id && (
                 <div className="absolute right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-10 min-w-[160px]">
                   <button
-                    onClick={() => onShare(market, 'facebook')}
+                    onClick={(e) => handleSocialClick(e, 'facebook')}
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-3 text-sm font-medium text-gray-700"
                   >
                     <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
@@ -831,7 +891,7 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
                     Facebook
                   </button>
                   <button
-                    onClick={() => onShare(market, 'x')}
+                    onClick={(e) => handleSocialClick(e, 'x')}
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-3 text-sm font-medium text-gray-700"
                   >
                     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -840,7 +900,7 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
                     X (Twitter)
                   </button>
                   <button
-                    onClick={() => onShare(market, 'bluesky')}
+                    onClick={(e) => handleSocialClick(e, 'bluesky')}
                     className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-3 text-sm font-medium text-gray-700"
                   >
                     <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
@@ -929,7 +989,6 @@ function AINewsWidget({ news }) {
                 </div>
               </div>
               {item.source_url && (
-                <a
                 
                   href={item.source_url}
                   target="_blank"
