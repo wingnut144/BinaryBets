@@ -1100,7 +1100,6 @@ function AINewsWidget({ news }) {
                 </div>
               </div>
               {item.source_url && (
-                <a
                 
                 <a
                   href={item.source_url}
