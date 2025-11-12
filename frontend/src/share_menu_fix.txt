@@ -1,0 +1,4 @@
+The share menu needs to:
+1. Not be cut off by parent overflow
+2. Have higher z-index
+3. Better positioning
