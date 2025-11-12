@@ -1101,6 +1101,7 @@ function AINewsWidget({ news }) {
               </div>
               {item.source_url && (
                 
+                <a
                   href={item.source_url}
                   target="_blank"
                   rel="noopener noreferrer"
