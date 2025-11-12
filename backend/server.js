@@ -1,30 +1,30 @@
-import express from 'express';
-import cors from 'cors';
-import pkg from 'pg';
-import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-const { Pool } = pkg;
-const app = express();
-
-// Middleware
-app.use(cors({
-  origin: [
-    process.env.FRONTEND_URL || 'http://localhost:3000',
-    'https://binary-bets.com',
-    'http://localhost:3000'
-  ],
-  credentials: true
-}));
-
-app.use(express.json());
-
-// Database connection
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  try {
+    const result = await pool.query(
+      `SELECT 
+        r.id,
+        r.reason,
+        r.status,
+        r.created_at,
+        r.reviewed_at,
+        m.id as market_id,
+        m.question as market_question,
+        u.username as reporter,
+        reviewer.username as reviewed_by
+       FROM market_reports r
+       JOIN markets m ON r.market_id = m.id
+       JOIN users u ON r.user_id = u.id
+       LEFT JOIN users reviewer ON r.reviewed_by = reviewer.id
+       ORDER BY r.created_at DESC`
+    );
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching reports:', error);
+    res.status(500).json({ error: 'Failed to fetch reports' });
+  }
+});
   ssl: false
 });
 
