@@ -1036,6 +1036,32 @@ app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) 
 app.post('/api/admin/reports/:id/review', authenticateToken, requireAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
+
+// Admin: Update report status
+app.put('/api/admin/reports/:id', authenticateToken, requireAdmin, async (req, res) => {
+  console.log('📝 Updating report', req.params.id, 'to status:', req.body.status);
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    const reviewerId = req.user.id;
+
+    const result = await pool.query(
+      'UPDATE market_reports SET status = $1, reviewed_by = $2, reviewed_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *',
+      [status, reviewerId, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    console.log('✅ Report updated successfully');
+    res.json({ success: true, report: result.rows[0] });
+  } catch (error) {
+    console.error('❌ Error updating report:', error);
+    res.status(500).json({ error: 'Failed to update report' });
+  }
+});
+
     const { id: reportId } = req.params;
     const { action, admin_notes } = req.body;
     const adminId = req.user.id;
