@@ -1061,7 +1061,6 @@ app.put('/api/admin/reports/:id', authenticateToken, requireAdmin, async (req, r
 });
 
     res.status(500).json({ error: 'Failed to update report' });
-});
 
     const { id: reportId } = req.params;
     const { action, admin_notes } = req.body;
