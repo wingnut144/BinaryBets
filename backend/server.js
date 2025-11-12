@@ -115,11 +115,8 @@ Respond ONLY with a JSON array of numbers (the probabilities as percentages), li
           const probabilities = JSON.parse(match[0]);
           console.log('📊 Parsed probabilities:', probabilities);
           
-          // Normalize to ensure they sum to 100
           const sum = probabilities.reduce((a, b) => a + b, 0);
           const normalized = probabilities.map(p => (p / sum) * 100);
-          
-          // Convert to odds (odds = 100 / probability)
           const odds = normalized.map(p => parseFloat((100 / p).toFixed(2)));
           
           console.log('🎯 Generated odds from OpenAI:', odds);
@@ -165,11 +162,8 @@ Respond ONLY with a JSON array of numbers (the probabilities as percentages), li
           const probabilities = JSON.parse(match[0]);
           console.log('📊 Parsed probabilities:', probabilities);
           
-          // Normalize to ensure they sum to 100
           const sum = probabilities.reduce((a, b) => a + b, 0);
           const normalized = probabilities.map(p => (p / sum) * 100);
-          
-          // Convert to odds
           const odds = normalized.map(p => parseFloat((100 / p).toFixed(2)));
           
           console.log('🎯 Generated odds from Anthropic:', odds);
@@ -184,7 +178,6 @@ Respond ONLY with a JSON array of numbers (the probabilities as percentages), li
     console.error('❌ Anthropic failed:', error.message);
   }
 
-  // Fallback to equal odds
   console.log('⚠️  AI generation failed, using equal odds');
   return options.map(() => parseFloat(options.length.toFixed(2)));
 }
@@ -240,10 +233,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
-// ============================================
 // AUTH ROUTES
-// ============================================
-
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
@@ -344,10 +334,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   }
 });
 
-// ============================================
 // CATEGORIES
-// ============================================
-
 app.get('/api/categories', async (req, res) => {
   try {
     const result = await pool.query(
@@ -360,10 +347,7 @@ app.get('/api/categories', async (req, res) => {
   }
 });
 
-// ============================================
 // MARKETS
-// ============================================
-
 app.post('/api/markets', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -404,7 +388,6 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
 
     const market = marketResult.rows[0];
 
-    // Generate AI odds or use equal odds
     let oddsArray;
     if (useAiOdds) {
       console.log('🤖 Using AI to generate odds...');
@@ -414,7 +397,6 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
       oddsArray = options.map(() => parseFloat(options.length.toFixed(2)));
     }
 
-    // Create options with their respective odds
     for (let i = 0; i < options.length; i++) {
       const optionName = options[i];
       const odds = oddsArray[i] || options.length;
@@ -512,10 +494,7 @@ app.get('/api/markets', async (req, res) => {
   }
 });
 
-// ============================================
 // BETS
-// ============================================
-
 app.post('/api/bets', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -581,8 +560,8 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
     const potentialPayout = amount * parseFloat(option.odds);
 
     await client.query(
-      `INSERT INTO bets (user_id, market_id, option_id, amount, potential_payout, status)
-       VALUES ($1, $2, $3, $4, $5, 'pending')`,
+      `INSERT INTO bets (user_id, market_id, option_id, amount, potential_payout, status, edit_count)
+       VALUES ($1, $2, $3, $4, $5, 'pending', 0)`,
       [userId, market_id, option_id, amount, potentialPayout]
     );
 
@@ -619,7 +598,9 @@ app.get('/api/bets/my-bets', authenticateToken, async (req, res) => {
       `SELECT 
          b.*,
          m.question as market_question,
+         m.deadline as market_deadline,
          o.name as option_name,
+         o.odds as current_odds,
          m.status as market_status
        FROM bets b
        JOIN markets m ON b.market_id = m.id
@@ -636,10 +617,200 @@ app.get('/api/bets/my-bets', authenticateToken, async (req, res) => {
   }
 });
 
-// ============================================
-// BET REPORTS
-// ============================================
+// Edit bet (user can edit up to 2 times)
+app.put('/api/bets/:id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id: betId } = req.params;
+    const { option_id, amount } = req.body;
+    const userId = req.user.id;
 
+    await client.query('BEGIN');
+
+    // Get the bet
+    const betResult = await client.query(
+      `SELECT b.*, m.status as market_status, m.deadline, m.id as market_id
+       FROM bets b
+       JOIN markets m ON b.market_id = m.id
+       WHERE b.id = $1`,
+      [betId]
+    );
+
+    if (betResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Bet not found' });
+    }
+
+    const bet = betResult.rows[0];
+
+    // Check if user owns the bet or is admin
+    if (bet.user_id !== userId && !req.user.is_admin) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Not authorized to edit this bet' });
+    }
+
+    // Check edit limit (only for non-admins)
+    if (!req.user.is_admin && bet.edit_count >= 2) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Maximum edit limit (2) reached' });
+    }
+
+    // Check if market is still active
+    if (bet.market_status !== 'active' || new Date(bet.deadline) < new Date()) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Cannot edit bet on closed market' });
+    }
+
+    // Get old balance
+    const userResult = await client.query(
+      'SELECT balance FROM users WHERE id = $1',
+      [bet.user_id]
+    );
+    const currentBalance = parseFloat(userResult.rows[0].balance);
+
+    // Refund old bet amount
+    const newBalance = currentBalance + parseFloat(bet.amount);
+
+    // Verify new amount is affordable
+    if (newBalance < amount) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Insufficient balance for new bet amount' });
+    }
+
+    // Get new option and odds
+    const optionResult = await client.query(
+      'SELECT * FROM options WHERE id = $1 AND market_id = $2',
+      [option_id, bet.market_id]
+    );
+
+    if (optionResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Option not found' });
+    }
+
+    const option = optionResult.rows[0];
+    const potentialPayout = amount * parseFloat(option.odds);
+
+    // Record edit history
+    await client.query(
+      `INSERT INTO bet_edit_history (bet_id, old_amount, new_amount, old_option_id, new_option_id, edited_by)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [betId, bet.amount, amount, bet.option_id, option_id, userId]
+    );
+
+    // Update bet
+    await client.query(
+      `UPDATE bets 
+       SET option_id = $1, amount = $2, potential_payout = $3, edit_count = edit_count + 1
+       WHERE id = $4`,
+      [option_id, amount, potentialPayout, betId]
+    );
+
+    // Update user balance
+    const finalBalance = newBalance - amount;
+    await client.query(
+      'UPDATE users SET balance = $1 WHERE id = $2',
+      [finalBalance, bet.user_id]
+    );
+
+    // Recalculate odds
+    await recalculateOdds(client, bet.market_id);
+
+    await client.query('COMMIT');
+
+    res.json({ 
+      success: true, 
+      newBalance: finalBalance,
+      message: 'Bet updated successfully'
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error editing bet:', error);
+    res.status(500).json({ error: 'Failed to edit bet' });
+  } finally {
+    client.release();
+  }
+});
+
+// Delete bet (admin only)
+app.delete('/api/bets/:id', authenticateToken, requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id: betId } = req.params;
+
+    await client.query('BEGIN');
+
+    const betResult = await client.query(
+      `SELECT b.*, m.id as market_id
+       FROM bets b
+       JOIN markets m ON b.market_id = m.id
+       WHERE b.id = $1`,
+      [betId]
+    );
+
+    if (betResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Bet not found' });
+    }
+
+    const bet = betResult.rows[0];
+
+    // Refund the bet amount to user
+    await client.query(
+      'UPDATE users SET balance = balance + $1 WHERE id = $2',
+      [bet.amount, bet.user_id]
+    );
+
+    // Delete the bet
+    await client.query('DELETE FROM bets WHERE id = $1', [betId]);
+
+    // Recalculate odds
+    await recalculateOdds(client, bet.market_id);
+
+    await client.query('COMMIT');
+
+    res.json({ success: true, message: 'Bet deleted and refunded' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error deleting bet:', error);
+    res.status(500).json({ error: 'Failed to delete bet' });
+  } finally {
+    client.release();
+  }
+});
+
+// LEADERBOARD
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT 
+         u.id,
+         u.username,
+         u.balance,
+         COUNT(DISTINCT b.id) as total_bets,
+         COALESCE(SUM(CASE WHEN b.status = 'won' THEN b.potential_payout - b.amount ELSE 0 END), 0) as total_winnings
+       FROM users u
+       LEFT JOIN bets b ON u.id = b.user_id
+       WHERE u.id != 1
+       GROUP BY u.id, u.username, u.balance
+       ORDER BY u.balance DESC
+       LIMIT 20`
+    );
+
+    res.json(result.rows.map(user => ({
+      id: user.id,
+      username: user.username,
+      balance: parseFloat(user.balance),
+      total_bets: parseInt(user.total_bets),
+      total_winnings: parseFloat(user.total_winnings)
+    })));
+  } catch (error) {
+    console.error('Error fetching leaderboard:', error);
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
+  }
+});
+
+// BET REPORTS
 app.post('/api/bets/:id/report', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -653,7 +824,6 @@ app.post('/api/bets/:id/report', authenticateToken, async (req, res) => {
 
     await client.query('BEGIN');
 
-    // Check if bet exists
     const betCheck = await client.query(
       'SELECT * FROM bets WHERE id = $1',
       [betId]
@@ -664,7 +834,6 @@ app.post('/api/bets/:id/report', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Bet not found' });
     }
 
-    // Check if already reported by this user
     const existingReport = await client.query(
       'SELECT id FROM bet_reports WHERE bet_id = $1 AND reported_by = $2',
       [betId, userId]
@@ -675,7 +844,6 @@ app.post('/api/bets/:id/report', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'You have already reported this bet' });
     }
 
-    // Create report
     const reportResult = await client.query(
       `INSERT INTO bet_reports (bet_id, reported_by, reason, status)
        VALUES ($1, $2, $3, 'pending')
@@ -683,7 +851,6 @@ app.post('/api/bets/:id/report', authenticateToken, async (req, res) => {
       [betId, userId, reason.trim()]
     );
 
-    // Send automated message to user
     await client.query(
       `INSERT INTO messages (from_user_id, to_user_id, subject, message)
        VALUES (1, $1, 'Bet Report Received', $2)`,
@@ -697,7 +864,6 @@ Reference ID: ${reportResult.rows[0].id}`
       ]
     );
 
-    // Notify all admins
     const admins = await client.query('SELECT id FROM users WHERE is_admin = true');
     for (const admin of admins.rows) {
       await client.query(
@@ -847,10 +1013,7 @@ If you have additional concerns, please submit a new report with more details.`
   }
 });
 
-// ============================================
 // ANNOUNCEMENTS
-// ============================================
-
 app.get('/api/announcements', async (req, res) => {
   try {
     const result = await pool.query(
@@ -923,10 +1086,7 @@ app.get('/api/admin/announcements', authenticateToken, requireAdmin, async (req,
   }
 });
 
-// ============================================
 // MESSAGES
-// ============================================
-
 app.get('/api/messages', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -1040,10 +1200,7 @@ app.get('/api/admins', authenticateToken, async (req, res) => {
   }
 });
 
-// ============================================
 // AI NEWS
-// ============================================
-
 app.get('/api/ai-news', async (req, res) => {
   try {
     const news = [
@@ -1074,10 +1231,7 @@ app.get('/api/ai-news', async (req, res) => {
   }
 });
 
-// ============================================
 // SERVER START
-// ============================================
-
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
