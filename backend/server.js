@@ -1009,59 +1009,46 @@ Please review this report in the admin dashboard.`
   }
 });
 
-// Admin: Get all market reports
-// Admin: Get all market reports
 app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) => {
-  console.log('📊 Reports endpoint called by user:', req.user.username);
-  res.set('Cache-Control', 'no-store');
   try {
-    console.log('🔍 Querying market_reports table...');
-    const result = await pool.query(`
-      SELECT r.id, r.reason, r.status, r.created_at, r.reviewed_at,
-             m.id as market_id, m.question as market_question,
-             u.username as reporter, reviewer.username as reviewed_by
-      FROM market_reports r
-      JOIN markets m ON r.market_id = m.id
-      JOIN users u ON r.user_id = u.id
-      LEFT JOIN users reviewer ON r.reviewed_by = reviewer.id
-      ORDER BY r.created_at DESC`
-    );
-    console.log('✅ Query returned', result.rows.length, 'reports');
-    console.log('📄 Reports:', JSON.stringify(result.rows, null, 2));
+    const { status } = req.query;
+    
+    let query = `
+      SELECT 
+        br.*,
+        b.amount,
+        b.potential_payout,
+        m.question as market_question,
+        o.name as option_name,
+        u.username as reported_by_username,
+        reviewer.username as reviewed_by_username
+      FROM bet_reports br
+      JOIN bets b ON br.bet_id = b.id
+      JOIN users u ON br.reported_by = u.id
+      LEFT JOIN users reviewer ON br.reviewed_by = reviewer.id
+      JOIN options o ON b.option_id = o.id
+      JOIN markets m ON b.market_id = m.id
+    `;
+    
+    const params = [];
+    if (status) {
+      params.push(status);
+      query += ` WHERE br.status = $1`;
+    }
+    
+    query += ` ORDER BY br.created_at DESC`;
+    
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
-    console.error('❌ Error fetching reports:', error);
+    console.error('Error fetching reports:', error);
     res.status(500).json({ error: 'Failed to fetch reports' });
   }
 });
 
-// Admin: Update report status
-app.put('/api/admin/reports/:id', authenticateToken, requireAdmin, async (req, res) => {
-  console.log('📝 Updating report', req.params.id, 'to status:', req.body.status);
+app.post('/api/admin/reports/:id/review', authenticateToken, requireAdmin, async (req, res) => {
+  const client = await pool.connect();
   try {
-    const { id } = req.params;
-    const { status } = req.body;
-    const reviewerId = req.user.id;
-
-    const result = await pool.query(
-      'UPDATE market_reports SET status = $1, reviewed_by = $2, reviewed_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *',
-      [status, reviewerId, id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Report not found' });
-    }
-
-    console.log('✅ Report updated successfully');
-    res.json({ success: true, report: result.rows[0] });
-  } catch (error) {
-    console.error('❌ Error updating report:', error);
-    res.status(500).json({ error: 'Failed to update report' });
-  }
-});
-
-    res.status(500).json({ error: 'Failed to update report' });
-
     const { id: reportId } = req.params;
     const { action, admin_notes } = req.body;
     const adminId = req.user.id;
@@ -1355,6 +1342,47 @@ app.get('/api/ai-news', async (req, res) => {
 });
 
 // SERVER START
+
+// Admin: Get all market reports  
+app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const result = await pool.query(`
+      SELECT r.id, r.reason, r.status, r.created_at, r.reviewed_at,
+             m.id as market_id, m.question as market_question,
+             u.username as reporter, reviewer.username as reviewed_by
+      FROM market_reports r
+      JOIN markets m ON r.market_id = m.id
+      JOIN users u ON r.user_id = u.id
+      LEFT JOIN users reviewer ON r.reviewed_by = reviewer.id
+      ORDER BY r.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching reports:', error);
+    res.status(500).json({ error: 'Failed to fetch reports' });
+  }
+});
+
+// Admin: Update report status
+app.put('/api/admin/reports/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    const result = await pool.query(
+      'UPDATE market_reports SET status = $1, reviewed_by = $2, reviewed_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *',
+      [status, req.user.id, id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating report:', error);
+    res.status(500).json({ error: 'Failed to update report' });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
