@@ -1010,6 +1010,7 @@ Please review this report in the admin dashboard.`
 });
 
 // Admin: Get all market reports
+// Admin: Get all market reports
 app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) => {
   console.log('📊 Reports endpoint called by user:', req.user.username);
   res.set('Cache-Control', 'no-store');
@@ -1033,9 +1034,6 @@ app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) 
     res.status(500).json({ error: 'Failed to fetch reports' });
   }
 });
-app.post('/api/admin/reports/:id/review', authenticateToken, requireAdmin, async (req, res) => {
-  const client = await pool.connect();
-  try {
 
 // Admin: Update report status
 app.put('/api/admin/reports/:id', authenticateToken, requireAdmin, async (req, res) => {
@@ -1058,6 +1056,10 @@ app.put('/api/admin/reports/:id', authenticateToken, requireAdmin, async (req, r
     res.json({ success: true, report: result.rows[0] });
   } catch (error) {
     console.error('❌ Error updating report:', error);
+    res.status(500).json({ error: 'Failed to update report' });
+  }
+});
+
     res.status(500).json({ error: 'Failed to update report' });
   }
 });
