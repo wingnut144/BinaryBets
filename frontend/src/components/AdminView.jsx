@@ -34,7 +34,7 @@ function AdminView({ token, loadAnnouncements }) {
   const loadReports = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/api/admin/reports`, {
+      const response = await fetch(`${API_URL}/api/admin/reports?_t=${Date.now()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (response.ok) {
