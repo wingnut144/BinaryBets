@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import LeaderboardView from './components/LeaderboardView';
-import MyBetsView from './components/MyBetsView';
 import MarketsView from './components/MarketsView';
 import ClosedMarketsView from './components/ClosedMarketsView';
 import CreateMarketView from './components/CreateMarketView';
@@ -369,10 +368,6 @@ function App() {
               </button>
               {user && (
                 <>
-                  <button onClick={() => setView('my-bets')} className={`px-4 py-2 rounded-lg font-medium transition-all ${view === 'my-bets' ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'text-gray-700 hover:bg-gray-100'}`}>
-                    My Bets
-                  </button>
-                  <button onClick={() => setView('create')} className={`px-4 py-2 rounded-lg font-medium transition-all ${view === 'create' ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'text-gray-700 hover:bg-gray-100'}`}>
                     Create Market
                   </button>
                   <button onClick={() => setView('messages')} className={`px-4 py-2 rounded-lg font-medium transition-all relative ${view === 'messages' ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'text-gray-700 hover:bg-gray-100'}`}>
@@ -438,8 +433,6 @@ function App() {
             {view === 'markets' && <MarketsView loading={loading} markets={getFilteredMarkets()} getCategoryBadge={getCategoryBadge} user={user} setShowAuthModal={setShowAuthModal} setSelectedMarket={setSelectedMarket} setShowBetModal={setShowBetModal} shareToSocial={shareToSocial} showShareMenu={showShareMenu} setShowShareMenu={setShowShareMenu} token={token} loadMarkets={loadMarkets} />}
             {view === 'leaderboard' && <LeaderboardView user={user} />}
             {view === 'closed' && <ClosedMarketsView loading={loading} markets={getFilteredMarkets()} getCategoryBadge={getCategoryBadge} />}
-            {view === 'my-bets' && user && <MyBetsView token={token} user={user} setUser={setUser} loadMarkets={loadMarkets} />}
-            {view === 'create' && user && <CreateMarketView createMarketForm={createMarketForm} setCreateMarketForm={setCreateMarketForm} categories={categories} handleCreateMarket={handleCreateMarket} getMinDate={getMinDate} getMaxDate={getMaxDate} />}
             {view === 'messages' && user && <MessagesView token={token} user={user} loadUnreadCount={loadUnreadCount} />}
             {view === 'admin' && user && user.is_admin && <AdminView token={token} loadAnnouncements={loadAnnouncements} />}
           </div>

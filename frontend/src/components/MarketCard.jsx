@@ -7,6 +7,15 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
   const isExpired = deadline < now;
   const timeUntil = isExpired ? 'Expired' : `Ends ${deadline.toLocaleDateString()}`;
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({
+    question: market.question,
+    deadline: market.deadline.split('T')[0]
+  });
+
+  const isCreator = user && market.created_by === user.id;
+  const isAdmin = user && user.is_admin;
+  const hasBets = market.total_bets > 0;
 
   const handleShareClick = (e) => {
     e.stopPropagation();
@@ -16,6 +25,58 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
   const handleSocialClick = (e, platform) => {
     e.stopPropagation();
     onShare(market, platform);
+  };
+
+  const handleEditMarket = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await fetch(`https://api.binary-bets.com/api/markets/${market.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(editForm)
+      });
+
+      if (response.ok) {
+        alert('Market updated successfully!');
+        setShowEditModal(false);
+        loadMarkets();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to update market');
+      }
+    } catch (error) {
+      console.error('Error updating market:', error);
+      alert('Failed to update market');
+    }
+  };
+
+  const handleDeleteMarket = async () => {
+    if (!confirm(`Are you sure you want to delete "${market.question}"? All bets will be refunded.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`https://api.binary-bets.com/api/markets/${market.id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        alert('Market deleted successfully! All bets have been refunded.');
+        loadMarkets();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to delete market');
+      }
+    } catch (error) {
+      console.error('Error deleting market:', error);
+      alert('Failed to delete market');
+    }
   };
 
   return (
@@ -70,10 +131,31 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
             {!user ? 'Login to Bet' : isExpired ? 'Market Closed' : 'Place Bet'}
           </button>
           
+          {isCreator && !isExpired && !hasBets && (
+            <button
+              onClick={() => setShowEditModal(true)}
+              className="px-4 py-2 bg-blue-100 text-blue-600 rounded-lg font-semibold hover:bg-blue-200 transition-all"
+              title="Edit market"
+            >
+              ✏️
+            </button>
+          )}
+
+          {isAdmin && (
+            <button
+              onClick={handleDeleteMarket}
+              className="px-4 py-2 bg-red-100 text-red-600 rounded-lg font-semibold hover:bg-red-200 transition-all"
+              title="Delete market (admin)"
+            >
+              🗑️
+            </button>
+          )}
+          
           {user && !isExpired && (
             <button
               onClick={() => setShowReportModal(true)}
-              className="px-4 py-2 bg-red-100 text-red-600 rounded-lg font-semibold hover:bg-red-200 transition-all"
+              className="px-4 py-2 bg-orange-100 text-orange-600 rounded-lg font-semibold hover:bg-orange-200 transition-all"
+              title="Report this market"
             >
               🚩
             </button>
@@ -101,6 +183,58 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
           )}
         </div>
       </div>
+
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">Edit Market</h2>
+              <button onClick={() => setShowEditModal(false)} className="text-gray-500 hover:text-gray-700">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleEditMarket} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Question</label>
+                <input
+                  type="text"
+                  required
+                  value={editForm.question}
+                  onChange={(e) => setEditForm({...editForm, question: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Deadline</label>
+                <input
+                  type="date"
+                  required
+                  value={editForm.deadline}
+                  onChange={(e) => setEditForm({...editForm, deadline: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600"
+                />
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <p className="text-xs text-yellow-800">
+                  Note: You can only edit markets that have no bets yet.
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all"
+              >
+                Update Market
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showReportModal && (
         <ReportModal marketId={market.id} setShowReportModal={setShowReportModal} token={token} loadMarkets={loadMarkets} />
