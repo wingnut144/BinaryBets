@@ -178,7 +178,7 @@ export function getWelcomeEmailTemplate(username, verificationLink) {
       </div>
       
       <div class="security-note">
-        <strong>⚠️ Security First:</strong> Click the button above to verify your email and activate your account. This link expires in 24 hours.
+        <strong>Security First:</strong> Click the button above to verify your email and activate your account. This link expires in 24 hours.
       </div>
       
       <div class="features">
@@ -189,7 +189,7 @@ export function getWelcomeEmailTemplate(username, verificationLink) {
         </div>
         <div class="feature">
           <span class="feature-icon">📊</span>
-          <span>Create and trade on prediction markets</span>
+          <span>Create new and bet on existing prediction markets</span>
         </div>
         <div class="feature">
           <span class="feature-icon">🤖</span>
