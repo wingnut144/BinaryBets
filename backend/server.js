@@ -423,6 +423,116 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/markets', async (req, res) => {
+
+// Edit market (user can edit their own market, admin can edit any)
+app.put('/api/markets/:id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id: marketId } = req.params;
+    const { question, deadline } = req.body;
+    const userId = req.user.id;
+
+    await client.query('BEGIN');
+
+    const marketResult = await client.query(
+      'SELECT * FROM markets WHERE id = $1',
+      [marketId]
+    );
+
+    if (marketResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Market not found' });
+    }
+
+    const market = marketResult.rows[0];
+
+    // Check if user owns the market or is admin
+    if (market.created_by !== userId && !req.user.is_admin) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Not authorized to edit this market' });
+    }
+
+    // Don't allow editing if market has bets
+    const betsCheck = await client.query(
+      'SELECT COUNT(*) as count FROM bets WHERE market_id = $1',
+      [marketId]
+    );
+
+    if (parseInt(betsCheck.rows[0].count) > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Cannot edit market that has bets' });
+    }
+
+    // Update market
+    await client.query(
+      'UPDATE markets SET question = $1, deadline = $2 WHERE id = $3',
+      [question, deadline, marketId]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({ success: true, message: 'Market updated successfully' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error updating market:', error);
+    res.status(500).json({ error: 'Failed to update market' });
+  } finally {
+    client.release();
+  }
+});
+
+// Delete market (admin only)
+app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id: marketId } = req.params;
+
+    await client.query('BEGIN');
+
+    const marketResult = await client.query(
+      'SELECT * FROM markets WHERE id = $1',
+      [marketId]
+    );
+
+    if (marketResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Market not found' });
+    }
+
+    // Refund all bets on this market
+    const bets = await client.query(
+      'SELECT user_id, amount FROM bets WHERE market_id = $1',
+      [marketId]
+    );
+
+    for (const bet of bets.rows) {
+      await client.query(
+        'UPDATE users SET balance = balance + $1 WHERE id = $2',
+        [bet.amount, bet.user_id]
+      );
+    }
+
+    // Delete bets first (due to foreign key)
+    await client.query('DELETE FROM bets WHERE market_id = $1', [marketId]);
+
+    // Delete options
+    await client.query('DELETE FROM options WHERE market_id = $1', [marketId]);
+
+    // Delete market
+    await client.query('DELETE FROM markets WHERE id = $1', [marketId]);
+
+    await client.query('COMMIT');
+
+    res.json({ success: true, message: 'Market deleted and all bets refunded' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error deleting market:', error);
+    res.status(500).json({ error: 'Failed to delete market' });
+  } finally {
+    client.release();
+  }
+});
+
   try {
     const { category, status } = req.query;
     
