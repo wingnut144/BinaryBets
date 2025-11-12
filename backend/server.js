@@ -26,7 +26,6 @@ app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) 
   }
 });
   ssl: false
-});
 
 // Test database connection
 pool.connect((err, client, release) => {
@@ -428,33 +427,6 @@ app.get('/api/markets', async (req, res) => {
 app.post('/api/markets/:id/report', authenticateToken, async (req, res) => {
 
 // Admin: Get all market reports
-app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT 
-        r.id,
-        r.reason,
-        r.status,
-        r.created_at,
-        r.reviewed_at,
-        m.id as market_id,
-        m.question as market_question,
-        u.username as reporter,
-        reviewer.username as reviewed_by
-       FROM market_reports r
-       JOIN markets m ON r.market_id = m.id
-       JOIN users u ON r.user_id = u.id
-       LEFT JOIN users reviewer ON r.reviewed_by = reviewer.id
-       ORDER BY r.created_at DESC`
-    );
-    
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching reports:', error);
-    res.status(500).json({ error: 'Failed to fetch reports' });
-  }
-});
-
 // Admin: Update report status
 app.put('/api/admin/reports/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
