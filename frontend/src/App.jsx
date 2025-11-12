@@ -1814,3 +1814,978 @@ function AdminView({ token, loadAnnouncements }) {
 }
 
 export default App;
+
+function ClosedMarketsView({ loading, markets, getCategoryBadge }) {
+  return (
+    <div>
+      <h2 className="text-3xl font-bold text-gray-800 mb-6 flex items-center gap-3">
+        🏁 Closed Markets
+      </h2>
+      {loading ? (
+        <div className="text-center py-12">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-600 border-t-transparent"></div>
+        </div>
+      ) : markets.length === 0 ? (
+        <div className="text-center py-12 bg-white rounded-xl shadow-lg">
+          <div className="text-6xl mb-4">🏁</div>
+          <h3 className="text-xl font-semibold text-gray-700 mb-2">No Closed Markets</h3>
+          <p className="text-gray-600">Markets will appear here after they close.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {markets.map(market => (
+            <ClosedMarketCard
+              key={market.id}
+              market={market}
+              category={getCategoryBadge(market.category_id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClosedMarketCard({ market, category }) {
+  const hasWinner = market.outcome && market.outcome !== 'Unresolved';
+
+  return (
+    <div className="bg-white rounded-xl shadow-lg overflow-hidden opacity-75">
+      <div className="p-4 bg-gradient-to-r from-gray-500 to-gray-600">
+        <div className="flex items-center justify-between mb-2">
+          <span className="px-3 py-1 bg-white bg-opacity-90 rounded-full text-xs font-semibold text-gray-700">
+            {category.icon} {category.name}
+          </span>
+          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-500 text-white">
+            🏁 CLOSED
+          </span>
+        </div>
+        <h3 className="text-lg font-bold text-white">{market.question}</h3>
+      </div>
+
+      <div className="p-4">
+        {hasWinner && (
+          <div className="bg-green-100 border-2 border-green-300 rounded-lg p-3 mb-4">
+            <div className="text-center">
+              <div className="text-sm text-green-800 font-semibold mb-1">Winner</div>
+              <div className="text-xl font-bold text-green-600">{market.outcome}</div>
+            </div>
+          </div>
+        )}
+        <div className="text-center text-gray-600 text-sm">
+          <p>Total Bets: {market.total_bets || 0}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CreateMarketView({ createMarketForm, setCreateMarketForm, categories, handleCreateMarket, getMinDate, getMaxDate }) {
+  return (
+    <div className="max-w-2xl mx-auto">
+      <h2 className="text-3xl font-bold text-gray-800 mb-6">Create New Market</h2>
+      <form onSubmit={handleCreateMarket} className="bg-white rounded-xl shadow-lg p-6 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Question</label>
+          <input
+            type="text"
+            required
+            value={createMarketForm.question}
+            onChange={(e) => setCreateMarketForm({...createMarketForm, question: e.target.value})}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+            placeholder="Will X happen by Y date?"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+          <select
+            required
+            value={createMarketForm.category_id}
+            onChange={(e) => setCreateMarketForm({...createMarketForm, category_id: e.target.value})}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+          >
+            <option value="">Select a category</option>
+            {categories.map(cat => (
+              <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Deadline Date
+            <span className="text-xs text-gray-500 ml-2">(Market closes at end of this day)</span>
+          </label>
+          <input
+            type="date"
+            required
+            min={getMinDate()}
+            max={getMaxDate()}
+            value={createMarketForm.deadline}
+            onChange={(e) => setCreateMarketForm({...createMarketForm, deadline: e.target.value})}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Must be between tomorrow and {new Date(getMaxDate()).toLocaleDateString()}
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Options</label>
+          {createMarketForm.options.map((option, index) => (
+            <input
+              key={index}
+              type="text"
+              required
+              value={option}
+              onChange={(e) => {
+                const newOptions = [...createMarketForm.options];
+                newOptions[index] = e.target.value;
+                setCreateMarketForm({...createMarketForm, options: newOptions});
+              }}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent mb-2"
+              placeholder={`Option ${index + 1}`}
+            />
+          ))}
+          {createMarketForm.options.length < 6 && (
+            <button
+              type="button"
+              onClick={() => setCreateMarketForm({...createMarketForm, options: [...createMarketForm.options, '']})}
+              className="text-sm text-purple-600 hover:text-purple-700 font-medium"
+            >
+              + Add Option
+            </button>
+          )}
+        </div>
+
+        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+          <label className="block text-sm font-semibold text-gray-800 mb-3">
+            Initial Odds Generation
+          </label>
+          <div className="space-y-2">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="radio"
+                name="oddsType"
+                checked={!createMarketForm.useAiOdds}
+                onChange={() => setCreateMarketForm({...createMarketForm, useAiOdds: false})}
+                className="w-4 h-4 text-purple-600 border-gray-300 focus:ring-purple-600"
+              />
+              <div>
+                <span className="text-sm font-medium text-gray-800">Equal Odds (50/50)</span>
+                <p className="text-xs text-gray-600">All options start with equal probability</p>
+              </div>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="radio"
+                name="oddsType"
+                checked={createMarketForm.useAiOdds}
+                onChange={() => setCreateMarketForm({...createMarketForm, useAiOdds: true})}
+                className="w-4 h-4 text-purple-600 border-gray-300 focus:ring-purple-600"
+              />
+              <div>
+                <span className="text-sm font-medium text-gray-800">🤖 AI-Generated Odds</span>
+                <p className="text-xs text-gray-600">AI analyzes the question to set initial probabilities</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all"
+        >
+          Create Market
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function AnnouncementsWidget({ announcements }) {
+  if (announcements.length === 0) return null;
+
+  return (
+    <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+      <div className="flex items-center gap-3 mb-4">
+        <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+        </svg>
+        <div>
+          <h3 className="text-lg font-bold text-gray-800">Announcements</h3>
+          <p className="text-xs text-gray-600">Latest news from the team</p>
+        </div>
+      </div>
+      
+      <div className="space-y-4">
+        {announcements.map((announcement) => (
+          <div 
+            key={announcement.id}
+            className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border border-blue-200"
+          >
+            <h4 className="font-semibold text-gray-800 text-sm mb-2">
+              📢 {announcement.title}
+            </h4>
+            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+              {announcement.message}
+            </p>
+            <p className="text-xs text-gray-500 mt-2">
+              {new Date(announcement.created_at).toLocaleDateString()}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AINewsWidget({ news }) {
+  return (
+    <div className="bg-white rounded-xl shadow-lg p-6">
+      <div className="flex items-center gap-3 mb-4">
+        <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+        </svg>
+        <div>
+          <h3 className="text-lg font-bold text-gray-800">AI Insights</h3>
+          <p className="text-xs text-gray-600">Top trending prediction topics right now</p>
+        </div>
+      </div>
+      
+      {news.length === 0 ? (
+        <div className="text-center py-8 text-gray-500">
+          <div className="text-4xl mb-2">📰</div>
+          <p className="text-sm">Loading trending topics...</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {news.slice(0, 3).map((item, index) => (
+            <div 
+              key={index}
+              className="p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg border border-purple-200 hover:shadow-md transition-all"
+            >
+              <div className="flex items-start gap-2 mb-2">
+                <span className="text-xl">{item.icon || '📌'}</span>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-gray-800 text-sm mb-1">
+                    {item.category || 'Trending'}
+                  </h4>
+                  <p className="text-sm text-gray-700 leading-relaxed">
+                    {item.headline}
+                  </p>
+                </div>
+              </div>
+              {item.source_url && (
+                
+                  href={item.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-purple-600 hover:underline flex items-center gap-1 mt-2"
+                >
+                  📰 Read full article →
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AuthModal({ authMode, setAuthMode, setShowAuthModal, loginForm, setLoginForm, registerForm, setRegisterForm, handleLogin, handleRegister }) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-800">
+            {authMode === 'login' ? 'Login' : 'Register'}
+          </h2>
+          <button onClick={() => setShowAuthModal(false)} className="text-gray-500 hover:text-gray-700">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex gap-2 mb-6">
+          <button
+            onClick={() => setAuthMode('login')}
+            className={`flex-1 py-2 rounded-lg font-medium transition-all ${
+              authMode === 'login'
+                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
+                : 'bg-gray-100 text-gray-700'
+            }`}
+          >
+            Login
+          </button>
+          <button
+            onClick={() => setAuthMode('register')}
+            className={`flex-1 py-2 rounded-lg font-medium transition-all ${
+              authMode === 'register'
+                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
+                : 'bg-gray-100 text-gray-700'
+            }`}
+          >
+            Register
+          </button>
+        </div>
+
+        {authMode === 'login' ? (
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+              <input
+                type="email"
+                required
+                value={loginForm.email}
+                onChange={(e) => setLoginForm({...loginForm, email: e.target.value})}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+              <input
+                type="password"
+                required
+                value={loginForm.password}
+                onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all"
+            >
+              Login
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleRegister} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
+              <input
+                type="text"
+                required
+                value={registerForm.username}
+                onChange={(e) => setRegisterForm({...registerForm, username: e.target.value})}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+              <input
+                type="email"
+                required
+                value={registerForm.email}
+                onChange={(e) => setRegisterForm({...registerForm, email: e.target.value})}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+              <input
+                type="password"
+                required
+                value={registerForm.password}
+                onChange={(e) => setRegisterForm({...registerForm, password: e.target.value})}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all"
+            >
+              Register
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BetModal({ selectedMarket, setShowBetModal, betAmount, setBetAmount, selectedOption, setSelectedOption, placeBet }) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-800">Place Bet</h2>
+          <button onClick={() => setShowBetModal(false)} className="text-gray-500 hover:text-gray-700">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <p className="text-gray-700 mb-4">{selectedMarket.question}</p>
+
+        <div className="space-y-3 mb-4">
+          {selectedMarket.options && selectedMarket.options.map(option => (
+            <button
+              key={option.id}
+              onClick={() => setSelectedOption(option)}
+              className={`w-full p-4 rounded-lg border-2 transition-all ${
+                selectedOption?.id === option.id
+                  ? 'border-purple-600 bg-purple-50'
+                  : 'border-gray-200 hover:border-purple-300'
+              }`}
+            >
+              <div className="flex justify-between items-center">
+                <span className="font-semibold text-gray-800">{option.name}</span>
+                <span className="text-purple-600 font-bold">{parseFloat(option.odds || 1.0).toFixed(2)}x</span>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Bet Amount</label>
+          <input
+            type="number"
+            min="1"
+            step="0.01"
+            value={betAmount}
+            onChange={(e) => setBetAmount(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+            placeholder="Enter amount"
+          />
+          {selectedOption && betAmount && (
+            <p className="text-sm text-gray-600 mt-2">
+              Potential payout: ${(parseFloat(betAmount) * parseFloat(selectedOption.odds || 1.0)).toFixed(2)}
+            </p>
+          )}
+        </div>
+
+        <button
+          onClick={placeBet}
+          disabled={!betAmount || !selectedOption}
+          className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Place Bet
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MessagesView({ token, user, loadUnreadCount }) {
+  const [messages, setMessages] = useState([]);
+  const [tab, setTab] = useState('inbox');
+  const [showCompose, setShowCompose] = useState(false);
+  const [admins, setAdmins] = useState([]);
+  const [composeForm, setComposeForm] = useState({
+    to_user_id: '',
+    subject: '',
+    message: ''
+  });
+
+  useEffect(() => {
+    loadMessages();
+    loadAdmins();
+  }, [tab]);
+
+  const loadMessages = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/messages?type=${tab}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setMessages(data);
+      }
+    } catch (error) {
+      console.error('Error loading messages:', error);
+    }
+  };
+
+  const loadAdmins = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/admins`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setAdmins(data);
+      }
+    } catch (error) {
+      console.error('Error loading admins:', error);
+    }
+  };
+
+  const markAsRead = async (messageId) => {
+    try {
+      await fetch(`${API_URL}/api/messages/${messageId}/read`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      loadMessages();
+      loadUnreadCount();
+    } catch (error) {
+      console.error('Error marking message as read:', error);
+    }
+  };
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await fetch(`${API_URL}/api/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(composeForm)
+      });
+
+      if (response.ok) {
+        alert('Message sent successfully!');
+        setShowCompose(false);
+        setComposeForm({ to_user_id: '', subject: '', message: '' });
+        loadMessages();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to send message');
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      alert('Failed to send message');
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-3xl font-bold text-gray-800">Messages</h2>
+        <button
+          onClick={() => setShowCompose(true)}
+          className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all"
+        >
+          ✉️ New Message
+        </button>
+      </div>
+
+      <div className="flex gap-2 mb-6">
+        <button
+          onClick={() => setTab('inbox')}
+          className={`px-6 py-2 rounded-lg font-medium transition-all ${
+            tab === 'inbox'
+              ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          Inbox
+        </button>
+        <button
+          onClick={() => setTab('sent')}
+          className={`px-6 py-2 rounded-lg font-medium transition-all ${
+            tab === 'sent'
+              ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          Sent
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-lg">
+        {messages.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="text-6xl mb-4">📭</div>
+            <h3 className="text-xl font-semibold text-gray-700 mb-2">No Messages</h3>
+            <p className="text-gray-600">Your {tab} is empty</p>
+          </div>
+        ) : (
+          <div className="divide-y">
+            {messages.map(message => (
+              <div
+                key={message.id}
+                className={`p-4 hover:bg-gray-50 cursor-pointer ${
+                  !message.is_read && tab === 'inbox' ? 'bg-blue-50' : ''
+                }`}
+                onClick={() => {
+                  if (tab === 'inbox' && !message.is_read) {
+                    markAsRead(message.id);
+                  }
+                }}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-gray-800">
+                        {tab === 'inbox' ? `From: ${message.from_username}` : `To: ${message.to_username}`}
+                      </span>
+                      {!message.is_read && tab === 'inbox' && (
+                        <span className="px-2 py-0.5 bg-blue-500 text-white text-xs rounded-full">New</span>
+                      )}
+                    </div>
+                    <p className="text-sm font-medium text-gray-700 mt-1">{message.subject}</p>
+                  </div>
+                  <span className="text-xs text-gray-500">
+                    {new Date(message.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600 line-clamp-2 whitespace-pre-wrap">{message.message}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showCompose && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">New Message</h2>
+              <button onClick={() => setShowCompose(false)} className="text-gray-500 hover:text-gray-700">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={sendMessage} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">To (Admin)</label>
+                <select
+                  required
+                  value={composeForm.to_user_id}
+                  onChange={(e) => setComposeForm({...composeForm, to_user_id: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                >
+                  <option value="">Select admin...</option>
+                  {admins.map(admin => (
+                    <option key={admin.id} value={admin.id}>{admin.username}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
+                <input
+                  type="text"
+                  required
+                  value={composeForm.subject}
+                  onChange={(e) => setComposeForm({...composeForm, subject: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                  placeholder="Enter subject"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
+                <textarea
+                  required
+                  value={composeForm.message}
+                  onChange={(e) => setComposeForm({...composeForm, message: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                  rows="6"
+                  placeholder="Enter your message"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all"
+              >
+                Send Message
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminView({ token, loadAnnouncements }) {
+  const [tab, setTab] = useState('reports');
+  const [reports, setReports] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
+  const [announcementForm, setAnnouncementForm] = useState({
+    title: '',
+    message: '',
+    expires_at: ''
+  });
+
+  useEffect(() => {
+    if (tab === 'reports') {
+      loadReports();
+    } else if (tab === 'announcements') {
+      loadAllAnnouncements();
+    }
+  }, [tab]);
+
+  const loadReports = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/admin/reports`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setReports(data);
+      }
+    } catch (error) {
+      console.error('Error loading reports:', error);
+    }
+  };
+
+  const loadAllAnnouncements = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/admin/announcements`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setAnnouncements(data);
+      }
+    } catch (error) {
+      console.error('Error loading announcements:', error);
+    }
+  };
+
+  const reviewReport = async (reportId, action, notes) => {
+    try {
+      const response = await fetch(`${API_URL}/api/admin/reports/${reportId}/review`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ action, admin_notes: notes })
+      });
+
+      if (response.ok) {
+        alert(`Report ${action === 'approve' ? 'approved' : 'dismissed'} successfully!`);
+        loadReports();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to review report');
+      }
+    } catch (error) {
+      console.error('Error reviewing report:', error);
+      alert('Failed to review report');
+    }
+  };
+
+  const createAnnouncement = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await fetch(`${API_URL}/api/admin/announcements`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(announcementForm)
+      });
+
+      if (response.ok) {
+        alert('Announcement created successfully!');
+        setAnnouncementForm({ title: '', message: '', expires_at: '' });
+        loadAllAnnouncements();
+        loadAnnouncements();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to create announcement');
+      }
+    } catch (error) {
+      console.error('Error creating announcement:', error);
+      alert('Failed to create announcement');
+    }
+  };
+
+  const deleteAnnouncement = async (id) => {
+    if (!confirm('Are you sure you want to delete this announcement?')) return;
+
+    try {
+      const response = await fetch(`${API_URL}/api/admin/announcements/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        alert('Announcement deleted!');
+        loadAllAnnouncements();
+        loadAnnouncements();
+      }
+    } catch (error) {
+      console.error('Error deleting announcement:', error);
+      alert('Failed to delete announcement');
+    }
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto">
+      <h2 className="text-3xl font-bold text-gray-800 mb-6">Admin Dashboard</h2>
+
+      <div className="flex gap-2 mb-6">
+        <button
+          onClick={() => setTab('reports')}
+          className={`px-6 py-2 rounded-lg font-medium transition-all ${
+            tab === 'reports'
+              ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          Reported Bets
+        </button>
+        <button
+          onClick={() => setTab('announcements')}
+          className={`px-6 py-2 rounded-lg font-medium transition-all ${
+            tab === 'announcements'
+              ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          Announcements
+        </button>
+      </div>
+
+      {tab === 'reports' && (
+        <div className="bg-white rounded-xl shadow-lg p-6">
+          <h3 className="text-xl font-bold text-gray-800 mb-4">Pending Reports</h3>
+          {reports.filter(r => r.status === 'pending').length === 0 ? (
+            <p className="text-gray-600 text-center py-8">No pending reports</p>
+          ) : (
+            <div className="space-y-4">
+              {reports.filter(r => r.status === 'pending').map(report => (
+                <div key={report.id} className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <p className="font-semibold text-gray-800">Report #{report.id}</p>
+                      <p className="text-sm text-gray-600">Bet ID: #{report.bet_id}</p>
+                      <p className="text-sm text-gray-600">Market: {report.market_question}</p>
+                      <p className="text-sm text-gray-600">Option: {report.option_name}</p>
+                    </div>
+                    <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-semibold">
+                      Pending
+                    </span>
+                  </div>
+                  
+                  <div className="bg-gray-50 rounded p-3 mb-3">
+                    <p className="text-sm font-medium text-gray-700 mb-1">Reason:</p>
+                    <p className="text-sm text-gray-600">{report.reason}</p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        const notes = prompt('Admin notes (optional):');
+                        reviewReport(report.id, 'approve', notes);
+                      }}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all"
+                    >
+                      Delete Bet
+                    </button>
+                    <button
+                      onClick={() => {
+                        const notes = prompt('Admin notes (optional):');
+                        reviewReport(report.id, 'dismiss', notes);
+                      }}
+                      className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all"
+                    >
+                      Dismiss Report
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'announcements' && (
+        <div>
+          <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Create Announcement</h3>
+            <form onSubmit={createAnnouncement} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
+                <input
+                  type="text"
+                  required
+                  value={announcementForm.title}
+                  onChange={(e) => setAnnouncementForm({...announcementForm, title: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                  placeholder="Announcement title"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
+                <textarea
+                  required
+                  value={announcementForm.message}
+                  onChange={(e) => setAnnouncementForm({...announcementForm, message: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                  rows="4"
+                  placeholder="Announcement message"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Expiration Date (optional)
+                </label>
+                <input
+                  type="datetime-local"
+                  value={announcementForm.expires_at}
+                  onChange={(e) => setAnnouncementForm({...announcementForm, expires_at: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all"
+              >
+                Create Announcement
+              </button>
+            </form>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">All Announcements</h3>
+            {announcements.length === 0 ? (
+              <p className="text-gray-600 text-center py-8">No announcements</p>
+            ) : (
+              <div className="space-y-4">
+                {announcements.map(announcement => (
+                  <div key={announcement.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h4 className="font-semibold text-gray-800">{announcement.title}</h4>
+                        <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{announcement.message}</p>
+                        <p className="text-xs text-gray-500 mt-2">
+                          Created: {new Date(announcement.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          announcement.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {announcement.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                        <button
+                          onClick={() => deleteAnnouncement(announcement.id)}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;
