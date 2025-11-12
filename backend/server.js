@@ -1,31 +1,32 @@
-app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) => {
-  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-  try {
-    const result = await pool.query(
-      `SELECT 
-        r.id,
-        r.reason,
-        r.status,
-        r.created_at,
-        r.reviewed_at,
-        m.id as market_id,
-        m.question as market_question,
-        u.username as reporter,
-        reviewer.username as reviewed_by
-       FROM market_reports r
-       JOIN markets m ON r.market_id = m.id
-       JOIN users u ON r.user_id = u.id
-       LEFT JOIN users reviewer ON r.reviewed_by = reviewer.id
-       ORDER BY r.created_at DESC`
-    );
-    
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching reports:', error);
-    res.status(500).json({ error: 'Failed to fetch reports' });
-  }
-});
+import express from 'express';
+import cors from 'cors';
+import pkg from 'pg';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const { Pool } = pkg;
+const app = express();
+
+// Middleware
+app.use(cors({
+  origin: [
+    process.env.FRONTEND_URL || 'http://localhost:3000',
+    'https://binary-bets.com',
+    'http://localhost:3000'
+  ],
+  credentials: true
+}));
+
+app.use(express.json());
+
+// Database connection
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
   ssl: false
+});
 
 // Test database connection
 pool.connect((err, client, release) => {
@@ -423,51 +424,6 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
 
 app.get('/api/markets', async (req, res) => {
 
-// Report market endpoint
-app.post('/api/markets/:id/report', authenticateToken, async (req, res) => {
-
-// Admin: Get all market reports
-// Admin: Update report status
-app.put('/api/admin/reports/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-    const reviewerId = req.user.id;
-
-    await pool.query(
-      'UPDATE market_reports SET status = $1, reviewed_by = $2, reviewed_at = CURRENT_TIMESTAMP WHERE id = $3',
-      [status, reviewerId, id]
-    );
-
-    res.json({ success: true, message: 'Report updated' });
-  } catch (error) {
-    console.error('Error updating report:', error);
-    res.status(500).json({ error: 'Failed to update report' });
-  }
-});
-
-  try {
-    const { id: marketId } = req.params;
-    const { reason } = req.body;
-    const userId = req.user.id;
-
-    if (!reason || reason.length < 10) {
-      return res.status(400).json({ error: 'Reason must be at least 10 characters' });
-    }
-
-    await pool.query(
-      'INSERT INTO market_reports (market_id, user_id, reason) VALUES ($1, $2, $3)',
-      [marketId, userId, reason]
-    );
-
-    res.json({ success: true, message: 'Report submitted successfully' });
-  } catch (error) {
-    console.error('Error reporting market:', error);
-    res.status(500).json({ error: 'Failed to report market' });
-  }
-});
-
-
 // Edit market (user can edit their own market, admin can edit any)
 app.put('/api/markets/:id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
@@ -648,45 +604,6 @@ app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res)
   }
 });
 
-
-// Dynamic odds calculation function
-async function updateOdds(client, marketId) {
-  try {
-    const optionsResult = await client.query('SELECT id FROM options WHERE market_id = $1', [marketId]);
-    const options = optionsResult.rows;
-    if (options.length === 0) return;
-
-    const betsData = await client.query(
-      'SELECT option_id, SUM(amount) as total_amount FROM bets WHERE market_id = $1 AND status = $2 GROUP BY option_id',
-      [marketId, 'pending']
-    );
-
-    const betsByOption = {};
-    let totalPoolAmount = 0;
-    betsData.rows.forEach(row => {
-      const amount = parseFloat(row.total_amount);
-      betsByOption[row.option_id] = amount;
-      totalPoolAmount += amount;
-    });
-
-    for (const option of options) {
-      const optionBets = betsByOption[option.id] || 0;
-      let newOdds;
-      if (totalPoolAmount === 0 || optionBets === 0) {
-        newOdds = 2.0;
-      } else {
-        newOdds = (totalPoolAmount / optionBets) * 0.95;
-        newOdds = Math.max(1.1, Math.min(newOdds, 50.0));
-      }
-      newOdds = Math.round(newOdds * 100) / 100;
-      await client.query('UPDATE options SET odds = $1 WHERE id = $2', [newOdds, option.id]);
-    }
-  } catch (error) {
-    console.error('Error updating odds:', error);
-    throw error;
-  }
-}
-
 // BETS
 app.post('/api/bets', authenticateToken, async (req, res) => {
   const client = await pool.connect();
@@ -700,25 +617,35 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
 
     await client.query('BEGIN');
 
-    const userResult = await client.query('SELECT balance FROM users WHERE id = $1', [userId]);
+    const userResult = await client.query(
+      'SELECT balance FROM users WHERE id = $1',
+      [userId]
+    );
+
     if (userResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'User not found' });
     }
 
     const userBalance = parseFloat(userResult.rows[0].balance);
+
     if (userBalance < amount) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Insufficient balance' });
     }
 
-    const marketResult = await client.query('SELECT * FROM markets WHERE id = $1', [market_id]);
+    const marketResult = await client.query(
+      'SELECT * FROM markets WHERE id = $1',
+      [market_id]
+    );
+
     if (marketResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Market not found' });
     }
 
     const market = marketResult.rows[0];
+
     if (market.status !== 'active') {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Market is not active' });
@@ -729,27 +656,40 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Market has expired' });
     }
 
-    const optionResult = await client.query('SELECT odds FROM options WHERE id = $1 AND market_id = $2', [option_id, market_id]);
+    const optionResult = await client.query(
+      'SELECT * FROM options WHERE id = $1 AND market_id = $2',
+      [option_id, market_id]
+    );
+
     if (optionResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Option not found' });
     }
 
-    const currentOdds = parseFloat(optionResult.rows[0].odds);
-    const potentialPayout = amount * currentOdds;
+    const option = optionResult.rows[0];
+    const potentialPayout = amount * parseFloat(option.odds);
 
     await client.query(
-      'INSERT INTO bets (user_id, market_id, option_id, amount, odds, potential_payout) VALUES ($1, $2, $3, $4, $5, $6)',
-      [userId, market_id, option_id, amount, currentOdds, potentialPayout]
+      `INSERT INTO bets (user_id, market_id, option_id, amount, potential_payout, status, edit_count)
+       VALUES ($1, $2, $3, $4, $5, 'pending', 0)`,
+      [userId, market_id, option_id, amount, potentialPayout]
     );
 
-    await client.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [amount, userId]);
-    await updateOdds(client, market_id);
+    const newBalance = userBalance - amount;
+    await client.query(
+      'UPDATE users SET balance = $1 WHERE id = $2',
+      [newBalance, userId]
+    );
+
+    await recalculateOdds(client, market_id);
+
     await client.query('COMMIT');
 
-    const newBalanceResult = await client.query('SELECT balance FROM users WHERE id = $1', [userId]);
-    res.json({ success: true, newBalance: parseFloat(newBalanceResult.rows[0].balance), potentialPayout, odds: currentOdds });
-
+    res.json({ 
+      success: true, 
+      newBalance,
+      message: 'Bet placed successfully'
+    });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error placing bet:', error);
@@ -759,6 +699,35 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
   }
 });
 
+// Get user's bets
+app.get('/api/bets/my-bets', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const result = await pool.query(
+      `SELECT 
+         b.*,
+         m.question as market_question,
+         m.deadline as market_deadline,
+         o.name as option_name,
+         o.odds as current_odds,
+         m.status as market_status
+       FROM bets b
+       JOIN markets m ON b.market_id = m.id
+       JOIN options o ON b.option_id = o.id
+       WHERE b.user_id = $1
+       ORDER BY b.created_at DESC`,
+      [userId]
+    );
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching user bets:', error);
+    res.status(500).json({ error: 'Failed to fetch bets' });
+  }
+});
+
+// Edit bet (user can edit up to 2 times)
 app.put('/api/bets/:id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -1040,6 +1009,43 @@ Please review this report in the admin dashboard.`
   }
 });
 
+app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { status } = req.query;
+    
+    let query = `
+      SELECT 
+        br.*,
+        b.amount,
+        b.potential_payout,
+        m.question as market_question,
+        o.name as option_name,
+        u.username as reported_by_username,
+        reviewer.username as reviewed_by_username
+      FROM bet_reports br
+      JOIN bets b ON br.bet_id = b.id
+      JOIN users u ON br.reported_by = u.id
+      LEFT JOIN users reviewer ON br.reviewed_by = reviewer.id
+      JOIN options o ON b.option_id = o.id
+      JOIN markets m ON b.market_id = m.id
+    `;
+    
+    const params = [];
+    if (status) {
+      params.push(status);
+      query += ` WHERE br.status = $1`;
+    }
+    
+    query += ` ORDER BY br.created_at DESC`;
+    
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching reports:', error);
+    res.status(500).json({ error: 'Failed to fetch reports' });
+  }
+});
+
 app.post('/api/admin/reports/:id/review', authenticateToken, requireAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -1263,7 +1269,7 @@ app.post('/api/messages', authenticateToken, async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO messages (from_user_id, to_user_id, subject, message, parent_message_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
       [fromUserId, to_user_id, subject, message, parent_message_id || null]
     );
