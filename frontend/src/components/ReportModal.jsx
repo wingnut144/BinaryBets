@@ -11,7 +11,7 @@ function ReportModal({ marketId, setShowReportModal, token, loadMarkets }) {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/bets/${marketId}/report`, {
+      const response = await fetch(`${API_URL}/api/markets/${marketId}/report`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

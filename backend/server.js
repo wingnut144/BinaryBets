@@ -424,6 +424,30 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
 
 app.get('/api/markets', async (req, res) => {
 
+// Report market endpoint
+app.post('/api/markets/:id/report', authenticateToken, async (req, res) => {
+  try {
+    const { id: marketId } = req.params;
+    const { reason } = req.body;
+    const userId = req.user.id;
+
+    if (!reason || reason.length < 10) {
+      return res.status(400).json({ error: 'Reason must be at least 10 characters' });
+    }
+
+    await pool.query(
+      'INSERT INTO market_reports (market_id, user_id, reason) VALUES ($1, $2, $3)',
+      [marketId, userId, reason]
+    );
+
+    res.json({ success: true, message: 'Report submitted successfully' });
+  } catch (error) {
+    console.error('Error reporting market:', error);
+    res.status(500).json({ error: 'Failed to report market' });
+  }
+});
+
+
 // Edit market (user can edit their own market, admin can edit any)
 app.put('/api/markets/:id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
