@@ -656,50 +656,40 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
 
     await client.query('BEGIN');
 
-    const userResult = await client.query(
-      'SELECT balance FROM users WHERE id = $1',
-      [userId]
-    );
-
+    // Check user balance
+    const userResult = await client.query('SELECT balance FROM users WHERE id = $1', [userId]);
     if (userResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'User not found' });
     }
 
     const userBalance = parseFloat(userResult.rows[0].balance);
-
     if (userBalance < amount) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Insufficient balance' });
     }
 
-    const marketResult = await client.query(
-      'SELECT * FROM markets WHERE id = $1',
-      [market_id]
-    );
-
+    // Check market status
+    const marketResult = await client.query('SELECT * FROM markets WHERE id = $1', [market_id]);
     if (marketResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Market not found' });
     }
 
     const market = marketResult.rows[0];
-
     if (market.status !== 'active') {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Market is not active' });
     }
 
-    if (new Date(market.deadline) < new Date()) {
+    const deadline = new Date(market.deadline);
+    if (deadline < new Date()) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Market has expired' });
+    }
 
-    // Get the current odds for the option
-    const optionResult = await client.query(
-      'SELECT odds FROM options WHERE id = $1 AND market_id = $2',
-      [option_id, market_id]
-    );
-
+    // Get current odds for the option
+    const optionResult = await client.query('SELECT odds FROM options WHERE id = $1 AND market_id = $2', [option_id, market_id]);
     if (optionResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Option not found' });
@@ -707,42 +697,27 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
 
     const currentOdds = parseFloat(optionResult.rows[0].odds);
     const potentialPayout = amount * currentOdds;
-    }
 
-    const optionResult = await client.query(
-      'SELECT * FROM options WHERE id = $1 AND market_id = $2',
-      [option_id, market_id]
-    );
-
-    if (optionResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Option not found' });
-    }
-
-    const option = optionResult.rows[0];
-    const potentialPayout = amount * parseFloat(option.odds);
-
+    // Insert bet with odds
     await client.query(
-      `INSERT INTO bets (user_id, market_id, option_id, amount, potential_payout, status, edit_count)
-       VALUES ($1, $2, $3, $4, $5, 'pending', 0)`,
+      'INSERT INTO bets (user_id, market_id, option_id, amount, odds, potential_payout) VALUES ($1, $2, $3, $4, $5, $6)',
       [userId, market_id, option_id, amount, currentOdds, potentialPayout]
     );
 
-    const newBalance = userBalance - amount;
-    await client.query(
-      'UPDATE users SET balance = $1 WHERE id = $2',
-      [newBalance, userId]
-    );
+    // Deduct from user balance
+    await client.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [amount, userId]);
 
-    await recalculateOdds(client, market_id);
+    // Update odds dynamically
+    await updateOdds(client, market_id);
 
     await client.query('COMMIT');
 
-    res.json({ 
-      success: true, 
-      newBalance,
-      message: 'Bet placed successfully'
-    });
+    // Get new balance
+    const newBalanceResult = await client.query('SELECT balance FROM users WHERE id = $1', [userId]);
+    const newBalance = parseFloat(newBalanceResult.rows[0].balance);
+
+    res.json({ success: true, newBalance, potentialPayout, odds: currentOdds });
+
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error placing bet:', error);
@@ -752,8 +727,6 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
   }
 });
 
-// Get user's bets
-app.get('/api/bets/my-bets', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     
