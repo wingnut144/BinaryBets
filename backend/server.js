@@ -656,7 +656,6 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
 
     await client.query('BEGIN');
 
-    // Check user balance
     const userResult = await client.query('SELECT balance FROM users WHERE id = $1', [userId]);
     if (userResult.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -669,7 +668,6 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Insufficient balance' });
     }
 
-    // Check market status
     const marketResult = await client.query('SELECT * FROM markets WHERE id = $1', [market_id]);
     if (marketResult.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -682,13 +680,11 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Market is not active' });
     }
 
-    const deadline = new Date(market.deadline);
-    if (deadline < new Date()) {
+    if (new Date(market.deadline) < new Date()) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Market has expired' });
     }
 
-    // Get current odds for the option
     const optionResult = await client.query('SELECT odds FROM options WHERE id = $1 AND market_id = $2', [option_id, market_id]);
     if (optionResult.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -698,25 +694,17 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
     const currentOdds = parseFloat(optionResult.rows[0].odds);
     const potentialPayout = amount * currentOdds;
 
-    // Insert bet with odds
     await client.query(
       'INSERT INTO bets (user_id, market_id, option_id, amount, odds, potential_payout) VALUES ($1, $2, $3, $4, $5, $6)',
       [userId, market_id, option_id, amount, currentOdds, potentialPayout]
     );
 
-    // Deduct from user balance
     await client.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [amount, userId]);
-
-    // Update odds dynamically
     await updateOdds(client, market_id);
-
     await client.query('COMMIT');
 
-    // Get new balance
     const newBalanceResult = await client.query('SELECT balance FROM users WHERE id = $1', [userId]);
-    const newBalance = parseFloat(newBalanceResult.rows[0].balance);
-
-    res.json({ success: true, newBalance, potentialPayout, odds: currentOdds });
+    res.json({ success: true, newBalance: parseFloat(newBalanceResult.rows[0].balance), potentialPayout, odds: currentOdds });
 
   } catch (error) {
     await client.query('ROLLBACK');
@@ -727,33 +715,6 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
   }
 });
 
-  try {
-    const userId = req.user.id;
-    
-    const result = await pool.query(
-      `SELECT 
-         b.*,
-         m.question as market_question,
-         m.deadline as market_deadline,
-         o.name as option_name,
-         o.odds as current_odds,
-         m.status as market_status
-       FROM bets b
-       JOIN markets m ON b.market_id = m.id
-       JOIN options o ON b.option_id = o.id
-       WHERE b.user_id = $1
-       ORDER BY b.created_at DESC`,
-      [userId]
-    );
-    
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching user bets:', error);
-    res.status(500).json({ error: 'Failed to fetch bets' });
-  }
-});
-
-// Edit bet (user can edit up to 2 times)
 app.put('/api/bets/:id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
