@@ -1004,20 +1004,69 @@ app.post('/api/bets/:id/report', authenticateToken, async (req, res) => {
     }
 
     const existingReport = await client.query(
+      'SELECT id FROM bet_reports WHERE bet_id = $1 AND reported_by = $2',
+      [betId, userId]
+    );
 
-app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { status } = req.query;
-    
-    let query = `
-      SELECT 
-        br.*,
-        b.amount,
-        b.potential_payout,
-        m.question as market_question,
-        o.name as option_name,
-        u.username as reported_by_username,
-        reviewer.username as reviewed_by_username
+    if (existingReport.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'You have already reported this bet' });
+    }
+
+    const reportResult = await client.query(
+      `INSERT INTO bet_reports (bet_id, reported_by, reason, status)
+       VALUES ($1, $2, $3, 'pending')
+       RETURNING *`,
+      [betId, userId, reason.trim()]
+    );
+
+    await client.query(
+      `INSERT INTO messages (from_user_id, to_user_id, subject, message)
+       VALUES (1, $1, 'Bet Report Received', $2)`,
+      [
+        userId,
+        `Thank you for reporting bet #${betId}. Our moderation team will review your report shortly. You will be notified once action has been taken.
+
+Report Reason: ${reason}
+
+Reference ID: ${reportResult.rows[0].id}`
+      ]
+    );
+
+    const admins = await client.query('SELECT id FROM users WHERE is_admin = true');
+    for (const admin of admins.rows) {
+      await client.query(
+        `INSERT INTO messages (from_user_id, to_user_id, subject, message)
+         VALUES ($1, $2, 'New Bet Report', $3)`,
+        [
+          userId,
+          admin.id,
+          `A bet has been reported and requires review.
+
+Bet ID: #${betId}
+Reported by: User #${userId}
+Reason: ${reason}
+
+Please review this report in the admin dashboard.`
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    res.json({ 
+      success: true, 
+      message: 'Bet reported successfully. You will be notified once reviewed.',
+      report: reportResult.rows[0]
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error reporting bet:', error);
+    res.status(500).json({ error: 'Failed to report bet' });
+  } finally {
+    client.release();
+  }
+});
 
 app.post('/api/admin/reports/:id/review', authenticateToken, requireAdmin, async (req, res) => {
   const client = await pool.connect();
@@ -1029,6 +1078,72 @@ app.post('/api/admin/reports/:id/review', authenticateToken, requireAdmin, async
     await client.query('BEGIN');
 
     const reportResult = await client.query(
+      'SELECT * FROM bet_reports WHERE id = $1',
+      [reportId]
+    );
+
+    if (reportResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = reportResult.rows[0];
+
+    if (action === 'approve') {
+      await client.query('DELETE FROM bets WHERE id = $1', [report.bet_id]);
+      
+      await client.query(
+        `UPDATE bet_reports 
+         SET status = 'reviewed', reviewed_by = $1, reviewed_at = NOW(), admin_notes = $2
+         WHERE id = $3`,
+        [adminId, admin_notes, reportId]
+      );
+
+      await client.query(
+        `INSERT INTO messages (from_user_id, to_user_id, subject, message)
+         VALUES (1, $1, 'Report Resolved - Action Taken', $2)`,
+        [
+          report.reported_by,
+          `Your report (ID: ${reportId}) has been reviewed and the bet has been removed.
+
+Admin notes: ${admin_notes || 'No additional notes'}
+
+Thank you for helping keep Binary Bets fair and safe!`
+        ]
+      );
+    } else {
+      await client.query(
+        `UPDATE bet_reports 
+         SET status = 'dismissed', reviewed_by = $1, reviewed_at = NOW(), admin_notes = $2
+         WHERE id = $3`,
+        [adminId, admin_notes, reportId]
+      );
+
+      await client.query(
+        `INSERT INTO messages (from_user_id, to_user_id, subject, message)
+         VALUES (1, $1, 'Report Resolved - No Action Taken', $2)`,
+        [
+          report.reported_by,
+          `Your report (ID: ${reportId}) has been reviewed. After investigation, no action was taken.
+
+Admin notes: ${admin_notes || 'The reported content did not violate our policies.'}
+
+If you have additional concerns, please submit a new report with more details.`
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    res.json({ success: true, message: 'Report reviewed successfully' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error reviewing report:', error);
+    res.status(500).json({ error: 'Failed to review report' });
+  } finally {
+    client.release();
+  }
+});
 
 // ANNOUNCEMENTS
 app.get('/api/announcements', async (req, res) => {
