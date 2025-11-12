@@ -22,6 +22,17 @@ app.use(cors({
 
 app.use(express.json());
 
+
+// Prevent API response caching
+app.use((req, res, next) => {
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+  next();
+});
+
 // Database connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
