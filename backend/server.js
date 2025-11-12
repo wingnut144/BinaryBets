@@ -693,6 +693,20 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
     if (new Date(market.deadline) < new Date()) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Market has expired' });
+
+    // Get the current odds for the option
+    const optionResult = await client.query(
+      'SELECT odds FROM options WHERE id = $1 AND market_id = $2',
+      [option_id, market_id]
+    );
+
+    if (optionResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Option not found' });
+    }
+
+    const currentOdds = parseFloat(optionResult.rows[0].odds);
+    const potentialPayout = amount * currentOdds;
     }
 
     const optionResult = await client.query(
@@ -711,7 +725,7 @@ app.post('/api/bets', authenticateToken, async (req, res) => {
     await client.query(
       `INSERT INTO bets (user_id, market_id, option_id, amount, potential_payout, status, edit_count)
        VALUES ($1, $2, $3, $4, $5, 'pending', 0)`,
-      [userId, market_id, option_id, amount, potentialPayout]
+      [userId, market_id, option_id, amount, currentOdds, potentialPayout]
     );
 
     const newBalance = userBalance - amount;
