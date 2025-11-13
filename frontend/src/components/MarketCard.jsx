@@ -79,7 +79,8 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
     }
   };
 
-  const betText = (market.total_bets || 0) === 1 ? 'bet placed' : 'bets placed';
+  const betCount = parseInt(market.total_bets) || 0;
+  const betText = betCount === 1 ? 'bet placed' : 'bets placed';
 
   return (
     <div className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all">
@@ -98,7 +99,7 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
       <div className="p-4">
         <div className="flex items-center justify-between text-sm text-gray-600 mb-4">
           <span>⏰ {timeUntil}</span>
-          <span>👥 {market.total_bets || 0} {betText}</span>
+          <span>👥 {betCount} {betText}</span>
         </div>
 
         {market.options && market.options.length > 0 && (
