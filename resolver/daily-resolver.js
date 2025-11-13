@@ -6,7 +6,7 @@ const { Pool } = pg;
 // Configuration
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY || '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';
+const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY;
 const DB_CONFIG = {
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
@@ -42,31 +42,30 @@ async function logDecision(marketId, marketQuestion, decision, aiProvider) {
   }
 }
 
-// NVIDIA FourCastNet API call for weather predictions
+// NVIDIA Nemotron LLM for weather predictions
 async function resolveWithNvidiaWeather(question, options, deadline) {
   try {
-    log(`Trying NVIDIA FourCastNet for weather: "${question}"`);
+    log(`Trying NVIDIA Nemotron for weather: "${question}"`);
     
-    // Extract location and weather condition from question
-    const locationMatch = question.match(/in ([A-Za-z,\s]+?)(?:\s+on|\s+this|\s+by|\?)/i);
-    const snowMatch = question.match(/snow/i);
-    const location = locationMatch ? locationMatch[1].trim() : 'Georgia';
-    
-    const prompt = `Analyze this weather prediction market using FourCastNet data:
+    const prompt = `You are a weather prediction market resolver. Analyze if the outcome is clear enough to resolve now.
 
-Question: ${question}
-Location: ${location}
-Deadline: ${new Date(deadline).toLocaleDateString()}
-Today: ${new Date().toLocaleDateString()}
+Market Question: ${question}
+Options: ${options.join(', ')}
+Original Deadline: ${new Date(deadline).toLocaleDateString()}
+Today's Date: ${new Date().toLocaleDateString()}
 
-Based on current weather models and FourCastNet predictions, determine if the outcome is clear enough to resolve now.
+Instructions:
+1. Use your knowledge of weather patterns and current conditions
+2. If the weather outcome is DEFINITIVELY CLEAR (e.g., weather event has passed, forecast is certain), respond with the winning option
+3. If the weather outcome is UNCERTAIN or too far in the future to predict accurately, respond with "KEEP_OPEN"
+4. Only resolve if you are 95%+ confident in the outcome
 
 Response format (JSON):
 {
   "decision": "RESOLVE" or "KEEP_OPEN",
   "winner": "option name" or null,
   "confidence": 0-100,
-  "reasoning": "explanation based on weather data"
+  "reasoning": "brief explanation based on weather knowledge"
 }`;
 
     const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
@@ -80,17 +79,19 @@ Response format (JSON):
         messages: [
           { 
             role: 'system', 
-            content: 'You are a weather prediction resolver with access to FourCastNet data. Only resolve markets when weather outcomes are definitively clear based on current forecasts and observations.' 
+            content: 'You are a weather prediction resolver. Only resolve markets when weather outcomes are definitively clear based on current conditions and forecasts.' 
           },
           { role: 'user', content: prompt }
         ],
         temperature: 0.1,
+        top_p: 1,
         max_tokens: 500
       })
     });
 
     if (!response.ok) {
-      throw new Error(`NVIDIA API error: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`NVIDIA API error ${response.status}: ${errorText}`);
     }
 
     const data = await response.json();
@@ -100,13 +101,13 @@ Response format (JSON):
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const result = JSON.parse(jsonMatch[0]);
-      log(`NVIDIA decision: ${result.decision} (confidence: ${result.confidence}%)`);
-      return { result, provider: 'NVIDIA-FourCastNet' };
+      log(`NVIDIA Nemotron decision: ${result.decision} (confidence: ${result.confidence}%)`);
+      return { result, provider: 'NVIDIA-Nemotron' };
     }
     
     throw new Error('Could not parse NVIDIA response');
   } catch (error) {
-    log(`NVIDIA FourCastNet failed: ${error.message}`);
+    log(`NVIDIA Nemotron failed: ${error.message}`);
     return null;
   }
 }
@@ -275,9 +276,9 @@ async function resolveMarkets() {
         const options = market.options.map(o => o.name);
         let aiResponse = null;
         
-        // Use NVIDIA FourCastNet for weather markets
+        // Use NVIDIA Nemotron for weather markets
         if (market.category_name && market.category_name.toLowerCase() === 'weather') {
-          log('🌤️ Weather market detected - using NVIDIA FourCastNet');
+          log('🌤️ Weather market detected - using NVIDIA Nemotron');
           aiResponse = await resolveWithNvidiaWeather(market.question, options, market.deadline);
         }
         
