@@ -1353,8 +1353,9 @@ app.put('/api/admin/reports/:id', authenticateToken, requireAdmin, async (req, r
     res.json({ success: true });
   } catch (error) {
     console.error('Error updating report:', error);
+    console.error('Error updating report:', error);
     res.status(500).json({ error: 'Failed to update report' });
-    res.status(500).json({ error: 'Failed to update report' });
+  }
 });
 
 // Admin: Get resolver logs
