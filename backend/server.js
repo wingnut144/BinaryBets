@@ -45,24 +45,6 @@ const pool = new Pool({
 }
 
 // Send email notification
-async function sendEmail(to, subject, htmlContent) {
-  if (!process.env.SENDGRID_API_KEY) {
-    console.log('SendGrid not configured, skipping email');
-    return;
-  }
-  
-  try {
-    await sgMail.send({
-      to,
-      from: process.env.SENDGRID_FROM_EMAIL,
-      subject,
-      html: htmlContent
-    });
-    console.log(`Email sent to ${to}`);
-  } catch (error) {
-    console.error('Error sending email:', error);
-  }
-}
 
 // Get user notifications
 app.get('/api/notifications', authenticateToken, async (req, res) => {
@@ -1578,16 +1560,6 @@ if (process.env.SENDGRID_API_KEY) {
 }
 
 // Send in-app notification
-async function sendNotification(userId, type, title, message, data = null) {
-  try {
-    await pool.query(
-      'INSERT INTO notifications (user_id, type, title, message, data) VALUES ($1, $2, $3, $4, $5)',
-      [userId, type, title, message, data ? JSON.stringify(data) : null]
-    );
-  } catch (error) {
-    console.error('Error sending notification:', error);
-  }
-}
 
 // Send email notification
 async function sendEmail(to, subject, htmlContent) {
