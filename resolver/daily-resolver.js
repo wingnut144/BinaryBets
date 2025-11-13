@@ -6,6 +6,7 @@ const { Pool } = pg;
 // Configuration
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY || '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';
 const DB_CONFIG = {
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
@@ -38,6 +39,75 @@ async function logDecision(marketId, marketQuestion, decision, aiProvider) {
     ]);
   } catch (error) {
     log(`Error saving log to database: ${error.message}`);
+  }
+}
+
+// NVIDIA FourCastNet API call for weather predictions
+async function resolveWithNvidiaWeather(question, options, deadline) {
+  try {
+    log(`Trying NVIDIA FourCastNet for weather: "${question}"`);
+    
+    // Extract location and weather condition from question
+    const locationMatch = question.match(/in ([A-Za-z,\s]+?)(?:\s+on|\s+this|\s+by|\?)/i);
+    const snowMatch = question.match(/snow/i);
+    const location = locationMatch ? locationMatch[1].trim() : 'Georgia';
+    
+    const prompt = `Analyze this weather prediction market using FourCastNet data:
+
+Question: ${question}
+Location: ${location}
+Deadline: ${new Date(deadline).toLocaleDateString()}
+Today: ${new Date().toLocaleDateString()}
+
+Based on current weather models and FourCastNet predictions, determine if the outcome is clear enough to resolve now.
+
+Response format (JSON):
+{
+  "decision": "RESOLVE" or "KEEP_OPEN",
+  "winner": "option name" or null,
+  "confidence": 0-100,
+  "reasoning": "explanation based on weather data"
+}`;
+
+    const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${NVIDIA_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'nvidia/llama-3.1-nemotron-70b-instruct',
+        messages: [
+          { 
+            role: 'system', 
+            content: 'You are a weather prediction resolver with access to FourCastNet data. Only resolve markets when weather outcomes are definitively clear based on current forecasts and observations.' 
+          },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.1,
+        max_tokens: 500
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`NVIDIA API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+    
+    // Try to parse JSON response
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const result = JSON.parse(jsonMatch[0]);
+      log(`NVIDIA decision: ${result.decision} (confidence: ${result.confidence}%)`);
+      return { result, provider: 'NVIDIA-FourCastNet' };
+    }
+    
+    throw new Error('Could not parse NVIDIA response');
+  } catch (error) {
+    log(`NVIDIA FourCastNet failed: ${error.message}`);
+    return null;
   }
 }
 
@@ -177,14 +247,16 @@ async function resolveMarkets() {
   log('🤖 Starting daily market resolution check...');
   
   try {
-    // Get all active markets
+    // Get all active markets with their categories
     const result = await pool.query(`
-      SELECT m.id, m.question, m.deadline, m.status,
+      SELECT m.id, m.question, m.deadline, m.status, m.category_id,
+             c.name as category_name,
              json_agg(json_build_object('id', o.id, 'name', o.name)) as options
       FROM markets m
       LEFT JOIN options o ON o.market_id = m.id
+      LEFT JOIN categories c ON m.category_id = c.id
       WHERE m.status = 'open' OR m.status = 'active'
-      GROUP BY m.id
+      GROUP BY m.id, c.name
     `);
 
     const markets = result.rows;
@@ -198,11 +270,21 @@ async function resolveMarkets() {
       try {
         log(`\n--- Evaluating Market #${market.id} ---`);
         log(`Question: ${market.question}`);
+        log(`Category: ${market.category_name || 'Unknown'}`);
         
         const options = market.options.map(o => o.name);
+        let aiResponse = null;
         
-        // Try ChatGPT first
-        let aiResponse = await resolveWithChatGPT(market.question, options, market.deadline);
+        // Use NVIDIA FourCastNet for weather markets
+        if (market.category_name && market.category_name.toLowerCase() === 'weather') {
+          log('🌤️ Weather market detected - using NVIDIA FourCastNet');
+          aiResponse = await resolveWithNvidiaWeather(market.question, options, market.deadline);
+        }
+        
+        // Fallback to ChatGPT if NVIDIA fails or not weather
+        if (!aiResponse) {
+          aiResponse = await resolveWithChatGPT(market.question, options, market.deadline);
+        }
         
         // Fallback to Anthropic if ChatGPT fails
         if (!aiResponse) {
@@ -210,7 +292,7 @@ async function resolveMarkets() {
         }
         
         if (!aiResponse) {
-          log(`❌ Both AI providers failed for market #${market.id}`);
+          log(`❌ All AI providers failed for market #${market.id}`);
           errorCount++;
           continue;
         }
