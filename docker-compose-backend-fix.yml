@@ -1,0 +1,15 @@
+# Add this to your backend service environment section:
+    environment:
+      POSTGRES_USER: binaryuser
+      POSTGRES_PASSWORD: binarypass
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: binarybets
+      POSTGRES_PORT: 5432
+      DATABASE_URL: postgresql://binaryuser:binarypass@postgres:5432/binarybets
+      PORT: 5000
+      FRONTEND_URL: https://binary-bets.com
+      JWT_SECRET: ${JWT_SECRET:-d3622223b389046f3c877a6d86a0b93ca82d3260cbbcb163036e2767be36b419}
+      RESOLVER_TOKEN: ${RESOLVER_TOKEN:-67b48c0ddc079d79ae8caad977b571f9451ed71246e4f1e4818d6f78bbeb9d52}
+      NEWS_API_KEY: ${NEWS_API_KEY:-219d788b390f4918a2d0f963a21460d9}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}

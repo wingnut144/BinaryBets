@@ -6,6 +6,7 @@ const { Pool } = pg;
 // Configuration
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const BACKEND_URL = process.env.BACKEND_URL || 'http://binarybets-backend-new:5000';
 const DB_CONFIG = {
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
@@ -38,6 +39,42 @@ async function logDecision(marketId, marketQuestion, decision, aiProvider) {
     ]);
   } catch (error) {
     log(`Error saving log to database: ${error.message}`);
+  }
+}
+
+// Send notification via backend API
+async function sendNotificationToCreator(marketId, marketQuestion, outcome, reasoning) {
+  try {
+    // Get market creator
+    const result = await pool.query('SELECT created_by, question FROM markets WHERE id = $1', [marketId]);
+    if (result.rows.length === 0) return;
+    
+    const userId = result.rows[0].created_by;
+    
+    // Get user email
+    const userResult = await pool.query('SELECT email FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) return;
+    
+    const userEmail = userResult.rows[0].email;
+    
+    // Insert notification
+    await pool.query(`
+      INSERT INTO notifications (user_id, type, title, message, data)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [
+      userId,
+      'market_closed_early',
+      '🤖 Market Closed Early by AI',
+      `Your market "${marketQuestion}" was resolved early by our AI system.\n\nOutcome: ${outcome}\nReason: ${reasoning}\n\nIf you believe this was incorrect, you can restore your market from your notifications.`,
+      JSON.stringify({ marketId, outcome, reasoning })
+    ]);
+    
+    log(`Notification sent to user ${userId} for market #${marketId}`);
+    
+    // Send email (SendGrid will be called by backend when user checks notifications)
+    
+  } catch (error) {
+    log(`Error sending notification: ${error.message}`);
   }
 }
 
@@ -177,20 +214,21 @@ async function resolveMarkets() {
   log('🤖 Starting daily market resolution check...');
   
   try {
-    // Get all active markets with their categories
+    // Get all active markets (excluding those that opted out)
     const result = await pool.query(`
-      SELECT m.id, m.question, m.deadline, m.status, m.category_id,
+      SELECT m.id, m.question, m.deadline, m.status, m.category_id, m.skip_ai_resolution,
              c.name as category_name,
              json_agg(json_build_object('id', o.id, 'name', o.name)) as options
       FROM markets m
       LEFT JOIN options o ON o.market_id = m.id
       LEFT JOIN categories c ON m.category_id = c.id
-      WHERE m.status = 'open' OR m.status = 'active'
+      WHERE (m.status = 'open' OR m.status = 'active')
+        AND (m.skip_ai_resolution IS NULL OR m.skip_ai_resolution = FALSE)
       GROUP BY m.id, c.name
     `);
 
     const markets = result.rows;
-    log(`Found ${markets.length} active markets`);
+    log(`Found ${markets.length} active markets (excluding AI opt-outs)`);
 
     let resolvedCount = 0;
     let keptOpenCount = 0;
@@ -235,13 +273,20 @@ async function resolveMarkets() {
             continue;
           }
           
+          // Check if this is early closure (before deadline)
+          const now = new Date();
+          const deadline = new Date(market.deadline);
+          const isEarlyClosure = now < deadline;
+          
           await pool.query(`
             UPDATE markets 
             SET status = 'resolved', 
                 outcome = $1, 
-                resolved_at = NOW()
-            WHERE id = $2
-          `, [decision.winner, market.id]);
+                resolved_at = NOW(),
+                closed_early = $2,
+                closed_early_at = CASE WHEN $2 THEN NOW() ELSE NULL END
+            WHERE id = $3
+          `, [decision.winner, isEarlyClosure, market.id]);
           
           // Pay out winners
           await pool.query(`
@@ -264,7 +309,13 @@ async function resolveMarkets() {
               AND b.payout > 0
           `, [market.id]);
           
-          log(`✅ Market #${market.id} RESOLVED: ${decision.winner}`);
+          log(`✅ Market #${market.id} RESOLVED: ${decision.winner}${isEarlyClosure ? ' (EARLY CLOSURE)' : ''}`);
+          
+          // Send notification if early closure
+          if (isEarlyClosure) {
+            await sendNotificationToCreator(market.id, market.question, decision.winner, decision.reasoning);
+          }
+          
           resolvedCount++;
         } else {
           log(`⏳ Market #${market.id} KEPT OPEN (confidence: ${decision.confidence}%)`);
