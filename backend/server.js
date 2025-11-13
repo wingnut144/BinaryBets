@@ -1569,6 +1569,203 @@ app.get('/api/admin/resolver-logs', authenticateToken, requireAdmin, async (req,
 });
 
 const PORT = process.env.PORT || 5000;
+
+// ============= NOTIFICATION SYSTEM =============
+
+// SendGrid for emails (optional)
+let sgMail = null;
+if (process.env.SENDGRID_API_KEY) {
+  try {
+    const sgModule = await import('@sendgrid/mail');
+    sgMail = sgModule.default;
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    console.log('📧 SendGrid: ✅ Configured');
+  } catch (error) {
+    console.log('📧 SendGrid: ⚠️ Module not installed, email notifications disabled');
+  }
+} else {
+  console.log('📧 SendGrid: ⚠️ Not configured');
+}
+
+// Send in-app notification
+async function sendNotification(userId, type, title, message, data = null) {
+  try {
+    await pool.query(
+      'INSERT INTO notifications (user_id, type, title, message, data) VALUES ($1, $2, $3, $4, $5)',
+      [userId, type, title, message, data ? JSON.stringify(data) : null]
+    );
+  } catch (error) {
+    console.error('Error sending notification:', error);
+  }
+}
+
+// Send email notification
+async function sendEmail(to, subject, htmlContent) {
+  if (!sgMail) {
+    console.log('SendGrid not available, skipping email');
+    return;
+  }
+  
+  try {
+    await sgMail.send({
+      to,
+      from: process.env.SENDGRID_FROM_EMAIL,
+      subject,
+      html: htmlContent
+    });
+    console.log(`Email sent to ${to}`);
+  } catch (error) {
+    console.error('Error sending email:', error);
+  }
+}
+
+// ============= NOTIFICATION ENDPOINTS =============
+
+// Get user notifications
+app.get('/api/notifications', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
+      [req.user.id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching notifications:', error);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+});
+
+// Mark notification as read
+app.post('/api/notifications/:id/read', authenticateToken, async (req, res) => {
+  try {
+    await pool.query(
+      'UPDATE notifications SET read = TRUE WHERE id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
+    res.status(500).json({ error: 'Failed to mark notification as read' });
+  }
+});
+
+// Get unread notification count
+app.get('/api/notifications/unread/count', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read = FALSE',
+      [req.user.id]
+    );
+    res.json({ count: parseInt(result.rows[0].count) });
+  } catch (error) {
+    console.error('Error fetching unread count:', error);
+    res.status(500).json({ error: 'Failed to fetch unread count' });
+  }
+});
+
+// Request market restoration
+app.post('/api/markets/:id/restore', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get original market data
+    const marketResult = await pool.query(
+      'SELECT * FROM markets WHERE id = $1 AND created_by = $2',
+      [id, req.user.id]
+    );
+    
+    if (marketResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Market not found or unauthorized' });
+    }
+    
+    const market = marketResult.rows[0];
+    
+    if (!market.closed_early) {
+      return res.status(400).json({ error: 'Market was not closed early' });
+    }
+    
+    // Get all bets and options
+    const betsResult = await pool.query(`
+      SELECT b.*, u.username, o.name as option_name
+      FROM bets b
+      JOIN users u ON b.user_id = u.id
+      JOIN options o ON b.option_id = o.id
+      WHERE b.market_id = $1
+    `, [id]);
+    
+    const optionsResult = await pool.query(
+      'SELECT * FROM options WHERE market_id = $1',
+      [id]
+    );
+    
+    // Recreate the market with skip_ai_resolution = true
+    const newMarketResult = await pool.query(`
+      INSERT INTO markets (question, description, deadline, created_by, category_id, skip_ai_resolution, image_url, status)
+      VALUES ($1, $2, $3, $4, $5, TRUE, $6, 'active')
+      RETURNING id
+    `, [
+      market.question,
+      market.description,
+      market.deadline,
+      req.user.id,
+      market.category_id,
+      market.image_url
+    ]);
+    
+    const newMarketId = newMarketResult.rows[0].id;
+    
+    // Recreate options
+    const optionMapping = {};
+    for (const option of optionsResult.rows) {
+      const newOptionResult = await pool.query(
+        'INSERT INTO options (market_id, name) VALUES ($1, $2) RETURNING id',
+        [newMarketId, option.name]
+      );
+      optionMapping[option.id] = newOptionResult.rows[0].id;
+    }
+    
+    // Recreate bets
+    for (const bet of betsResult.rows) {
+      const newOptionId = optionMapping[bet.option_id];
+      await pool.query(`
+        INSERT INTO bets (user_id, market_id, option_id, amount, odds, potential_payout)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [
+        bet.user_id,
+        newMarketId,
+        newOptionId,
+        bet.amount,
+        bet.odds,
+        bet.potential_payout
+      ]);
+    }
+    
+    // Send notification to all bettors
+    const uniqueBettors = [...new Set(betsResult.rows.map(b => b.user_id))];
+    for (const bettorId of uniqueBettors) {
+      await sendNotification(
+        bettorId,
+        'market_restored',
+        'Market Restored',
+        `The market "${market.question}" has been restored by the creator and your bet has been transferred to the new market.`,
+        { marketId: newMarketId }
+      );
+    }
+    
+    res.json({ 
+      success: true, 
+      newMarketId,
+      message: 'Market restored successfully with AI checking disabled'
+    });
+    
+  } catch (error) {
+    console.error('Error restoring market:', error);
+    res.status(500).json({ error: 'Failed to restore market' });
+  }
+});
+
+// ============= END NOTIFICATION SYSTEM =============
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Database: ${process.env.POSTGRES_DB}`);
