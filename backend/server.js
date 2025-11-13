@@ -22,184 +22,8 @@ app.use(cors({
 
 app.use(express.json());
 
-
-// Prevent API response caching
-app.use((req, res, next) => {
-  res.set({
-    'Cache-Control': 'no-store, no-cache, must-revalidate, private',
-    'Pragma': 'no-cache',
-    'Expires': '0'
-  });
-  next();
-});
-
 // Database connection
 const pool = new Pool({
-
-// SendGrid for emails
-      [userId, type, title, message, data ? JSON.stringify(data) : null]
-    );
-  } catch (error) {
-    console.error('Error sending notification:', error);
-  }
-}
-
-// Send email notification
-
-// Get user notifications
-app.get('/api/notifications', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
-      [req.user.id]
-    );
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching notifications:', error);
-    res.status(500).json({ error: 'Failed to fetch notifications' });
-  }
-});
-
-// Mark notification as read
-app.post('/api/notifications/:id/read', authenticateToken, async (req, res) => {
-  try {
-    await pool.query(
-      'UPDATE notifications SET read = TRUE WHERE id = $1 AND user_id = $2',
-      [req.params.id, req.user.id]
-    );
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error marking notification as read:', error);
-    res.status(500).json({ error: 'Failed to mark notification as read' });
-  }
-});
-
-// Get unread notification count
-app.get('/api/notifications/unread/count', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read = FALSE',
-      [req.user.id]
-    );
-    res.json({ count: parseInt(result.rows[0].count) });
-  } catch (error) {
-    console.error('Error fetching unread count:', error);
-    res.status(500).json({ error: 'Failed to fetch unread count' });
-  }
-});
-
-// Request market restoration
-app.post('/api/markets/:id/restore', authenticateToken, async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    // Get original market data
-    const marketResult = await pool.query(
-      'SELECT * FROM markets WHERE id = $1 AND created_by = $2',
-      [id, req.user.id]
-    );
-    
-    if (marketResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Market not found or unauthorized' });
-    }
-    
-    const market = marketResult.rows[0];
-    
-    if (!market.closed_early) {
-      return res.status(400).json({ error: 'Market was not closed early' });
-    }
-    
-    // Get all bets and options
-    const betsResult = await pool.query(`
-      SELECT b.*, u.username, o.name as option_name
-      FROM bets b
-      JOIN users u ON b.user_id = u.id
-      JOIN options o ON b.option_id = o.id
-      WHERE b.market_id = $1
-    `, [id]);
-    
-    const optionsResult = await pool.query(
-      'SELECT * FROM options WHERE market_id = $1',
-      [id]
-    );
-    
-    // Create restoration request
-    await pool.query(`
-      INSERT INTO market_restoration_requests (original_market_id, user_id, market_data, bets_data)
-      VALUES ($1, $2, $3, $4)
-    `, [
-      id,
-      req.user.id,
-      JSON.stringify({ market: market, options: optionsResult.rows }),
-      JSON.stringify(betsResult.rows)
-    ]);
-    
-    // Recreate the market with skip_ai_resolution = true
-    const newMarketResult = await pool.query(`
-      INSERT INTO markets (question, description, deadline, created_by, category_id, skip_ai_resolution, image_url)
-      VALUES ($1, $2, $3, $4, $5, TRUE, $6)
-      RETURNING id
-    `, [
-      market.question,
-      market.description,
-      market.deadline,
-      req.user.id,
-      market.category_id,
-      market.image_url
-    ]);
-    
-    const newMarketId = newMarketResult.rows[0].id;
-    
-    // Recreate options
-    const optionMapping = {};
-    for (const option of optionsResult.rows) {
-      const newOptionResult = await pool.query(
-        'INSERT INTO options (market_id, name) VALUES ($1, $2) RETURNING id',
-        [newMarketId, option.name]
-      );
-      optionMapping[option.id] = newOptionResult.rows[0].id;
-    }
-    
-    // Recreate bets
-    for (const bet of betsResult.rows) {
-      const newOptionId = optionMapping[bet.option_id];
-      await pool.query(`
-        INSERT INTO bets (user_id, market_id, option_id, amount, odds, potential_payout)
-        VALUES ($1, $2, $3, $4, $5, $6)
-      `, [
-        bet.user_id,
-        newMarketId,
-        newOptionId,
-        bet.amount,
-        bet.odds,
-        bet.potential_payout
-      ]);
-    }
-    
-    // Send notification to all bettors
-    const uniqueBettors = [...new Set(betsResult.rows.map(b => b.user_id))];
-    for (const bettorId of uniqueBettors) {
-      await sendNotification(
-        bettorId,
-        'market_restored',
-        'Market Restored',
-        `The market "${market.question}" has been restored by the creator and your bet has been transferred to the new market.`,
-        { marketId: newMarketId }
-      );
-    }
-    
-    res.json({ 
-      success: true, 
-      newMarketId,
-      message: 'Market restored successfully with AI checking disabled'
-    });
-    
-  } catch (error) {
-    console.error('Error restoring market:', error);
-    res.status(500).json({ error: 'Failed to restore market' });
-  }
-});
-
   connectionString: process.env.DATABASE_URL,
   ssl: false
 });
@@ -780,6 +604,45 @@ app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res)
   }
 });
 
+
+// Dynamic odds calculation function
+async function updateOdds(client, marketId) {
+  try {
+    const optionsResult = await client.query('SELECT id FROM options WHERE market_id = $1', [marketId]);
+    const options = optionsResult.rows;
+    if (options.length === 0) return;
+
+    const betsData = await client.query(
+      'SELECT option_id, SUM(amount) as total_amount FROM bets WHERE market_id = $1 AND status = $2 GROUP BY option_id',
+      [marketId, 'pending']
+    );
+
+    const betsByOption = {};
+    let totalPoolAmount = 0;
+    betsData.rows.forEach(row => {
+      const amount = parseFloat(row.total_amount);
+      betsByOption[row.option_id] = amount;
+      totalPoolAmount += amount;
+    });
+
+    for (const option of options) {
+      const optionBets = betsByOption[option.id] || 0;
+      let newOdds;
+      if (totalPoolAmount === 0 || optionBets === 0) {
+        newOdds = 2.0;
+      } else {
+        newOdds = (totalPoolAmount / optionBets) * 0.95;
+        newOdds = Math.max(1.1, Math.min(newOdds, 50.0));
+      }
+      newOdds = Math.round(newOdds * 100) / 100;
+      await client.query('UPDATE options SET odds = $1 WHERE id = $2', [newOdds, option.id]);
+    }
+  } catch (error) {
+    console.error('Error updating odds:', error);
+    throw error;
+  }
+}
+
 // BETS
 app.post('/api/bets', authenticateToken, async (req, res) => {
   const client = await pool.connect();
@@ -1185,6 +1048,43 @@ Please review this report in the admin dashboard.`
   }
 });
 
+app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { status } = req.query;
+    
+    let query = `
+      SELECT 
+        br.*,
+        b.amount,
+        b.potential_payout,
+        m.question as market_question,
+        o.name as option_name,
+        u.username as reported_by_username,
+        reviewer.username as reviewed_by_username
+      FROM bet_reports br
+      JOIN bets b ON br.bet_id = b.id
+      JOIN users u ON br.reported_by = u.id
+      LEFT JOIN users reviewer ON br.reviewed_by = reviewer.id
+      JOIN options o ON b.option_id = o.id
+      JOIN markets m ON b.market_id = m.id
+    `;
+    
+    const params = [];
+    if (status) {
+      params.push(status);
+      query += ` WHERE br.status = $1`;
+    }
+    
+    query += ` ORDER BY br.created_at DESC`;
+    
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching reports:', error);
+    res.status(500).json({ error: 'Failed to fetch reports' });
+  }
+});
+
 app.post('/api/admin/reports/:id/review', authenticateToken, requireAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -1408,7 +1308,7 @@ app.post('/api/messages', authenticateToken, async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO messages (from_user_id, to_user_id, subject, message, parent_message_id)
-       VALUES ($1, $2, $3, $4, $5)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
       [fromUserId, to_user_id, subject, message, parent_message_id || null]
     );
@@ -1482,108 +1382,8 @@ app.get('/api/ai-news', async (req, res) => {
 
 // SERVER START
 
-// Admin: Get all market reports  
-app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) => {
-  res.set('Cache-Control', 'no-store');
-  try {
-    const result = await pool.query(`
-      SELECT r.id, r.reason, r.status, r.created_at, r.reviewed_at,
-             m.id as market_id, m.question as market_question,
-             u.username as reporter, reviewer.username as reviewed_by
-      FROM market_reports r
-      JOIN markets m ON r.market_id = m.id
-      JOIN users u ON r.user_id = u.id
-      LEFT JOIN users reviewer ON r.reviewed_by = reviewer.id
-      ORDER BY r.created_at DESC`
-    );
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching reports:', error);
-    res.status(500).json({ error: 'Failed to fetch reports' });
-  }
-});
-
-// Admin: Update report status
-app.put('/api/admin/reports/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-    const result = await pool.query(
-      'UPDATE market_reports SET status = $1, reviewed_by = $2, reviewed_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *',
-      [status, req.user.id, id]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Report not found' });
-    }
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error updating report:', error);
-    res.status(500).json({ error: 'Failed to update report' });
-  }
-});
-
-// Admin: Get resolver logs
-app.get('/api/admin/resolver-logs', authenticateToken, requireAdmin, async (req, res) => {
-  res.set('Cache-Control', 'no-store');
-  try {
-    const result = await pool.query(`
-      SELECT rl.*, m.question as market_question
-      FROM resolver_logs rl
-      LEFT JOIN markets m ON rl.market_id = m.id
-      ORDER BY rl.created_at DESC
-      LIMIT 100
-    `);
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching resolver logs:', error);
-    res.status(500).json({ error: 'Failed to fetch resolver logs' });
-  }
-});
-
-const PORT = process.env.PORT || 5000;
-
-// ============= NOTIFICATION SYSTEM =============
-
-// SendGrid for emails (optional)
-let sgMail = null;
-if (process.env.SENDGRID_API_KEY) {
-  try {
-    const sgModule = await import('@sendgrid/mail');
-    sgMail = sgModule.default;
-    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-    console.log('📧 SendGrid: ✅ Configured');
-  } catch (error) {
-    console.log('📧 SendGrid: ⚠️ Module not installed, email notifications disabled');
-  }
-} else {
-  console.log('📧 SendGrid: ⚠️ Not configured');
-}
-
-// Send in-app notification
-
-// Send email notification
-async function sendEmail(to, subject, htmlContent) {
-  if (!sgMail) {
-    console.log('SendGrid not available, skipping email');
-    return;
-  }
-  
-  try {
-    await sgMail.send({
-      to,
-      from: process.env.SENDGRID_FROM_EMAIL,
-      subject,
-      html: htmlContent
-    });
-    console.log(`Email sent to ${to}`);
-  } catch (error) {
-    console.error('Error sending email:', error);
-  }
-}
-
 // ============= NOTIFICATION ENDPOINTS =============
 
-// Get user notifications
 app.get('/api/notifications', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
@@ -1597,7 +1397,6 @@ app.get('/api/notifications', authenticateToken, async (req, res) => {
   }
 });
 
-// Mark notification as read
 app.post('/api/notifications/:id/read', authenticateToken, async (req, res) => {
   try {
     await pool.query(
@@ -1611,7 +1410,6 @@ app.post('/api/notifications/:id/read', authenticateToken, async (req, res) => {
   }
 });
 
-// Get unread notification count
 app.get('/api/notifications/unread/count', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
@@ -1625,58 +1423,30 @@ app.get('/api/notifications/unread/count', authenticateToken, async (req, res) =
   }
 });
 
-// Request market restoration
 app.post('/api/markets/:id/restore', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    
-    // Get original market data
     const marketResult = await pool.query(
       'SELECT * FROM markets WHERE id = $1 AND created_by = $2',
       [id, req.user.id]
     );
-    
     if (marketResult.rows.length === 0) {
       return res.status(404).json({ error: 'Market not found or unauthorized' });
     }
-    
     const market = marketResult.rows[0];
-    
     if (!market.closed_early) {
       return res.status(400).json({ error: 'Market was not closed early' });
     }
-    
-    // Get all bets and options
-    const betsResult = await pool.query(`
-      SELECT b.*, u.username, o.name as option_name
-      FROM bets b
-      JOIN users u ON b.user_id = u.id
-      JOIN options o ON b.option_id = o.id
-      WHERE b.market_id = $1
-    `, [id]);
-    
-    const optionsResult = await pool.query(
-      'SELECT * FROM options WHERE market_id = $1',
+    const betsResult = await pool.query(
+      'SELECT b.*, u.username, o.name as option_name FROM bets b JOIN users u ON b.user_id = u.id JOIN options o ON b.option_id = o.id WHERE b.market_id = $1',
       [id]
     );
-    
-    // Recreate the market with skip_ai_resolution = true
-    const newMarketResult = await pool.query(`
-      INSERT INTO markets (question, description, deadline, created_by, category_id, skip_ai_resolution, image_url, status)
-      VALUES ($1, $2, $3, $4, $5, TRUE, $6, 'active')
-      RETURNING id
-    `, [
-      market.question,
-      market.description,
-      market.deadline,
-      req.user.id,
-      market.category_id,
-      market.image_url
-    ]);
-    
+    const optionsResult = await pool.query('SELECT * FROM options WHERE market_id = $1', [id]);
+    const newMarketResult = await pool.query(
+      'INSERT INTO markets (question, description, deadline, created_by, category_id, skip_ai_resolution, image_url, status) VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7) RETURNING id',
+      [market.question, market.description, market.deadline, req.user.id, market.category_id, market.image_url, 'active']
+    );
     const newMarketId = newMarketResult.rows[0].id;
-    
-    // Recreate options
     const optionMapping = {};
     for (const option of optionsResult.rows) {
       const newOptionResult = await pool.query(
@@ -1685,193 +1455,28 @@ app.post('/api/markets/:id/restore', authenticateToken, async (req, res) => {
       );
       optionMapping[option.id] = newOptionResult.rows[0].id;
     }
-    
-    // Recreate bets
     for (const bet of betsResult.rows) {
       const newOptionId = optionMapping[bet.option_id];
-      await pool.query(`
-        INSERT INTO bets (user_id, market_id, option_id, amount, odds, potential_payout)
-        VALUES ($1, $2, $3, $4, $5, $6)
-      `, [
-        bet.user_id,
-        newMarketId,
-        newOptionId,
-        bet.amount,
-        bet.odds,
-        bet.potential_payout
-      ]);
-    }
-    
-    // Send notification to all bettors
-    const uniqueBettors = [...new Set(betsResult.rows.map(b => b.user_id))];
-    for (const bettorId of uniqueBettors) {
-      await sendNotification(
-        bettorId,
-        'market_restored',
-        'Market Restored',
-        `The market "${market.question}" has been restored by the creator and your bet has been transferred to the new market.`,
-        { marketId: newMarketId }
+      await pool.query(
+        'INSERT INTO bets (user_id, market_id, option_id, amount, odds, potential_payout) VALUES ($1, $2, $3, $4, $5, $6)',
+        [bet.user_id, newMarketId, newOptionId, bet.amount, bet.odds, bet.potential_payout]
       );
     }
-    
-    res.json({ 
-      success: true, 
-      newMarketId,
-      message: 'Market restored successfully with AI checking disabled'
-    });
-    
-  } catch (error) {
-    console.error('Error restoring market:', error);
-    res.status(500).json({ error: 'Failed to restore market' });
-  }
-});
-
-// ============= END NOTIFICATION SYSTEM =============
-
-
-// ============= NOTIFICATION SYSTEM =============
-// Note: SendGrid is optional. Install with: npm install @sendgrid/mail
-
-// Get user notifications
-app.get('/api/notifications', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
-      [req.user.id]
-    );
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching notifications:', error);
-    res.status(500).json({ error: 'Failed to fetch notifications' });
-  }
-});
-
-// Mark notification as read
-app.post('/api/notifications/:id/read', authenticateToken, async (req, res) => {
-  try {
-    await pool.query(
-      'UPDATE notifications SET read = TRUE WHERE id = $1 AND user_id = $2',
-      [req.params.id, req.user.id]
-    );
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error marking notification as read:', error);
-    res.status(500).json({ error: 'Failed to mark notification as read' });
-  }
-});
-
-// Get unread notification count
-app.get('/api/notifications/unread/count', authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read = FALSE',
-      [req.user.id]
-    );
-    res.json({ count: parseInt(result.rows[0].count) });
-  } catch (error) {
-    console.error('Error fetching unread count:', error);
-    res.status(500).json({ error: 'Failed to fetch unread count' });
-  }
-});
-
-// Request market restoration
-app.post('/api/markets/:id/restore', authenticateToken, async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const marketResult = await pool.query(
-      'SELECT * FROM markets WHERE id = $1 AND created_by = $2',
-      [id, req.user.id]
-    );
-    
-    if (marketResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Market not found or unauthorized' });
-    }
-    
-    const market = marketResult.rows[0];
-    
-    if (!market.closed_early) {
-      return res.status(400).json({ error: 'Market was not closed early' });
-    }
-    
-    const betsResult = await pool.query(`
-      SELECT b.*, u.username, o.name as option_name
-      FROM bets b
-      JOIN users u ON b.user_id = u.id
-      JOIN options o ON b.option_id = o.id
-      WHERE b.market_id = $1
-    `, [id]);
-    
-    const optionsResult = await pool.query(
-      'SELECT * FROM options WHERE market_id = $1',
-      [id]
-    );
-    
-    const newMarketResult = await pool.query(`
-      INSERT INTO markets (question, description, deadline, created_by, category_id, skip_ai_resolution, image_url, status)
-      VALUES ($1, $2, $3, $4, $5, TRUE, $6, 'active')
-      RETURNING id
-    `, [
-      market.question,
-      market.description,
-      market.deadline,
-      req.user.id,
-      market.category_id,
-      market.image_url
-    ]);
-    
-    const newMarketId = newMarketResult.rows[0].id;
-    
-    const optionMapping = {};
-    for (const option of optionsResult.rows) {
-      const newOptionResult = await pool.query(
-        'INSERT INTO options (market_id, name) VALUES ($1, $2) RETURNING id',
-        [newMarketId, option.name]
-      );
-      optionMapping[option.id] = newOptionResult.rows[0].id;
-    }
-    
-    for (const bet of betsResult.rows) {
-      const newOptionId = optionMapping[bet.option_id];
-      await pool.query(`
-        INSERT INTO bets (user_id, market_id, option_id, amount, odds, potential_payout)
-        VALUES ($1, $2, $3, $4, $5, $6)
-      `, [
-        bet.user_id,
-        newMarketId,
-        newOptionId,
-        bet.amount,
-        bet.odds,
-        bet.potential_payout
-      ]);
-    }
-    
     const uniqueBettors = [...new Set(betsResult.rows.map(b => b.user_id))];
     for (const bettorId of uniqueBettors) {
       await pool.query(
         'INSERT INTO notifications (user_id, type, title, message, data) VALUES ($1, $2, $3, $4, $5)',
-        [
-          bettorId,
-          'market_restored',
-          'Market Restored',
-          `The market "${market.question}" has been restored by the creator and your bet has been transferred to the new market.`,
-          JSON.stringify({ marketId: newMarketId })
-        ]
+        [bettorId, 'market_restored', 'Market Restored', 'The market "' + market.question + '" has been restored and your bet transferred.', JSON.stringify({ marketId: newMarketId })]
       );
     }
-    
-    res.json({ 
-      success: true, 
-      newMarketId,
-      message: 'Market restored successfully with AI checking disabled'
-    });
-    
+    res.json({ success: true, newMarketId, message: 'Market restored successfully' });
   } catch (error) {
     console.error('Error restoring market:', error);
     res.status(500).json({ error: 'Failed to restore market' });
   }
 });
 
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Database: ${process.env.POSTGRES_DB}`);
