@@ -1020,43 +1020,6 @@ Please review this report in the admin dashboard.`
   }
 });
 
-app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { status } = req.query;
-    
-    let query = `
-      SELECT 
-        br.*,
-        b.amount,
-        b.potential_payout,
-        m.question as market_question,
-        o.name as option_name,
-        u.username as reported_by_username,
-        reviewer.username as reviewed_by_username
-      FROM bet_reports br
-      JOIN bets b ON br.bet_id = b.id
-      JOIN users u ON br.reported_by = u.id
-      LEFT JOIN users reviewer ON br.reviewed_by = reviewer.id
-      JOIN options o ON b.option_id = o.id
-      JOIN markets m ON b.market_id = m.id
-    `;
-    
-    const params = [];
-    if (status) {
-      params.push(status);
-      query += ` WHERE br.status = $1`;
-    }
-    
-    query += ` ORDER BY br.created_at DESC`;
-    
-    const result = await pool.query(query, params);
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching reports:', error);
-    res.status(500).json({ error: 'Failed to fetch reports' });
-  }
-});
-
 app.post('/api/admin/reports/:id/review', authenticateToken, requireAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
