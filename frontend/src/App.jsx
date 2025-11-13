@@ -442,7 +442,7 @@ function App() {
           {(view === 'markets' || view === 'closed' || view === 'leaderboard') && (
             <div className="hidden lg:block w-80">
               <AnnouncementsWidget announcements={announcements} />
-              <div className="mt-6">
+              <div>
                 <AINewsWidget news={aiNews} />
               </div>
             </div>
