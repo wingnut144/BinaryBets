@@ -37,15 +37,6 @@ app.use((req, res, next) => {
 const pool = new Pool({
 
 // SendGrid for emails
-if (process.env.SENDGRID_API_KEY) {
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-}
-
-// Send in-app notification
-async function sendNotification(userId, type, title, message, data = null) {
-  try {
-    await pool.query(
-      'INSERT INTO notifications (user_id, type, title, message, data) VALUES ($1, $2, $3, $4, $5)',
       [userId, type, title, message, data ? JSON.stringify(data) : null]
     );
   } catch (error) {
