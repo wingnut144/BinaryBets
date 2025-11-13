@@ -1354,6 +1354,24 @@ app.put('/api/admin/reports/:id', authenticateToken, requireAdmin, async (req, r
   } catch (error) {
     console.error('Error updating report:', error);
     res.status(500).json({ error: 'Failed to update report' });
+
+// Admin: Get resolver logs
+app.get('/api/admin/resolver-logs', authenticateToken, requireAdmin, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const result = await pool.query(`
+      SELECT rl.*, m.question as market_question
+      FROM resolver_logs rl
+      LEFT JOIN markets m ON rl.market_id = m.id
+      ORDER BY rl.created_at DESC
+      LIMIT 100
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching resolver logs:', error);
+    res.status(500).json({ error: 'Failed to fetch resolver logs' });
+  }
+});
   }
 });
 
