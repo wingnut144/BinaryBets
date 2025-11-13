@@ -434,7 +434,7 @@ function App() {
           </div>
 
           {(view === 'markets' || view === 'closed' || view === 'leaderboard') && (
-            <div className="hidden lg:block w-80">
+            <div className="hidden lg:block w-80 pt-[60px]">
               <AnnouncementsWidget announcements={announcements} />
               <AINewsWidget news={aiNews} />
             </div>
