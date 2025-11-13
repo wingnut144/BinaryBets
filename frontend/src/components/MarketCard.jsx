@@ -96,7 +96,7 @@ function MarketCard({ market, category, user, onBet, onShare, showShareMenu, set
       <div className="p-4">
         <div className="flex items-center justify-between text-sm text-gray-600 mb-4">
           <span>⏰ {timeUntil}</span>
-          <span>👥 {market.total_bets || 0} bets</span>
+          <span>👥 {market.total_bets || 0} {market.total_bets === 1 ? 'bet placed' : 'bets placed'}</span>
         </div>
 
         {market.options && market.options.length > 0 && (
