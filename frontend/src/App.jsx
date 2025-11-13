@@ -348,12 +348,6 @@ function App() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="text-4xl">🎲</div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                  Binary Bets
-                </h1>
-                <p className="text-xs text-gray-600">Where Predictions Meet Fun</p>
-              </div>
             </div>
 
             <nav className="hidden md:flex items-center gap-6">
@@ -442,9 +436,7 @@ function App() {
           {(view === 'markets' || view === 'closed' || view === 'leaderboard') && (
             <div className="hidden lg:block w-80">
               <AnnouncementsWidget announcements={announcements} />
-              <div>
-                <AINewsWidget news={aiNews} />
-              </div>
+              <AINewsWidget news={aiNews} />
             </div>
           )}
         </div>
