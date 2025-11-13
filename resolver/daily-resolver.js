@@ -6,7 +6,6 @@ const { Pool } = pg;
 // Configuration
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY;
 const DB_CONFIG = {
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
@@ -39,76 +38,6 @@ async function logDecision(marketId, marketQuestion, decision, aiProvider) {
     ]);
   } catch (error) {
     log(`Error saving log to database: ${error.message}`);
-  }
-}
-
-// NVIDIA Nemotron LLM for weather predictions
-async function resolveWithNvidiaWeather(question, options, deadline) {
-  try {
-    log(`Trying NVIDIA Nemotron for weather: "${question}"`);
-    
-    const prompt = `You are a weather prediction market resolver. Analyze if the outcome is clear enough to resolve now.
-
-Market Question: ${question}
-Options: ${options.join(', ')}
-Original Deadline: ${new Date(deadline).toLocaleDateString()}
-Today's Date: ${new Date().toLocaleDateString()}
-
-Instructions:
-1. Use your knowledge of weather patterns and current conditions
-2. If the weather outcome is DEFINITIVELY CLEAR (e.g., weather event has passed, forecast is certain), respond with the winning option
-3. If the weather outcome is UNCERTAIN or too far in the future to predict accurately, respond with "KEEP_OPEN"
-4. Only resolve if you are 95%+ confident in the outcome
-
-Response format (JSON):
-{
-  "decision": "RESOLVE" or "KEEP_OPEN",
-  "winner": "option name" or null,
-  "confidence": 0-100,
-  "reasoning": "brief explanation based on weather knowledge"
-}`;
-
-    const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${NVIDIA_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'nvidia/llama-3.1-nemotron-70b-instruct',
-        messages: [
-          { 
-            role: 'system', 
-            content: 'You are a weather prediction resolver. Only resolve markets when weather outcomes are definitively clear based on current conditions and forecasts.' 
-          },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.1,
-        top_p: 1,
-        max_tokens: 500
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`NVIDIA API error ${response.status}: ${errorText}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices[0].message.content;
-    
-    // Try to parse JSON response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const result = JSON.parse(jsonMatch[0]);
-      log(`NVIDIA Nemotron decision: ${result.decision} (confidence: ${result.confidence}%)`);
-      return { result, provider: 'NVIDIA-Nemotron' };
-    }
-    
-    throw new Error('Could not parse NVIDIA response');
-  } catch (error) {
-    log(`NVIDIA Nemotron failed: ${error.message}`);
-    return null;
   }
 }
 
@@ -276,16 +205,8 @@ async function resolveMarkets() {
         const options = market.options.map(o => o.name);
         let aiResponse = null;
         
-        // Use NVIDIA Nemotron for weather markets
-        if (market.category_name && market.category_name.toLowerCase() === 'weather') {
-          log('🌤️ Weather market detected - using NVIDIA Nemotron');
-          aiResponse = await resolveWithNvidiaWeather(market.question, options, market.deadline);
-        }
-        
-        // Fallback to ChatGPT if NVIDIA fails or not weather
-        if (!aiResponse) {
-          aiResponse = await resolveWithChatGPT(market.question, options, market.deadline);
-        }
+        // Try ChatGPT first
+        aiResponse = await resolveWithChatGPT(market.question, options, market.deadline);
         
         // Fallback to Anthropic if ChatGPT fails
         if (!aiResponse) {
@@ -293,7 +214,7 @@ async function resolveMarkets() {
         }
         
         if (!aiResponse) {
-          log(`❌ All AI providers failed for market #${market.id}`);
+          log(`❌ Both AI providers failed for market #${market.id}`);
           errorCount++;
           continue;
         }
