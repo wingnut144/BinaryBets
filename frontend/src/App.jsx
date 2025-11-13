@@ -423,7 +423,7 @@ function App() {
       )}
 
       <main className="container mx-auto px-4 py-8">
-        <div className="flex gap-6">
+        <div className="flex gap-6 items-start">
           <div className="flex-1">
             {view === 'markets' && <MarketsView loading={loading} markets={getFilteredMarkets()} getCategoryBadge={getCategoryBadge} user={user} setShowAuthModal={setShowAuthModal} setSelectedMarket={setSelectedMarket} setShowBetModal={setShowBetModal} shareToSocial={shareToSocial} showShareMenu={showShareMenu} setShowShareMenu={setShowShareMenu} token={token} loadMarkets={loadMarkets} />}
             {view === 'leaderboard' && <LeaderboardView user={user} />}
