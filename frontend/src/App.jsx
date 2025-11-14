@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import LoginView from './components/LoginView';
+import AuthModal from './components/AuthModal';
 import MarketView from './components/MarketView';
 import CreateMarketView from './components/CreateMarketView';
 import AdminView from './components/AdminView';
@@ -13,13 +13,14 @@ function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [user, setUser] = useState(null);
   const [view, setView] = useState('markets');
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [announcements, setAnnouncements] = useState([]);
 
   useEffect(() => {
     if (token) {
       fetchUser();
-      loadAnnouncements();
     }
+    loadAnnouncements();
   }, [token]);
 
   const fetchUser = async () => {
@@ -53,6 +54,7 @@ function App() {
   const handleLogin = (newToken) => {
     localStorage.setItem('token', newToken);
     setToken(newToken);
+    setShowAuthModal(false);
   };
 
   const handleLogout = () => {
@@ -62,9 +64,14 @@ function App() {
     setView('markets');
   };
 
-  if (!token) {
-    return <LoginView onLogin={handleLogin} />;
-  }
+  const requireAuth = (callback) => {
+    if (!token) {
+      setShowAuthModal(true);
+      return false;
+    }
+    callback();
+    return true;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
@@ -73,7 +80,8 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-4">
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent cursor-pointer"
+                  onClick={() => setView('markets')}>
                 🎲 Binary Bets
               </h1>
               {user && (
@@ -84,7 +92,7 @@ function App() {
               )}
             </div>
             <div className="flex items-center gap-4">
-              <NotificationBell token={token} />
+              {token && <NotificationBell token={token} />}
               <nav className="flex gap-4">
                 <button
                   onClick={() => setView('markets')}
@@ -96,84 +104,84 @@ function App() {
                 >
                   Markets
                 </button>
-                <button
-                  onClick={() => setView('create')}
-                  className={`px-4 py-2 rounded-lg font-semibold transition-all ${
-                    view === 'create'
-                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  Create Market
-                </button>
-                <button
-                  onClick={() => setView('profile')}
-                  className={`px-4 py-2 rounded-lg font-semibold transition-all ${
-                    view === 'profile'
-                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  Profile
-                </button>
-                {user?.is_admin && (
+                {token && (
+                  <>
+                    <button
+                      onClick={() => setView('create')}
+                      className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                        view === 'create'
+                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
+                          : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      Create Market
+                    </button>
+                    <button
+                      onClick={() => setView('profile')}
+                      className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                        view === 'profile'
+                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
+                          : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      Profile
+                    </button>
+                    {user?.is_admin && (
+                      <button
+                        onClick={() => setView('admin')}
+                        className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                          view === 'admin'
+                            ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
+                            : 'text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        Admin
+                      </button>
+                    )}
+                    <button
+                      onClick={handleLogout}
+                      className="px-4 py-2 rounded-lg font-semibold text-red-600 hover:bg-red-50 transition-all"
+                    >
+                      Logout
+                    </button>
+                  </>
+                )}
+                {!token && (
                   <button
-                    onClick={() => setView('admin')}
-                    className={`px-4 py-2 rounded-lg font-semibold transition-all ${
-                      view === 'admin'
-                        ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
-                        : 'text-gray-700 hover:bg-gray-100'
-                    }`}
+                    onClick={() => setShowAuthModal(true)}
+                    className="px-4 py-2 rounded-lg font-semibold bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg hover:shadow-xl transition-all"
                   >
-                    ⚙️ Admin
+                    Login / Register
                   </button>
                 )}
-                <button
-                  onClick={handleLogout}
-                  className="px-4 py-2 bg-red-100 text-red-600 rounded-lg font-semibold hover:bg-red-200 transition-all"
-                >
-                  Logout
-                </button>
               </nav>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Announcements */}
-      {announcements.length > 0 && (
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          {announcements.map((announcement) => (
-            <div
-              key={announcement.id}
-              className="bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg p-4 mb-4 shadow-lg"
-            >
-              <h3 className="font-bold text-lg">📢 {announcement.title}</h3>
-              <p className="mt-1">{announcement.content}</p>
-              <p className="text-xs mt-2 opacity-75">
-                {new Date(announcement.created_at).toLocaleDateString()}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* AI Resolution Info - Show on Markets and Create pages */}
-      {(view === 'markets' || view === 'create') && (
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <AIResolutionInfo />
-        </div>
-      )}
-
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {view === 'markets' && <MarketView token={token} user={user} refreshUser={fetchUser} />}
-        {view === 'create' && <CreateMarketView token={token} onMarketCreated={() => setView('markets')} />}
-        {view === 'admin' && user?.is_admin && (
-          <AdminView token={token} loadAnnouncements={loadAnnouncements} />
+        <AIResolutionInfo />
+        
+        {view === 'markets' && (
+          <MarketView token={token} user={user} refreshUser={fetchUser} requireAuth={requireAuth} />
         )}
-        {view === 'profile' && <ProfileView token={token} user={user} refreshUser={fetchUser} />}
+        {view === 'create' && token && (
+          <CreateMarketView token={token} user={user} refreshUser={fetchUser} onBack={() => setView('markets')} />
+        )}
+        {view === 'profile' && token && (
+          <ProfileView token={token} user={user} refreshUser={fetchUser} />
+        )}
+        {view === 'admin' && token && user?.is_admin && (
+          <AdminView token={token} user={user} />
+        )}
       </main>
+
+      {/* Auth Modal */}
+      {showAuthModal && (
+        <AuthModal onClose={() => setShowAuthModal(false)} onLogin={handleLogin} />
+      )}
     </div>
   );
 }
