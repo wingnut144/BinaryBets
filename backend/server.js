@@ -540,7 +540,7 @@ app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res)
       SELECT 
         m.*,
         c.name as category_name,
-        c.icon as category_icon,
+        as category_icon,
         u.username as creator_username,
         COUNT(DISTINCT b.id) as total_bets,
         COALESCE(SUM(b.amount), 0) as total_volume
@@ -568,7 +568,7 @@ app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res)
       query += ` WHERE ${conditions.join(' AND ')}`;
     }
     
-    query += ` GROUP BY m.id, c.name, c.icon, u.username ORDER BY m.created_at DESC`;
+    query += ` GROUP BY m.id, c.name, u.username ORDER BY m.created_at DESC`;
     
     const marketsResult = await pool.query(query, params);
     
