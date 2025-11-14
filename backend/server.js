@@ -203,7 +203,7 @@ async function recalculateOdds(client, marketId) {
       `SELECT COALESCE(SUM(b.amount), 0) as total
        FROM bets b
        JOIN options o ON b.option_id = o.id
-       WHERE o.market_id = $1 `,
+       WHERE o.market_id = $1 AND b.status = 'pending'`,
       [marketId]
     );
 
@@ -540,7 +540,7 @@ app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res)
       SELECT 
         m.*,
         c.name as category_name,
-        as category_icon,
+        c.icon as category_icon,
         u.username as creator_username,
         COUNT(DISTINCT b.id) as total_bets,
         COALESCE(SUM(b.amount), 0) as total_volume
@@ -548,7 +548,8 @@ app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res)
       LEFT JOIN categories c ON m.category_id = c.id
       LEFT JOIN users u ON m.created_by = u.id
       LEFT JOIN options o ON m.id = o.market_id
-      LEFT JOIN bets b ON o.id = b.option_id 
+      LEFT JOIN bets b ON o.id = b.option_id AND b.status = 'pending'
+    `;
     
     const conditions = [];
     const params = [];
@@ -567,7 +568,7 @@ app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res)
       query += ` WHERE ${conditions.join(' AND ')}`;
     }
     
-    query += ` GROUP BY m.id, c.name, u.username ORDER BY m.created_at DESC`;
+    query += ` GROUP BY m.id, c.name, c.icon, u.username ORDER BY m.created_at DESC`;
     
     const marketsResult = await pool.query(query, params);
     
@@ -578,7 +579,7 @@ app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res)
            COUNT(b.id) as bet_count,
            COALESCE(SUM(b.amount), 0) as total_bet
          FROM options o
-         LEFT JOIN bets b ON o.id = b.option_id 
+         LEFT JOIN bets b ON o.id = b.option_id AND b.status = 'pending'
          WHERE o.market_id = $1
          GROUP BY o.id
          ORDER BY o.name`,
@@ -936,7 +937,7 @@ app.get('/api/leaderboard', async (req, res) => {
          u.username,
          u.balance,
          COUNT(DISTINCT b.id) as total_bets,
-         COALESCE(SUM(CASE WHEN m.status = 'won' THEN b.potential_payout - b.amount ELSE 0 END), 0) as total_winnings
+         COALESCE(SUM(CASE WHEN b.status = 'won' THEN b.potential_payout - b.amount ELSE 0 END), 0) as total_winnings
        FROM users u
        LEFT JOIN bets b ON u.id = b.user_id
        WHERE u.id != 1
@@ -1493,63 +1494,6 @@ app.get('/api/admin/resolver-logs', authenticateToken, requireAdmin, async (req,
   }
 });
 
-
-
-// Login and Register endpoints (aliases for frontend compatibility)
-app.post('/api/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const result = await pool.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email]
-    );
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    const user = result.rows[0];
-    const validPassword = await bcrypt.compare(password, user.password_hash);
-    if (!validPassword) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    const token = jwt.sign(
-      { id: user.id, username: user.username, email: user.email, is_admin: user.is_admin },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-    res.json({ token, user: { id: user.id, username: user.username, email: user.email, balance: user.balance, is_admin: user.is_admin } });
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ error: 'Login failed' });
-  }
-});
-
-app.post('/api/register', async (req, res) => {
-  try {
-    const { email, username, password } = req.body;
-    const existingUser = await pool.query(
-      'SELECT * FROM users WHERE email = $1 OR username = $2',
-      [email, username]
-    );
-    if (existingUser.rows.length > 0) {
-      return res.status(400).json({ error: 'Email or username already exists' });
-    }
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const result = await pool.query(
-      'INSERT INTO users (email, username, password_hash) VALUES ($1, $2, $3) RETURNING id, username, email, balance, is_admin',
-      [email, username, hashedPassword]
-    );
-    const user = result.rows[0];
-    const token = jwt.sign(
-      { id: user.id, username: user.username, email: user.email, is_admin: user.is_admin },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-    res.json({ token, user });
-  } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ error: 'Registration failed' });
-  }
-});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
