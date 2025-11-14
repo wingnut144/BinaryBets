@@ -203,7 +203,7 @@ async function recalculateOdds(client, marketId) {
       `SELECT COALESCE(SUM(b.amount), 0) as total
        FROM bets b
        JOIN options o ON b.option_id = o.id
-       WHERE o.market_id = $1 AND m.status = 'pending'`,
+       WHERE o.market_id = $1 `,
       [marketId]
     );
 
@@ -548,8 +548,7 @@ app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res)
       LEFT JOIN categories c ON m.category_id = c.id
       LEFT JOIN users u ON m.created_by = u.id
       LEFT JOIN options o ON m.id = o.market_id
-      LEFT JOIN bets b ON o.id = b.option_id AND m.status = 'pending'
-    `;
+      LEFT JOIN bets b ON o.id = b.option_id 
     
     const conditions = [];
     const params = [];
@@ -579,7 +578,7 @@ app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res)
            COUNT(b.id) as bet_count,
            COALESCE(SUM(b.amount), 0) as total_bet
          FROM options o
-         LEFT JOIN bets b ON o.id = b.option_id AND m.status = 'pending'
+         LEFT JOIN bets b ON o.id = b.option_id 
          WHERE o.market_id = $1
          GROUP BY o.id
          ORDER BY o.name`,
