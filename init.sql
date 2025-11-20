@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS bets (
     potential_payout DECIMAL(10, 2) NOT NULL,
     payout DECIMAL(10, 2) DEFAULT 0,
     paid_out BOOLEAN DEFAULT FALSE,
+    status VARCHAR(20) DEFAULT 'pending',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
