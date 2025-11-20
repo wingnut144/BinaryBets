@@ -540,6 +540,7 @@ app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res)
       SELECT 
         m.*,
         c.name as category_name,
+        c.icon as category_icon,
         u.username as creator_username,
         COUNT(DISTINCT b.id) as total_bets,
         COALESCE(SUM(b.amount), 0) as total_volume
@@ -567,7 +568,7 @@ app.delete('/api/markets/:id', authenticateToken, requireAdmin, async (req, res)
       query += ` WHERE ${conditions.join(' AND ')}`;
     }
     
-    query += ` GROUP BY m.id, c.name, u.username ORDER BY m.created_at DESC`;
+    query += ` GROUP BY m.id, c.name, c.icon, u.username ORDER BY m.created_at DESC`;
     
     const marketsResult = await pool.query(query, params);
     
@@ -1168,6 +1169,8 @@ app.get('/api/announcements', async (req, res) => {
       `SELECT a.*, u.username as created_by_username
        FROM announcements a
        JOIN users u ON a.created_by = u.id
+       WHERE a.is_active = true 
+       AND (a.expires_at IS NULL OR a.expires_at > NOW())
        ORDER BY a.created_at DESC
        LIMIT 10`
     );
@@ -1379,14 +1382,11 @@ app.get('/api/ai-news', async (req, res) => {
 
 // SERVER START
 
-// Login and Register endpoints (for frontend compatibility)
+// Login and Register endpoints
 app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    const result = await pool.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email]
-    );
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     if (result.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -1410,10 +1410,7 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/register', async (req, res) => {
   try {
     const { email, username, password } = req.body;
-    const existingUser = await pool.query(
-      'SELECT * FROM users WHERE email = $1 OR username = $2',
-      [email, username]
-    );
+    const existingUser = await pool.query('SELECT * FROM users WHERE email = $1 OR username = $2', [email, username]);
     if (existingUser.rows.length > 0) {
       return res.status(400).json({ error: 'Email or username already exists' });
     }
