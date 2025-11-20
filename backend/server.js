@@ -1586,6 +1586,61 @@ app.post('/api/categories', authenticateToken, async (req, res) => {
   }
 });
 
+
+// Admin resolver logs (alias)
+app.get('/api/admin/resolver-logs', authenticateToken, async (req, res) => {
+  try {
+    if (!req.user.is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    
+    const result = await pool.query(`
+      SELECT 
+        rl.*,
+        m.question as market_question,
+        m.status as market_status
+      FROM resolver_logs rl
+      LEFT JOIN markets m ON rl.market_id = m.id
+      ORDER BY rl.created_at DESC
+      LIMIT 100
+    `);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching resolver logs:', error);
+    res.status(500).json({ error: 'Failed to fetch resolver logs' });
+  }
+});
+
+// Admin reports endpoint
+app.get('/api/admin/reports', authenticateToken, async (req, res) => {
+  try {
+    if (!req.user.is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    
+    // Return basic stats for now
+    const stats = {
+      total_users: await pool.query('SELECT COUNT(*) as count FROM users'),
+      total_markets: await pool.query('SELECT COUNT(*) as count FROM markets'),
+      total_bets: await pool.query('SELECT COUNT(*) as count FROM bets'),
+      active_markets: await pool.query("SELECT COUNT(*) as count FROM markets WHERE status = 'active'"),
+      resolved_markets: await pool.query("SELECT COUNT(*) as count FROM markets WHERE status = 'resolved'")
+    };
+    
+    res.json({
+      total_users: parseInt(stats.total_users.rows[0].count),
+      total_markets: parseInt(stats.total_markets.rows[0].count),
+      total_bets: parseInt(stats.total_bets.rows[0].count),
+      active_markets: parseInt(stats.active_markets.rows[0].count),
+      resolved_markets: parseInt(stats.resolved_markets.rows[0].count)
+    });
+  } catch (error) {
+    console.error('Error fetching reports:', error);
+    res.status(500).json({ error: 'Failed to fetch reports' });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
