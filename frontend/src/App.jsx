@@ -14,8 +14,6 @@ function App() {
   const [user, setUser] = useState(null);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
-  const [categories, setCategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState(null);
   const [view, setView] = useState('markets');
   const [announcements, setAnnouncements] = useState([]);
 
@@ -45,17 +43,6 @@ function App() {
   };
 
 
-  const fetchCategories = async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/categories/tree`);
-      if (response.ok) {
-        const data = await response.json();
-        setCategories(data);
-      }
-    } catch (error) {
-      console.error('Error fetching categories:', error);
-    }
-  };
   const fetchCategories = async () => {
     try {
       const response = await fetch(`${API_URL}/api/categories/tree`);
