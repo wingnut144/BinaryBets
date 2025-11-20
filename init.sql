@@ -75,6 +75,8 @@ CREATE TABLE IF NOT EXISTS announcements (
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
     created_by INTEGER REFERENCES users(id),
+    is_active BOOLEAN DEFAULT TRUE,
+    expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
