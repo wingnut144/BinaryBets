@@ -425,6 +425,55 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
 app.get('/api/markets', async (req, res) => {
 
 // Edit market (user can edit their own market, admin can edit any)
+
+// Get single market with options
+app.get('/api/markets/:id', async (req, res) => {
+  try {
+    const marketResult = await pool.query(
+      `SELECT m.*, 
+        c.name as category_name, 
+        c.icon as category_icon,
+        u.username as creator_username
+       FROM markets m
+       LEFT JOIN categories c ON m.category_id = c.id
+       LEFT JOIN users u ON m.created_by = u.id
+       WHERE m.id = $1`,
+      [req.params.id]
+    );
+
+    if (marketResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Market not found' });
+    }
+
+    const market = marketResult.rows[0];
+
+    // Get options with odds as numbers
+    const optionsResult = await pool.query(
+      `SELECT id, market_id, name, 
+        CAST(odds AS DOUBLE PRECISION) as odds,
+        created_at
+       FROM options 
+       WHERE market_id = $1 
+       ORDER BY id`,
+      [req.params.id]
+    );
+
+    market.options = optionsResult.rows;
+
+    // Get bet count
+    const betCountResult = await pool.query(
+      'SELECT COUNT(*) as count FROM bets WHERE market_id = $1',
+      [req.params.id]
+    );
+    market.total_bets = parseInt(betCountResult.rows[0].count);
+
+    res.json(market);
+  } catch (error) {
+    console.error('Error fetching market:', error);
+    res.status(500).json({ error: 'Failed to fetch market' });
+  }
+});
+
 app.put('/api/markets/:id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -749,7 +798,7 @@ app.get('/api/bets/my-bets', authenticateToken, async (req, res) => {
          m.question as market_question,
          m.deadline as market_deadline,
          o.name as option_name,
-         o.odds as current_odds,
+         CAST(o.odds AS FLOAT) as odds as current_odds,
          m.status as market_status
        FROM bets b
        JOIN markets m ON b.market_id = m.id
@@ -935,14 +984,14 @@ app.get('/api/leaderboard', async (req, res) => {
       `SELECT 
          u.id,
          u.username,
-         u.balance,
+         CAST(u.balance AS FLOAT) as balance,
          COUNT(DISTINCT b.id) as total_bets,
          COALESCE(SUM(CASE WHEN b.status = 'won' THEN b.potential_payout - b.amount ELSE 0 END), 0) as total_winnings
        FROM users u
        LEFT JOIN bets b ON u.id = b.user_id
        WHERE u.id != 1
-       GROUP BY u.id, u.username, u.balance
-       ORDER BY u.balance DESC
+       GROUP BY u.id, u.username, CAST(u.balance AS FLOAT) as balance
+       ORDER BY CAST(u.balance AS FLOAT) as balance DESC
        LIMIT 20`
     );
 
