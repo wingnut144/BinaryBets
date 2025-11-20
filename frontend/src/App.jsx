@@ -14,12 +14,15 @@ function App() {
   const [user, setUser] = useState(null);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [view, setView] = useState('markets');
   const [announcements, setAnnouncements] = useState([]);
 
   useEffect(() => {
     if (token) {
       fetchUser();
+    fetchCategories();
     fetchCategories();
       loadAnnouncements();
     }
@@ -41,6 +44,18 @@ function App() {
     }
   };
 
+
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/categories/tree`);
+      if (response.ok) {
+        const data = await response.json();
+        setCategories(data);
+      }
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    }
+  };
   const fetchCategories = async () => {
     try {
       const response = await fetch(`${API_URL}/api/categories/tree`);
@@ -183,6 +198,39 @@ function App() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8">
+          {/* Category Navigation */}
+          <div className="mb-6 bg-white rounded-lg shadow-sm p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xl">📁</span>
+              <h3 className="font-semibold text-gray-800">Categories</h3>
+            </div>
+            <div className="space-y-2">
+              <button onClick={() => setSelectedCategory(null)} className={`w-full text-left px-4 py-2 rounded-lg transition-all ${selectedCategory === null ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' : 'hover:bg-gray-100 text-gray-700'}`}>
+                All Markets
+              </button>
+              {categories.filter(cat => !cat.parent_id).map(topLevel => (
+                <div key={topLevel.id}>
+                  <button onClick={() => setSelectedCategory(topLevel.id)} className={`w-full text-left px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${selectedCategory === topLevel.id ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' : 'hover:bg-gray-100 text-gray-700'}`}>
+                    {topLevel.icon && <span>{topLevel.icon}</span>}
+                    <span>{topLevel.name}</span>
+                  </button>
+                  {categories.filter(cat => cat.parent_id === topLevel.id).map(subCat => (
+                    <div key={subCat.id} className="ml-4">
+                      <button onClick={() => setSelectedCategory(subCat.id)} className={`w-full text-left px-4 py-2 rounded-lg transition-all text-sm ${selectedCategory === subCat.id ? 'bg-purple-100 text-purple-800' : 'hover:bg-gray-50 text-gray-600'}`}>
+                        └─ {subCat.name}
+                      </button>
+                      {categories.filter(cat => cat.parent_id === subCat.id).map(subSubCat => (
+                        <button key={subSubCat.id} onClick={() => setSelectedCategory(subSubCat.id)} className={`w-full text-left px-4 py-2 rounded-lg transition-all text-sm ml-4 ${selectedCategory === subSubCat.id ? 'bg-purple-100 text-purple-800' : 'hover:bg-gray-50 text-gray-500'}`}>
+                          └─ {subSubCat.name}
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+
         {view === 'markets' && <MarketView token={token} user={user} refreshUser={fetchUser} />}
         {view === 'create' && <CreateMarketView token={token} onMarketCreated={() => setView('markets')} />}
         {view === 'admin' && user?.is_admin && (
