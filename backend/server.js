@@ -1433,7 +1433,7 @@ app.get('/api/categories/tree', async (req, res) => {
       )
       SELECT * FROM category_tree ORDER BY parent_id NULLS FIRST, name
     `);
-    res.json(result.rows);
+    res.json(result.rows || []);
   } catch (error) {
     console.error('Error fetching category tree:', error);
     res.status(500).json({ error: 'Failed to fetch categories' });
