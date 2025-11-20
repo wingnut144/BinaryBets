@@ -1478,6 +1478,65 @@ app.get('/api/notifications/unread/count', authenticateToken, async (req, res) =
   }
 });
 
+
+// Get all categories with hierarchy
+app.get('/api/categories/tree', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      WITH RECURSIVE category_tree AS (
+        SELECT id, name, icon, parent_id, level, 0 as depth
+        FROM categories
+        WHERE parent_id IS NULL
+        
+        UNION ALL
+        
+        SELECT c.id, c.name, c.icon, c.parent_id, c.level, ct.depth + 1
+        FROM categories c
+        JOIN category_tree ct ON c.parent_id = ct.id
+      )
+      SELECT * FROM category_tree ORDER BY parent_id NULLS FIRST, name
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching category tree:', error);
+    res.status(500).json({ error: 'Failed to fetch categories' });
+  }
+});
+
+// Create subcategory
+app.post('/api/categories', authenticateToken, async (req, res) => {
+  try {
+    if (!req.user.is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    
+    const { name, icon, parent_id } = req.body;
+    
+    // Check depth
+    if (parent_id) {
+      const parentResult = await pool.query(
+        'SELECT level FROM categories WHERE id = $1',
+        [parent_id]
+      );
+      if (parentResult.rows[0].level >= 2) {
+        return res.status(400).json({ error: 'Maximum category depth (3 levels) reached' });
+      }
+    }
+    
+    const level = parent_id ? (await pool.query('SELECT level FROM categories WHERE id = $1', [parent_id])).rows[0].level + 1 : 0;
+    
+    const result = await pool.query(
+      'INSERT INTO categories (name, icon, parent_id, level) VALUES ($1, $2, $3, $4) RETURNING *',
+      [name, icon || null, parent_id || null, level]
+    );
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating category:', error);
+    res.status(500).json({ error: 'Failed to create category' });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
