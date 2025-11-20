@@ -1,4 +1,66 @@
-function AuthModal({ authMode, setAuthMode, setShowAuthModal, loginForm, setLoginForm, registerForm, setRegisterForm, handleLogin, handleRegister }) {
+import { useState } from 'react';
+
+const API_URL = 'https://api.binary-bets.com';
+
+function AuthModal({ onClose, onLogin }) {
+  const [authMode, setAuthMode] = useState('login');
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [registerForm, setRegisterForm] = useState({ username: '', email: '', password: '' });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${API_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(loginForm)
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        onLogin(data.token, data.user);
+      } else {
+        setError(data.error || 'Login failed');
+      }
+    } catch (error) {
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${API_URL}/api/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(registerForm)
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        onLogin(data.token, data.user);
+      } else {
+        setError(data.error || 'Registration failed');
+      }
+    } catch (error) {
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
@@ -6,7 +68,7 @@ function AuthModal({ authMode, setAuthMode, setShowAuthModal, loginForm, setLogi
           <h2 className="text-2xl font-bold text-gray-800">
             {authMode === 'login' ? 'Login' : 'Register'}
           </h2>
-          <button onClick={() => setShowAuthModal(false)} className="text-gray-500 hover:text-gray-700">
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -36,6 +98,12 @@ function AuthModal({ authMode, setAuthMode, setShowAuthModal, loginForm, setLogi
           </button>
         </div>
 
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            {error}
+          </div>
+        )}
+
         {authMode === 'login' ? (
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
@@ -46,6 +114,7 @@ function AuthModal({ authMode, setAuthMode, setShowAuthModal, loginForm, setLogi
                 value={loginForm.email}
                 onChange={(e) => setLoginForm({...loginForm, email: e.target.value})}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600"
+                disabled={loading}
               />
             </div>
             <div>
@@ -56,13 +125,15 @@ function AuthModal({ authMode, setAuthMode, setShowAuthModal, loginForm, setLogi
                 value={loginForm.password}
                 onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600"
+                disabled={loading}
               />
             </div>
             <button
               type="submit"
-              className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all"
+              disabled={loading}
+              className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50"
             >
-              Login
+              {loading ? 'Logging in...' : 'Login'}
             </button>
           </form>
         ) : (
@@ -75,6 +146,7 @@ function AuthModal({ authMode, setAuthMode, setShowAuthModal, loginForm, setLogi
                 value={registerForm.username}
                 onChange={(e) => setRegisterForm({...registerForm, username: e.target.value})}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600"
+                disabled={loading}
               />
             </div>
             <div>
@@ -85,6 +157,7 @@ function AuthModal({ authMode, setAuthMode, setShowAuthModal, loginForm, setLogi
                 value={registerForm.email}
                 onChange={(e) => setRegisterForm({...registerForm, email: e.target.value})}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600"
+                disabled={loading}
               />
             </div>
             <div>
@@ -95,13 +168,15 @@ function AuthModal({ authMode, setAuthMode, setShowAuthModal, loginForm, setLogi
                 value={registerForm.password}
                 onChange={(e) => setRegisterForm({...registerForm, password: e.target.value})}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600"
+                disabled={loading}
               />
             </div>
             <button
               type="submit"
-              className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all"
+              disabled={loading}
+              className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50"
             >
-              Register
+              {loading ? 'Registering...' : 'Register'}
             </button>
           </form>
         )}
