@@ -112,66 +112,14 @@ function App() {
                     <button
                       onClick={() => setView('create')}
                       className={`px-4 py-2 rounded-lg font-semibold transition-all ${
-                        view === 'create'
-                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
-                          : 'text-gray-700 hover:bg-gray-100'
-                      }`}
-                    >
-                      Create Market
-                    </button>
-                    <button
-                      onClick={() => setView('profile')}
-                      className={`px-4 py-2 rounded-lg font-semibold transition-all ${
-                        view === 'profile'
-                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
-                          : 'text-gray-700 hover:bg-gray-100'
-                      }`}
-                    >
-                      Profile
-                    </button>
-                    {user?.is_admin && (
-                      <button
-                        onClick={() => setView('admin')}
-                        className={`px-4 py-2 rounded-lg font-semibold transition-all ${
-                          view === 'admin'
-                            ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
-                            : 'text-gray-700 hover:bg-gray-100'
-                        }`}
-                      >
-                        Admin
-                      </button>
-                    )}
-                    <button
-                      onClick={handleLogout}
-                      className="px-4 py-2 rounded-lg font-semibold text-red-600 hover:bg-red-50 transition-all"
-                    >
-                      Logout
-                    </button>
-                  </>
-                )}
-                {!token && (
-                  <button
-                    onClick={() => setShowAuthModal(true)}
-                    className="px-4 py-2 rounded-lg font-semibold bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg hover:shadow-xl transition-all"
-                  >
-                    Login / Register
-                  </button>
-                )}
-              </nav>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <AIResolutionInfo />
-        
-        {view === 'markets' && (
-          <MarketView token={token} user={user} refreshUser={fetchUser} requireAuth={requireAuth} />
-        )}
         {view === 'create' && token && (
-          <CreateMarketView token={token} user={user} refreshUser={fetchUser} onBack={() => setView('markets')} />
+          <CreateMarketView 
+            token={token} 
+            user={user} 
+            refreshUser={fetchUser} 
+            onMarketCreated={() => setView('markets')} 
+          />
+        )}
         )}
         {view === 'profile' && token && (
           <ProfileView token={token} user={user} refreshUser={fetchUser} />
