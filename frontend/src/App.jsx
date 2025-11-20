@@ -184,8 +184,9 @@ function App() {
         <AIResolutionInfo />
         
         {view === 'markets' && (
-          {/* Category Navigation */}
-          <div className="mb-6 bg-white rounded-lg shadow-sm p-4">
+          <>
+            {/* Category Navigation */}
+            <div className="mb-6 bg-white rounded-lg shadow-sm p-4">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-xl">📁</span>
               <h3 className="font-semibold text-gray-800">Categories</h3>
