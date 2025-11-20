@@ -88,7 +88,6 @@ function MarketView({ token, user, refreshUser, requireAuth }) {
 
   
   // Filter markets by selected category
-  const filteredMarkets = selectedCategory 
     ? markets.filter(m => m.category_id === selectedCategory)
     : markets;
 
