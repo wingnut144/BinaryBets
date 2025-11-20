@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import './App.css';
 import CategoryManagement from './components/CategoryManagement';
 import CreateMarket from './CreateMarket';
 
