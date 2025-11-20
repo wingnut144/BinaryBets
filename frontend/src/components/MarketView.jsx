@@ -58,12 +58,12 @@ function MarketView({ token, user }) {
             </span>
           </div>
 
-          
-            href={`/market/${market.id}`}
-            className="block w-full text-center bg-gradient-to-r from-purple-600 to-pink-600 text-white py-2 rounded-lg font-semibold hover:shadow-lg transition-all"
+          <button
+            onClick={() => window.location.href = `/market/${market.id}`}
+            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-2 rounded-lg font-semibold hover:shadow-lg transition-all"
           >
             View Market
-          </a>
+          </button>
         </div>
       ))}
     </div>
