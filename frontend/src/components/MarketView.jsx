@@ -1,127 +1,72 @@
 import { useState, useEffect } from 'react';
-import MarketsView from './MarketsView';
-import BetModal from './BetModal';
 
 const API_URL = 'https://api.binary-bets.com';
 
-function MarketView({ token, user, refreshUser, requireAuth }) {
+function MarketView({ token, user }) {
   const [markets, setMarkets] = useState([]);
-  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedMarket, setSelectedMarket] = useState(null);
-  const [showBetModal, setShowBetModal] = useState(false);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [showShareMenu, setShowShareMenu] = useState(null);
 
   useEffect(() => {
-    loadMarkets();
-    loadCategories();
+    fetchMarkets();
+    const interval = setInterval(fetchMarkets, 30000);
+    return () => clearInterval(interval);
   }, []);
 
-  const loadMarkets = async () => {
+  const fetchMarkets = async () => {
     try {
-      setLoading(true);
       const response = await fetch(`${API_URL}/api/markets`);
       if (response.ok) {
         const data = await response.json();
         setMarkets(data);
       }
     } catch (error) {
-      console.error('Error loading markets:', error);
+      console.error('Error fetching markets:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadCategories = async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/categories`);
-      if (response.ok) {
-        const data = await response.json();
-        setCategories(data);
-      }
-    } catch (error) {
-      console.error('Error loading categories:', error);
-    }
-  };
+  if (loading) {
+    return <div className="text-center py-8">Loading markets...</div>;
+  }
 
-  const getCategoryBadge = (categoryId) => {
-    const category = categories.find(c => c.id === categoryId);
-    if (!category) return { name: 'Unknown', icon: '❓', color: 'gray' };
-    
-    const colors = {
-      Politics: 'blue',
-      Sports: 'green',
-      Technology: 'purple',
-      Economics: 'yellow',
-      Entertainment: 'pink',
-      Science: 'indigo',
-      Weather: 'cyan',
-      Crypto: 'orange',
-      Business: 'red',
-      Other: 'gray'
-    };
-    
-    return {
-      name: category.name,
-      icon: category.icon || '❓',
-      color: colors[category.name] || 'gray'
-    };
-  };
-
-  const shareToSocial = (platform, market) => {
-    const url = `https://binary-bets.com`;
-    const text = `Check out this prediction market: ${market.question}`;
-    
-    const shareUrls = {
-      twitter: `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
-      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`,
-      linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`
-    };
-    
-    if (shareUrls[platform]) {
-      window.open(shareUrls[platform], '_blank', 'width=600,height=400');
-    }
-    
-    setShowShareMenu(null);
-  };
-
-  
-  // Filter markets by selected category
-    ? markets.filter(m => m.category_id === selectedCategory)
-    : markets;
+  if (markets.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-gray-600 text-lg">No active bets at the moment. Be the first to create one!</p>
+      </div>
+    );
+  }
 
   return (
-    <>
-      <MarketsView
-        loading={loading}
-        markets={markets}
-        getCategoryBadge={getCategoryBadge}
-        user={user}
-        setShowAuthModal={setShowAuthModal}
-        setSelectedMarket={setSelectedMarket}
-        setShowBetModal={setShowBetModal}
-        shareToSocial={shareToSocial}
-        showShareMenu={showShareMenu}
-        setShowShareMenu={setShowShareMenu}
-        token={token}
-        loadMarkets={loadMarkets}
-      />
-      
-      {showBetModal && selectedMarket && (
-        <BetModal
-          market={selectedMarket}
-          onClose={() => {
-            setShowBetModal(false);
-            setSelectedMarket(null);
-          }}
-          token={token}
-          user={user}
-          refreshUser={refreshUser}
-          loadMarkets={loadMarkets}
-        />
-      )}
-    </>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {markets.map(market => (
+        <div key={market.id} className="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-shadow">
+          <div className="mb-4">
+            <h3 className="text-lg font-bold text-gray-800 mb-2">{market.question}</h3>
+            {market.description && (
+              <p className="text-sm text-gray-600">{market.description}</p>
+            )}
+          </div>
+          
+          <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
+            <span>📅 {new Date(market.deadline).toLocaleDateString()}</span>
+            <span className={`px-2 py-1 rounded ${
+              market.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+            }`}>
+              {market.status}
+            </span>
+          </div>
+
+          
+            href={`/market/${market.id}`}
+            className="block w-full text-center bg-gradient-to-r from-purple-600 to-pink-600 text-white py-2 rounded-lg font-semibold hover:shadow-lg transition-all"
+          >
+            View Market
+          </a>
+        </div>
+      ))}
+    </div>
   );
 }
 
