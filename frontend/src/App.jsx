@@ -43,7 +43,7 @@ function App() {
 
   const fetchCategories = async () => {
     try {
-      const response = await fetch(\`\${API_URL}/api/categories/tree\`);
+      const response = await fetch(`${API_URL}/api/categories/tree`);
       if (response.ok) {
         const data = await response.json();
         setCategories(data);
