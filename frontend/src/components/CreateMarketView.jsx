@@ -40,7 +40,7 @@ function CreateMarketView({ token, onMarketCreated }) {
       category_id: categoryId || null,
       image_url: imageUrl || null,
       is_multi_choice: isMultiChoice,
-      options: isMultiChoice ? options.filter(o => o.trim()) : null,
+      options: isMultiChoice ? options.filter(o => o.trim()) : ['Yes', 'No'],
       skip_ai_resolution: skipAiResolution,
       use_ai_odds: useAiOdds
     };
