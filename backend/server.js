@@ -1168,8 +1168,6 @@ app.get('/api/announcements', async (req, res) => {
       `SELECT a.*, u.username as created_by_username
        FROM announcements a
        JOIN users u ON a.created_by = u.id
-       WHERE a.is_active = true 
-       AND (a.expires_at IS NULL OR a.expires_at > NOW())
        ORDER BY a.created_at DESC
        LIMIT 10`
     );
