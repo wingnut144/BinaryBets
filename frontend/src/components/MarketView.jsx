@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 
 const API_URL = 'https://api.binary-bets.com';
 
-function MarketView({ token, user }) {
+function MarketView({ token, user, selectedCategory }) {
   const [markets, setMarkets] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -26,23 +26,34 @@ function MarketView({ token, user }) {
     }
   };
 
+  // Filter by selected category
+  const filteredMarkets = selectedCategory 
+    ? markets.filter(m => m.category_id === selectedCategory)
+    : markets;
+
   if (loading) {
     return <div className="text-center py-8">Loading markets...</div>;
   }
 
-  if (markets.length === 0) {
+  if (filteredMarkets.length === 0) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-600 text-lg">No active bets at the moment. Be the first to create one!</p>
+        <p className="text-gray-600 text-lg">
+          {selectedCategory ? 'No markets in this category yet.' : 'No active bets at the moment. Be the first to create one!'}
+        </p>
       </div>
     );
   }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {markets.map(market => (
+      {filteredMarkets.map(market => (
         <div key={market.id} className="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-shadow">
           <div className="mb-4">
+            <div className="flex items-center gap-2 mb-2">
+              {market.category_icon && <span>{market.category_icon}</span>}
+              <span className="text-xs text-purple-600 font-semibold">{market.category_name}</span>
+            </div>
             <h3 className="text-lg font-bold text-gray-800 mb-2">{market.question}</h3>
             {market.description && (
               <p className="text-sm text-gray-600">{market.description}</p>

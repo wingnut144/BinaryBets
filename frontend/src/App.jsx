@@ -12,12 +12,15 @@ const API_URL = 'https://api.binary-bets.com';
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [user, setUser] = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [view, setView] = useState('markets');
   const [announcements, setAnnouncements] = useState([]);
 
   useEffect(() => {
     if (token) {
       fetchUser();
+    fetchCategories();
       loadAnnouncements();
     }
   }, [token]);
@@ -37,6 +40,19 @@ function App() {
       console.error('Error fetching user:', error);
     }
   };
+
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch(\`\${API_URL}/api/categories/tree\`);
+      if (response.ok) {
+        const data = await response.json();
+        setCategories(data);
+      }
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    }
+  };
+
 
   const loadAnnouncements = async () => {
     try {
@@ -161,7 +177,7 @@ function App() {
       {/* AI Resolution Info - Show on Markets and Create pages */}
       {(view === 'markets' || view === 'create') && (
         <div className="max-w-7xl mx-auto px-4 py-4">
-          <AIResolutionInfo />
+          
         </div>
       )}
 
