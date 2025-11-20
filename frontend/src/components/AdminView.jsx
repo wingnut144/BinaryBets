@@ -7,6 +7,8 @@ function AdminView({ token, loadAnnouncements }) {
   const [announcements, setAnnouncements] = useState([]);
   const [reports, setReports] = useState([]);
   const [resolverLogs, setResolverLogs] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [newCategory, setNewCategory] = useState({ name: '', icon: '', parent_id: null });
   const [loading, setLoading] = useState(false);
   const [newAnnouncement, setNewAnnouncement] = useState({
     title: '',
@@ -148,6 +150,16 @@ function AdminView({ token, loadAnnouncements }) {
 
       <div className="flex gap-4 mb-6">
         <button
+        onClick={() => setActiveTab('categories')}
+        className={`px-6 py-3 rounded-lg font-semibold transition-all ${
+          activeTab === 'categories'
+            ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
+            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+        }`}
+      >
+        📁 Categories
+      </button>
+      <button
           onClick={() => setActiveTab('announcements')}
           className={`px-6 py-3 rounded-lg font-semibold transition-all ${
             activeTab === 'announcements'
