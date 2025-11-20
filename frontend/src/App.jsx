@@ -185,37 +185,65 @@ function App() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8">
-          {/* Category Navigation */}
+          {/* Category Navigation - Horizontal */}
           <div className="mb-6 bg-white rounded-lg shadow-sm p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-xl">📁</span>
-              <h3 className="font-semibold text-gray-800">Categories</h3>
-            </div>
-            <div className="space-y-2">
-              <button onClick={() => setSelectedCategory(null)} className={`w-full text-left px-4 py-2 rounded-lg transition-all ${selectedCategory === null ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' : 'hover:bg-gray-100 text-gray-700'}`}>
+            {/* Top Level Categories - Horizontal */}
+            <div className="flex flex-wrap gap-2 mb-3">
+              <button 
+                onClick={() => setSelectedCategory(null)} 
+                className={`px-4 py-2 rounded-lg transition-all ${selectedCategory === null ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+              >
                 All Markets
               </button>
               {categories.filter(cat => !cat.parent_id).map(topLevel => (
-                <div key={topLevel.id}>
-                  <button onClick={() => setSelectedCategory(topLevel.id)} className={`w-full text-left px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${selectedCategory === topLevel.id ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' : 'hover:bg-gray-100 text-gray-700'}`}>
-                    {topLevel.icon && <span>{topLevel.icon}</span>}
-                    <span>{topLevel.name}</span>
-                  </button>
-                  {categories.filter(cat => cat.parent_id === topLevel.id).map(subCat => (
-                    <div key={subCat.id} className="ml-4">
-                      <button onClick={() => setSelectedCategory(subCat.id)} className={`w-full text-left px-4 py-2 rounded-lg transition-all text-sm ${selectedCategory === subCat.id ? 'bg-purple-100 text-purple-800' : 'hover:bg-gray-50 text-gray-600'}`}>
-                        └─ {subCat.name}
-                      </button>
-                      {categories.filter(cat => cat.parent_id === subCat.id).map(subSubCat => (
-                        <button key={subSubCat.id} onClick={() => setSelectedCategory(subSubCat.id)} className={`w-full text-left px-4 py-2 rounded-lg transition-all text-sm ml-4 ${selectedCategory === subSubCat.id ? 'bg-purple-100 text-purple-800' : 'hover:bg-gray-50 text-gray-500'}`}>
-                          └─ {subSubCat.name}
-                        </button>
-                      ))}
-                    </div>
-                  ))}
-                </div>
+                <button 
+                  key={topLevel.id}
+                  onClick={() => setSelectedCategory(topLevel.id)} 
+                  className={`px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${selectedCategory === topLevel.id ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+                >
+                  {topLevel.icon && <span>{topLevel.icon}</span>}
+                  <span>{topLevel.name}</span>
+                </button>
               ))}
             </div>
+            
+            {/* Level 2 Subcategories - Show for selected top-level category */}
+            {categories.filter(cat => !cat.parent_id && (selectedCategory === cat.id || categories.some(sub => sub.parent_id === cat.id && selectedCategory === sub.id) || categories.some(sub => sub.parent_id === cat.id && categories.some(subsub => subsub.parent_id === sub.id && selectedCategory === subsub.id)))).map(topLevel => {
+              const subCats = categories.filter(cat => cat.parent_id === topLevel.id);
+              if (subCats.length === 0) return null;
+              return (
+                <div key={`sub-${topLevel.id}`} className="flex flex-wrap gap-2 mb-2 pl-4 border-l-2 border-purple-200">
+                  {subCats.map(subCat => (
+                    <button 
+                      key={subCat.id}
+                      onClick={() => setSelectedCategory(subCat.id)} 
+                      className={`px-3 py-1 rounded text-sm transition-all ${selectedCategory === subCat.id ? 'bg-purple-200 text-purple-900 font-semibold' : 'bg-gray-50 hover:bg-gray-100 text-gray-600'}`}
+                    >
+                      {subCat.icon} {subCat.name}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+            
+            {/* Level 3 Sub-subcategories - Show for selected level 2 category */}
+            {categories.filter(cat => cat.parent_id && selectedCategory === cat.id).map(subCat => {
+              const subSubCats = categories.filter(cat => cat.parent_id === subCat.id);
+              if (subSubCats.length === 0) return null;
+              return (
+                <div key={`subsub-${subCat.id}`} className="flex flex-wrap gap-2 pl-8 border-l-2 border-purple-100">
+                  {subSubCats.map(subSubCat => (
+                    <button 
+                      key={subSubCat.id}
+                      onClick={() => setSelectedCategory(subSubCat.id)} 
+                      className={`px-3 py-1 rounded text-xs transition-all ${selectedCategory === subSubCat.id ? 'bg-purple-100 text-purple-900 font-semibold' : 'bg-gray-50 hover:bg-gray-100 text-gray-500'}`}
+                    >
+                      {subSubCat.icon} {subSubCat.name}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
           </div>
 
         {view === 'markets' && <MarketView token={token} user={user} refreshUser={fetchUser} />}
