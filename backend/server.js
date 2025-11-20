@@ -351,7 +351,7 @@ app.get('/api/categories', async (req, res) => {
 app.post('/api/markets', authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { question, category_id, deadline, options, useAiOdds } = req.body;
+    const { question, category_id, deadline, options, use_ai_odds } = req.body;
     const userId = req.user.id;
 
     if (!question || !category_id || !deadline) {
@@ -389,7 +389,7 @@ app.post('/api/markets', authenticateToken, async (req, res) => {
     const market = marketResult.rows[0];
 
     let oddsArray;
-    if (useAiOdds) {
+    if (use_ai_odds) {
       console.log('🤖 Using AI to generate odds...');
       oddsArray = await generateAIOdds(question, options);
     } else {
