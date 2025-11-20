@@ -1641,6 +1641,55 @@ app.get('/api/admin/reports', authenticateToken, async (req, res) => {
   }
 });
 
+
+
+// Get announcements
+app.get('/api/announcements', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM announcements ORDER BY created_at DESC LIMIT 10'
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching announcements:', error);
+    res.json([]);
+  }
+});
+
+// Create announcement (admin only)
+app.post('/api/announcements', authenticateToken, async (req, res) => {
+  try {
+    if (!req.user.is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    
+    const { title, message } = req.body;
+    const result = await pool.query(
+      'INSERT INTO announcements (title, message) VALUES ($1, $2) RETURNING *',
+      [title, message]
+    );
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating announcement:', error);
+    res.status(500).json({ error: 'Failed to create announcement' });
+  }
+});
+
+// Delete announcement (admin only)
+app.delete('/api/announcements/:id', authenticateToken, async (req, res) => {
+  try {
+    if (!req.user.is_admin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    
+    await pool.query('DELETE FROM announcements WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting announcement:', error);
+    res.status(500).json({ error: 'Failed to delete announcement' });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
