@@ -51,9 +51,12 @@ function App() {
     }
   };
 
-  const handleLogin = (newToken) => {
+  const handleLogin = (newToken, userData) => {
     localStorage.setItem('token', newToken);
     setToken(newToken);
+    if (userData) {
+      setUser(userData);
+    }
     setShowAuthModal(false);
   };
 
@@ -87,7 +90,7 @@ function App() {
               {user && (
                 <div className="text-sm">
                   <span className="text-gray-600">Balance:</span>
-                  <span className="ml-2 font-bold text-green-600">${user.balance?.toFixed(2)}</span>
+                  <span className="ml-2 font-bold text-green-600">${parseFloat(user.balance).toFixed(2)}</span>
                 </div>
               )}
             </div>
