@@ -184,78 +184,75 @@ function App() {
         <AIResolutionInfo />
         
         {view === 'markets' && (
-          
-      {/* Category Navigation */}
-      <div className="mb-6 bg-white rounded-lg shadow-sm p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-xl">📁</span>
-          <h3 className="font-semibold text-gray-800">Categories</h3>
-        </div>
-        <div className="space-y-2">
-          <button
-            onClick={() => setSelectedCategory(null)}
-            className={`w-full text-left px-4 py-2 rounded-lg transition-all ${
-              selectedCategory === null 
-                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' 
-                : 'hover:bg-gray-100 text-gray-700'
-            }`}
-          >
-            All Markets
-          </button>
-          {categories
-            .filter(cat => cat.parent_id === null)
-            .map(topLevel => (
-              <div key={topLevel.id}>
-                <button
-                  onClick={() => setSelectedCategory(topLevel.id)}
-                  className={`w-full text-left px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${
-                    selectedCategory === topLevel.id
-                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
-                      : 'hover:bg-gray-100 text-gray-700'
-                  }`}
-                >
-                  {topLevel.icon && <span>{topLevel.icon}</span>}
-                  <span>{topLevel.name}</span>
-                </button>
-                {/* Level 2 subcategories */}
-                {categories
-                  .filter(cat => cat.parent_id === topLevel.id)
-                  .map(subCat => (
-                    <div key={subCat.id} className="ml-4">
-                      <button
-                        onClick={() => setSelectedCategory(subCat.id)}
-                        className={`w-full text-left px-4 py-2 rounded-lg transition-all text-sm ${
-                          selectedCategory === subCat.id
-                            ? 'bg-purple-100 text-purple-800'
-                            : 'hover:bg-gray-50 text-gray-600'
-                        }`}
-                      >
-                        └─ {subCat.name}
-                      </button>
-                      {/* Level 3 subcategories */}
-                      {categories
-                        .filter(cat => cat.parent_id === subCat.id)
-                        .map(subSubCat => (
+          {/* Category Navigation */}
+          <div className="mb-6 bg-white rounded-lg shadow-sm p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xl">📁</span>
+              <h3 className="font-semibold text-gray-800">Categories</h3>
+            </div>
+            <div className="space-y-2">
+              <button
+                onClick={() => setSelectedCategory(null)}
+                className={`w-full text-left px-4 py-2 rounded-lg transition-all ${
+                  selectedCategory === null 
+                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' 
+                    : 'hover:bg-gray-100 text-gray-700'
+                }`}
+              >
+                All Markets
+              </button>
+              {categories
+                .filter(cat => !cat.parent_id)
+                .map(topLevel => (
+                  <div key={topLevel.id}>
+                    <button
+                      onClick={() => setSelectedCategory(topLevel.id)}
+                      className={`w-full text-left px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${
+                        selectedCategory === topLevel.id
+                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
+                          : 'hover:bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      {topLevel.icon && <span>{topLevel.icon}</span>}
+                      <span>{topLevel.name}</span>
+                    </button>
+                    {categories
+                      .filter(cat => cat.parent_id === topLevel.id)
+                      .map(subCat => (
+                        <div key={subCat.id} className="ml-4">
                           <button
-                            key={subSubCat.id}
-                            onClick={() => setSelectedCategory(subSubCat.id)}
-                            className={`w-full text-left px-4 py-2 rounded-lg transition-all text-sm ml-4 ${
-                              selectedCategory === subSubCat.id
+                            onClick={() => setSelectedCategory(subCat.id)}
+                            className={`w-full text-left px-4 py-2 rounded-lg transition-all text-sm ${
+                              selectedCategory === subCat.id
                                 ? 'bg-purple-100 text-purple-800'
-                                : 'hover:bg-gray-50 text-gray-500'
+                                : 'hover:bg-gray-50 text-gray-600'
                             }`}
                           >
-                            └─ {subSubCat.name}
+                            └─ {subCat.name}
                           </button>
-                        ))}
-                    </div>
-                  ))}
-              </div>
-            ))}
-        </div>
-      </div>
+                          {categories
+                            .filter(cat => cat.parent_id === subCat.id)
+                            .map(subSubCat => (
+                              <button
+                                key={subSubCat.id}
+                                onClick={() => setSelectedCategory(subSubCat.id)}
+                                className={`w-full text-left px-4 py-2 rounded-lg transition-all text-sm ml-4 ${
+                                  selectedCategory === subSubCat.id
+                                    ? 'bg-purple-100 text-purple-800'
+                                    : 'hover:bg-gray-50 text-gray-500'
+                                }`}
+                              >
+                                └─ {subSubCat.name}
+                              </button>
+                            ))}
+                        </div>
+                      ))}
+                  </div>
+                ))}
+            </div>
+          </div>
 
-      <MarketView selectedCategory={selectedCategory} token={token} user={user} refreshUser={fetchUser} requireAuth={requireAuth} />
+          <MarketView selectedCategory={selectedCategory} token={token} user={user} />
         )}
         {view === 'create' && token && (
           <CreateMarketView token={token} user={user} refreshUser={fetchUser} onMarketCreated={() => setView('markets')} />
