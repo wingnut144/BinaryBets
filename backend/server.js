@@ -1486,7 +1486,7 @@ app.post('/api/register', async (req, res) => {
 app.get('/api/user', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, username, email, balance, is_admin FROM users WHERE id = $1',
+      'SELECT id, username, email, CAST(balance AS DOUBLE PRECISION) as balance, is_admin FROM users WHERE id = $1',
       [req.user.id]
     );
     if (result.rows.length === 0) {
