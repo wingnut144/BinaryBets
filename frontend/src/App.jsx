@@ -105,7 +105,7 @@ function App() {
               <NotificationBell token={token} />
               <nav className="flex gap-4">
                 <button
-                  onClick={() => navigateTo('markets')}
+                  onClick={() => setView('markets')}
                   className={`px-4 py-2 rounded-lg font-semibold transition-all ${
                     view === 'markets'
                       ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
@@ -115,7 +115,7 @@ function App() {
                   Markets
                 </button>
                 <button
-                  onClick={() => navigateTo('create')}
+                  onClick={() => setView('create')}
                   className={`px-4 py-2 rounded-lg font-semibold transition-all ${
                     view === 'create'
                       ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
@@ -125,7 +125,7 @@ function App() {
                   Create Market
                 </button>
                 <button
-                  onClick={() => navigateTo('profile')}
+                  onClick={() => setView('profile')}
                   className={`px-4 py-2 rounded-lg font-semibold transition-all ${
                     view === 'profile'
                       ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
@@ -136,7 +136,7 @@ function App() {
                 </button>
                 {user?.is_admin && (
                   <button
-                    onClick={() => navigateTo('admin')}
+                    onClick={() => setView('admin')}
                     className={`px-4 py-2 rounded-lg font-semibold transition-all ${
                       view === 'admin'
                         ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
