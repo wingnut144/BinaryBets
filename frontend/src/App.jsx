@@ -1,31 +1,33 @@
 import { useState, useEffect } from 'react';
-import LoginView from './components/LoginView';
+import AuthModal from './components/AuthModal';
 import MarketView from './components/MarketView';
 import MarketDetailView from './components/MarketDetailView';
 import CreateMarketView from './components/CreateMarketView';
-import AdminView from './components/AdminView';
+import MyBetsView from './components/MyBetsView';
 import ProfileView from './components/ProfileView';
+import AdminView from './components/AdminView';
+import LeaderboardView from './components/LeaderboardView';
 import NotificationBell from './components/NotificationBell';
-import AIResolutionInfo from './components/AIResolutionInfo';
+import AINewsWidget from './components/AINewsWidget';
+import AnnouncementsWidget from './components/AnnouncementsWidget';
 
 const API_URL = 'https://api.binary-bets.com';
 
 function App() {
-  const [token, setToken] = useState(localStorage.getItem('token'));
-  const [user, setUser] = useState(null);
-  const [categories, setCategories] = useState([]);
+  const [view, setView] = useState('markets');
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedMarketId, setSelectedMarketId] = useState(null);
-  const [view, setView] = useState('markets');
-  const [announcements, setAnnouncements] = useState([]);
+  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [user, setUser] = useState(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState('login');
+  const [categories, setCategories] = useState([]);
 
   useEffect(() => {
     if (token) {
       fetchUser();
-    fetchCategories();
-    fetchCategories();
-      loadAnnouncements();
     }
+    fetchCategories();
   }, [token]);
 
   const fetchUser = async () => {
@@ -37,42 +39,31 @@ function App() {
         const data = await response.json();
         setUser(data);
       } else {
-        handleLogout();
+        localStorage.removeItem('token');
+        setToken(null);
       }
     } catch (error) {
       console.error('Error fetching user:', error);
     }
   };
 
-
   const fetchCategories = async () => {
     try {
       const response = await fetch(`${API_URL}/api/categories/tree`);
       if (response.ok) {
         const data = await response.json();
-        setCategories(data);
+        setCategories(Array.isArray(data) ? data : []);
       }
     } catch (error) {
       console.error('Error fetching categories:', error);
     }
   };
 
-
-  const loadAnnouncements = async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/announcements`);
-      if (response.ok) {
-        const data = await response.json();
-        setAnnouncements(data);
-      }
-    } catch (error) {
-      console.error('Error loading announcements:', error);
-    }
-  };
-
   const handleLogin = (newToken) => {
     localStorage.setItem('token', newToken);
     setToken(newToken);
+    setShowAuthModal(false);
+    fetchUser();
   };
 
   const handleLogout = () => {
@@ -82,134 +73,215 @@ function App() {
     setView('markets');
   };
 
-  if (!token) {
-    return <LoginView onLogin={handleLogin} />;
-  }
+  const openAuth = (mode) => {
+    setAuthMode(mode);
+    setShowAuthModal(true);
+  };
+
+  const navigateToView = (newView) => {
+    setView(newView);
+    setSelectedMarketId(null);
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50">
       {/* Header */}
-      <header className="bg-white shadow-lg border-b-4 border-gradient-to-r from-purple-600 to-pink-600">
+      <header className="bg-white shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex justify-between items-center">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                🎲 Binary Bets
+              <h1 
+                className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent cursor-pointer"
+                onClick={() => { setView('markets'); setSelectedMarketId(null); }}
+              >
+                Binary Bets
               </h1>
+            </div>
+            
+            <div className="flex items-center gap-4">
               {user && (
-                <div className="text-sm">
-                  <span className="text-gray-600">Balance:</span>
-                  <span className="ml-2 font-bold text-green-600">${user.balance?.toFixed(2)}</span>
+                <>
+                  <NotificationBell token={token} />
+                  <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg">
+                    <span className="text-lg">💰</span>
+                    <span className="font-bold text-purple-700">{user.balance?.toFixed(2) || '0.00'}</span>
+                  </div>
+                </>
+              )}
+              
+              {user ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-700">👤 {user.username}</span>
+                  <button
+                    onClick={handleLogout}
+                    className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm"
+                  >
+                    Logout
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => openAuth('login')}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg"
+                  >
+                    Login
+                  </button>
+                  <button
+                    onClick={() => openAuth('register')}
+                    className="px-4 py-2 bg-pink-600 hover:bg-pink-700 text-white rounded-lg"
+                  >
+                    Register
+                  </button>
                 </div>
               )}
-            </div>
-            <div className="flex items-center gap-4">
-              <NotificationBell token={token} />
-              <nav className="flex gap-4">
-                <button
-                  onClick={() => setView('markets')}
-                  className={`flex-shrink-0 px-4 py-2 rounded-lg font-semibold transition-all ${
-                    view === 'markets'
-                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  Markets
-                </button>
-                <button
-                  onClick={() => setView('create')}
-                  className={`flex-shrink-0 px-4 py-2 rounded-lg font-semibold transition-all ${
-                    view === 'create'
-                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  Create Market
-                </button>
-                <button
-                  onClick={() => setView('profile')}
-                  className={`flex-shrink-0 px-4 py-2 rounded-lg font-semibold transition-all ${
-                    view === 'profile'
-                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  Profile
-                </button>
-                {user?.is_admin && (
-                  <button
-                    onClick={() => setView('admin')}
-                    className={`flex-shrink-0 px-4 py-2 rounded-lg font-semibold transition-all ${
-                      view === 'admin'
-                        ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
-                        : 'text-gray-700 hover:bg-gray-100'
-                    }`}
-                  >
-                    ⚙️ Admin
-                  </button>
-                )}
-                <button
-                  onClick={handleLogout}
-                  className="px-4 py-2 bg-red-100 text-red-600 rounded-lg font-semibold hover:bg-red-200 transition-all"
-                >
-                  Logout
-                </button>
-              </nav>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Announcements */}
-      {announcements.length > 0 && (
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          {announcements.map((announcement) => (
-            <div
-              key={announcement.id}
-              className="bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg p-4 mb-4 shadow-lg"
-            >
-              <h3 className="font-bold text-lg">📢 {announcement.title}</h3>
-              <p className="mt-1">{announcement.content}</p>
-              <p className="text-xs mt-2 opacity-75">
-                {new Date(announcement.created_at).toLocaleDateString()}
-              </p>
-            </div>
-          ))}
+      {/* Navigation */}
+      <nav className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+            {[
+              { id: 'markets', label: '🏪 Markets', show: true },
+              { id: 'create', label: '➕ Create', show: !!user },
+              { id: 'mybets', label: '🎯 My Bets', show: !!user },
+              { id: 'leaderboard', label: '🏆 Leaderboard', show: true },
+              { id: 'profile', label: '👤 Profile', show: !!user },
+              { id: 'admin', label: '⚙️ Admin', show: user?.is_admin }
+            ].filter(item => item.show).map(item => (
+              <button
+                key={item.id}
+                onClick={() => navigateToView(item.id)}
+                className={`px-6 py-3 font-semibold whitespace-nowrap transition-all ${
+                  view === item.id
+                    ? 'text-purple-600 border-b-2 border-purple-600'
+                    : 'text-gray-600 hover:text-purple-600'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
-      )}
-
-      {/* AI Resolution Info - Show on Markets and Create pages */}
-      {(view === 'markets' || view === 'create') && (
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          
-        </div>
-      )}
+      </nav>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
-          {/* Category Navigation - Modern Horizontal Scroller */}
-          <div className="mb-6 bg-white rounded-lg shadow-sm p-4">
-            <div className="flex items-center gap-3 mb-3">
-              <span className="text-xl">📁</span>
-              <h3 className="font-semibold text-gray-800">Categories</h3>
-            </div>
-            <div className="relative group">
-              <button onClick={() => document.getElementById('category-scroll').scrollBy({ left: -200, behavior: 'smooth' })} className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white shadow-lg rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-              </button>
-              <div id="category-scroll" className="flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth pb-2">
-                <button onClick={() => { setSelectedCategory(null); }} className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all whitespace-nowrap whitespace-nowrap ${selectedCategory === null ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>All Markets</button>
-                {categories.filter(cat => !cat.parent_id).map(topLevel => (
-                  <button key={topLevel.id} onClick={() => setSelectedCategory(topLevel.id)} className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all whitespace-nowrap flex items-center gap-2 whitespace-nowrap ${selectedCategory === topLevel.id ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
-                    {topLevel.icon && <span>{topLevel.icon}</span>}<span>{topLevel.name}</span>
-                  </button>
-                ))}
-              </div>
-              <button onClick={() => document.getElementById('category-scroll').scrollBy({ left: 200, behavior: 'smooth' })} className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white shadow-lg rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-              </button>
-              <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white to-transparent pointer-events-none"></div>
-              <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white to-transparent pointer-events-none"></div>
-            </div>
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        <div className="flex gap-6">
+          {/* Left Sidebar */}
+          <div className="w-80 flex-shrink-0 space-y-6">
+            <AINewsWidget />
+            <AnnouncementsWidget />
           </div>
 
+          {/* Center Content */}
+          <div className="flex-1">
+            {/* Horizontal Category Scroller - Only show on markets view */}
+            {view === 'markets' && !selectedMarketId && (
+              <div className="mb-6 bg-white rounded-lg shadow-sm p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="text-xl">📁</span>
+                  <h3 className="font-semibold text-gray-800">Categories</h3>
+                </div>
+                
+                <div className="relative group">
+                  <button
+                    onClick={() => document.getElementById('category-scroll')?.scrollBy({ left: -200, behavior: 'smooth' })}
+                    className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white shadow-lg rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  
+                  <div 
+                    id="category-scroll"
+                    className="flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth pb-2"
+                  >
+                    <button
+                      onClick={() => setSelectedCategory(null)}
+                      className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all whitespace-nowrap ${
+                        selectedCategory === null
+                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      All Markets
+                    </button>
+                    
+                    {categories.filter(cat => !cat.parent_id).map(category => (
+                      <button
+                        key={category.id}
+                        onClick={() => setSelectedCategory(category.id)}
+                        className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+                          selectedCategory === category.id
+                            ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
+                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        }`}
+                      >
+                        {category.icon && <span>{category.icon}</span>}
+                        <span>{category.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                  
+                  <button
+                    onClick={() => document.getElementById('category-scroll')?.scrollBy({ left: 200, behavior: 'smooth' })}
+                    className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white shadow-lg rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                  
+                  <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white to-transparent pointer-events-none"></div>
+                  <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white to-transparent pointer-events-none"></div>
+                </div>
+              </div>
+            )}
+
+            {/* View Content */}
+            {view === 'markets' && (
+              selectedMarketId ? (
+                <MarketDetailView
+                  marketId={selectedMarketId}
+                  token={token}
+                  user={user}
+                  onBack={() => setSelectedMarketId(null)}
+                />
+              ) : (
+                <MarketView
+                  selectedCategory={selectedCategory}
+                  token={token}
+                  user={user}
+                  onSelectMarket={setSelectedMarketId}
+                />
+              )
+            )}
+            
+            {view === 'create' && <CreateMarketView token={token} user={user} />}
+            {view === 'mybets' && <MyBetsView token={token} user={user} />}
+            {view === 'leaderboard' && <LeaderboardView />}
+            {view === 'profile' && <ProfileView token={token} user={user} onUpdateUser={fetchUser} />}
+            {view === 'admin' && user?.is_admin && <AdminView token={token} />}
+          </div>
+        </div>
+      </main>
+
+      {/* Auth Modal */}
+      {showAuthModal && (
+        <AuthModal
+          mode={authMode}
+          onClose={() => setShowAuthModal(false)}
+          onLogin={handleLogin}
+          onSwitchMode={(mode) => setAuthMode(mode)}
+        />
+      )}
+    </div>
+  );
+}
+
+export default App;
