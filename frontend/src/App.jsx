@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import LoginView from './components/LoginView';
 import MarketView from './components/MarketView';
+import MarketDetailView from './components/MarketDetailView';
 import CreateMarketView from './components/CreateMarketView';
 import AdminView from './components/AdminView';
 import ProfileView from './components/ProfileView';
@@ -14,6 +15,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [selectedMarketId, setSelectedMarketId] = useState(null);
   const [view, setView] = useState('markets');
   const [announcements, setAnnouncements] = useState([]);
 
