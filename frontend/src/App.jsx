@@ -105,7 +105,7 @@ function App() {
               <NotificationBell token={token} />
               <nav className="flex gap-4">
                 <button
-                  onClick={() => setView('markets')}
+                  onClick={() => navigateTo('markets')}
                   className={`px-4 py-2 rounded-lg font-semibold transition-all ${
                     view === 'markets'
                       ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
@@ -115,7 +115,7 @@ function App() {
                   Markets
                 </button>
                 <button
-                  onClick={() => setView('create')}
+                  onClick={() => navigateTo('create')}
                   className={`px-4 py-2 rounded-lg font-semibold transition-all ${
                     view === 'create'
                       ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
@@ -125,7 +125,7 @@ function App() {
                   Create Market
                 </button>
                 <button
-                  onClick={() => setView('profile')}
+                  onClick={() => navigateTo('profile')}
                   className={`px-4 py-2 rounded-lg font-semibold transition-all ${
                     view === 'profile'
                       ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
@@ -136,7 +136,7 @@ function App() {
                 </button>
                 {user?.is_admin && (
                   <button
-                    onClick={() => setView('admin')}
+                    onClick={() => navigateTo('admin')}
                     className={`px-4 py-2 rounded-lg font-semibold transition-all ${
                       view === 'admin'
                         ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
@@ -190,7 +190,7 @@ function App() {
             {/* Top Level Categories - Horizontal */}
             <div className="flex flex-wrap gap-2 mb-3">
               <button 
-                onClick={() => setSelectedCategory(null)} 
+                onClick={() => { setSelectedCategory(null); window.history.pushState({ view, selectedCategory: null }, '', `?view=${view}&category=${null}`); }} 
                 className={`px-4 py-2 rounded-lg transition-all ${selectedCategory === null ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
               >
                 All Markets
@@ -198,7 +198,7 @@ function App() {
               {categories.filter(cat => !cat.parent_id).map(topLevel => (
                 <button 
                   key={topLevel.id}
-                  onClick={() => setSelectedCategory(topLevel.id)} 
+                  onClick={() => { setSelectedCategory(topLevel.id); window.history.pushState({ view, selectedCategory: topLevel.id }, '', `?view=${view}&category=${topLevel.id}`); }} 
                   className={`px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${selectedCategory === topLevel.id ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
                 >
                   {topLevel.icon && <span>{topLevel.icon}</span>}
@@ -216,7 +216,7 @@ function App() {
                   {subCats.map(subCat => (
                     <button 
                       key={subCat.id}
-                      onClick={() => setSelectedCategory(subCat.id)} 
+                      onClick={() => { setSelectedCategory(subCat.id); window.history.pushState({ view, selectedCategory: subCat.id }, '', `?view=${view}&category=${subCat.id}`); }} 
                       className={`px-3 py-1 rounded text-sm transition-all ${selectedCategory === subCat.id ? 'bg-purple-200 text-purple-900 font-semibold' : 'bg-gray-50 hover:bg-gray-100 text-gray-600'}`}
                     >
                       {subCat.icon} {subCat.name}
@@ -235,7 +235,7 @@ function App() {
                   {subSubCats.map(subSubCat => (
                     <button 
                       key={subSubCat.id}
-                      onClick={() => setSelectedCategory(subSubCat.id)} 
+                      onClick={() => { setSelectedCategory(subSubCat.id); window.history.pushState({ view, selectedCategory: subSubCat.id }, '', `?view=${view}&category=${subSubCat.id}`); }} 
                       className={`px-3 py-1 rounded text-xs transition-all ${selectedCategory === subSubCat.id ? 'bg-purple-100 text-purple-900 font-semibold' : 'bg-gray-50 hover:bg-gray-100 text-gray-500'}`}
                     >
                       {subSubCat.icon} {subSubCat.name}
