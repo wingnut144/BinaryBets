@@ -1027,22 +1027,6 @@ app.get('/api/announcements', async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching announcements:', error);
-    res.status(500).json({ error: 'Failed to fetch announcements' });
-  }
-});
-
-app.post('/api/admin/announcements', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { title, message, expires_at } = req.body;
-    const adminId = req.user.id;
-
-    if (!title || !message) {
-      return res.status(400).json({ error: 'Title and message required' });
-    }
-
-    const result = await pool.query(
-      `INSERT INTO announcements (title, message, created_by, expires_at)
-       VALUES ($1, $2, $3, $4)
        RETURNING *`,
       [title, message, adminId, expires_at || null]
     );
