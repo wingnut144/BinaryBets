@@ -193,67 +193,23 @@ function App() {
               <span className="text-xl">📁</span>
               <h3 className="font-semibold text-gray-800">Categories</h3>
             </div>
-            
             <div className="relative group">
-              <button
-                onClick={() => document.getElementById('category-scroll').scrollBy({ left: -200, behavior: 'smooth' })}
-                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white shadow-lg rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
+              <button onClick={() => document.getElementById('category-scroll').scrollBy({ left: -200, behavior: 'smooth' })} className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white shadow-lg rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
               </button>
-              
               <div id="category-scroll" className="flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth pb-2">
-                <button 
-                  onClick={() => { setSelectedCategory(null); window.history.pushState({ view, selectedCategory: null }, '', `?view=${view}`); }} 
-                  className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all whitespace-nowrap ${selectedCategory === null ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
-                >
-                  All Markets
-                </button>
+                <button onClick={() => { setSelectedCategory(null); }} className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all whitespace-nowrap ${selectedCategory === null ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>All Markets</button>
                 {categories.filter(cat => !cat.parent_id).map(topLevel => (
-                  <button 
-                    key={topLevel.id}
-                    onClick={() => { setSelectedCategory(topLevel.id); window.history.pushState({ view, selectedCategory: topLevel.id }, '', `?view=${view}&category=${topLevel.id}`); }} 
-                    className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${selectedCategory === topLevel.id ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
-                  >
-                    {topLevel.icon && <span>{topLevel.icon}</span>}
-                    <span>{topLevel.name}</span>
+                  <button key={topLevel.id} onClick={() => setSelectedCategory(topLevel.id)} className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${selectedCategory === topLevel.id ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
+                    {topLevel.icon && <span>{topLevel.icon}</span>}<span>{topLevel.name}</span>
                   </button>
                 ))}
               </div>
-              
-              <button
-                onClick={() => document.getElementById('category-scroll').scrollBy({ left: 200, behavior: 'smooth' })}
-                className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white shadow-lg rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
+              <button onClick={() => document.getElementById('category-scroll').scrollBy({ left: 200, behavior: 'smooth' })} className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white shadow-lg rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
               </button>
-              
               <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white to-transparent pointer-events-none"></div>
               <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white to-transparent pointer-events-none"></div>
             </div>
-            
-            {categories.filter(cat => !cat.parent_id && (selectedCategory === cat.id || categories.some(sub => sub.parent_id === cat.id && selectedCategory === sub.id))).map(topLevel => {
-              const subCats = categories.filter(cat => cat.parent_id === topLevel.id);
-              if (subCats.length === 0) return null;
-              return (
-                <div key={`sub-${topLevel.id}`} className="mt-3">
-                  <div className="flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth pb-2 pl-4">
-                    {subCats.map(subCat => (
-                      <button 
-                        key={subCat.id}
-                        onClick={() => { setSelectedCategory(subCat.id); window.history.pushState({ view, selectedCategory: subCat.id }, '', `?view=${view}&category=${subCat.id}`); }} 
-                        className={`flex-shrink-0 px-3 py-1 rounded text-sm transition-all whitespace-nowrap ${selectedCategory === subCat.id ? 'bg-purple-200 text-purple-900 font-semibold' : 'bg-gray-50 hover:bg-gray-100 text-gray-600'}`}
-                      >
-                        {subCat.icon} {subCat.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
           </div>
 
