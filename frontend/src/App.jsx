@@ -187,76 +187,112 @@ function App() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8">
-          {/* Category Navigation - Horizontal */}
+          {/* Category Navigation - Modern Horizontal Scroller */}
           <div className="mb-6 bg-white rounded-lg shadow-sm p-4">
-            {/* Top Level Categories - Horizontal */}
-            <div className="flex flex-wrap gap-2 mb-3">
-              <button 
-                onClick={() => { setSelectedCategory(null); window.history.pushState({ view, selectedCategory: null }, '', `?view=${view}&category=${null}`); }} 
-                className={`px-4 py-2 rounded-lg transition-all ${selectedCategory === null ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
-              >
-                All Markets
-              </button>
-              {categories.filter(cat => !cat.parent_id).map(topLevel => (
-                <button 
-                  key={topLevel.id}
-                  onClick={() => { setSelectedCategory(topLevel.id); window.history.pushState({ view, selectedCategory: topLevel.id }, '', `?view=${view}&category=${topLevel.id}`); }} 
-                  className={`px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${selectedCategory === topLevel.id ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
-                >
-                  {topLevel.icon && <span>{topLevel.icon}</span>}
-                  <span>{topLevel.name}</span>
-                </button>
-              ))}
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-xl">📁</span>
+              <h3 className="font-semibold text-gray-800">Categories</h3>
             </div>
             
-            {/* Level 2 Subcategories - Show for selected top-level category */}
+            {/* Top Level Categories - Horizontal Scroller */}
+            <div className="relative group">
+              {/* Left Arrow */}
+              <button
+                onClick={() => {
+                  const container = document.getElementById('category-scroll');
+                  container.scrollBy({ left: -200, behavior: 'smooth' });
+                }}
+                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white shadow-lg rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              
+              {/* Scrollable Container */}
+              <div 
+                id="category-scroll"
+                className="flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth pb-2"
+              >
+                <button 
+                  onClick={() => { setSelectedCategory(null); window.history.pushState({ view, selectedCategory: null }, '', `?view=${view}`); }} 
+                  className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all whitespace-nowrap ${selectedCategory === null ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+                >
+                  All Markets
+                </button>
+                
+                {categories.filter(cat => !cat.parent_id).map(topLevel => (
+                  <button 
+                    key={topLevel.id}
+                    onClick={() => { setSelectedCategory(topLevel.id); window.history.pushState({ view, selectedCategory: topLevel.id }, '', `?view=${view}&category=${topLevel.id}`); }} 
+                    className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${selectedCategory === topLevel.id ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+                  >
+                    {topLevel.icon && <span>{topLevel.icon}</span>}
+                    <span>{topLevel.name}</span>
+                  </button>
+                ))}
+              </div>
+              
+              {/* Right Arrow */}
+              <button
+                onClick={() => {
+                  const container = document.getElementById('category-scroll');
+                  container.scrollBy({ left: 200, behavior: 'smooth' });
+                }}
+                className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white shadow-lg rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              
+              {/* Gradient Fades */}
+              <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white to-transparent pointer-events-none"></div>
+              <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white to-transparent pointer-events-none"></div>
+            </div>
+            
+            {/* Level 2 Subcategories */}
             {categories.filter(cat => !cat.parent_id && (selectedCategory === cat.id || categories.some(sub => sub.parent_id === cat.id && selectedCategory === sub.id) || categories.some(sub => sub.parent_id === cat.id && categories.some(subsub => subsub.parent_id === sub.id && selectedCategory === subsub.id)))).map(topLevel => {
               const subCats = categories.filter(cat => cat.parent_id === topLevel.id);
               if (subCats.length === 0) return null;
               return (
-                <div key={`sub-${topLevel.id}`} className="flex flex-wrap gap-2 mb-2 pl-4 border-l-2 border-purple-200">
-                  {subCats.map(subCat => (
-                    <button 
-                      key={subCat.id}
-                      onClick={() => { setSelectedCategory(subCat.id); window.history.pushState({ view, selectedCategory: subCat.id }, '', `?view=${view}&category=${subCat.id}`); }} 
-                      className={`px-3 py-1 rounded text-sm transition-all ${selectedCategory === subCat.id ? 'bg-purple-200 text-purple-900 font-semibold' : 'bg-gray-50 hover:bg-gray-100 text-gray-600'}`}
-                    >
-                      {subCat.icon} {subCat.name}
-                    </button>
-                  ))}
+                <div key={`sub-${topLevel.id}`} className="mt-3 relative group">
+                  <div className="flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth pb-2 pl-4">
+                    {subCats.map(subCat => (
+                      <button 
+                        key={subCat.id}
+                        onClick={() => { setSelectedCategory(subCat.id); window.history.pushState({ view, selectedCategory: subCat.id }, '', `?view=${view}&category=${subCat.id}`); }} 
+                        className={`flex-shrink-0 px-3 py-1 rounded text-sm transition-all whitespace-nowrap ${selectedCategory === subCat.id ? 'bg-purple-200 text-purple-900 font-semibold shadow' : 'bg-gray-50 hover:bg-gray-100 text-gray-600'}`}
+                      >
+                        {subCat.icon} {subCat.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               );
             })}
             
-            {/* Level 3 Sub-subcategories - Show for selected level 2 category */}
+            {/* Level 3 Sub-subcategories */}
             {categories.filter(cat => cat.parent_id && selectedCategory === cat.id).map(subCat => {
               const subSubCats = categories.filter(cat => cat.parent_id === subCat.id);
               if (subSubCats.length === 0) return null;
               return (
-                <div key={`subsub-${subCat.id}`} className="flex flex-wrap gap-2 pl-8 border-l-2 border-purple-100">
-                  {subSubCats.map(subSubCat => (
-                    <button 
-                      key={subSubCat.id}
-                      onClick={() => { setSelectedCategory(subSubCat.id); window.history.pushState({ view, selectedCategory: subSubCat.id }, '', `?view=${view}&category=${subSubCat.id}`); }} 
-                      className={`px-3 py-1 rounded text-xs transition-all ${selectedCategory === subSubCat.id ? 'bg-purple-100 text-purple-900 font-semibold' : 'bg-gray-50 hover:bg-gray-100 text-gray-500'}`}
-                    >
-                      {subSubCat.icon} {subSubCat.name}
-                    </button>
-                  ))}
+                <div key={`subsub-${subCat.id}`} className="mt-2">
+                  <div className="flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth pb-2 pl-8">
+                    {subSubCats.map(subSubCat => (
+                      <button 
+                        key={subSubCat.id}
+                        onClick={() => { setSelectedCategory(subSubCat.id); window.history.pushState({ view, selectedCategory: subSubCat.id }, '', `?view=${view}&category=${subSubCat.id}`); }} 
+                        className={`flex-shrink-0 px-3 py-1 rounded text-xs transition-all whitespace-nowrap ${selectedCategory === subSubCat.id ? 'bg-purple-100 text-purple-900 font-semibold shadow' : 'bg-gray-50 hover:bg-gray-100 text-gray-500'}`}
+                      >
+                        {subSubCat.icon} {subSubCat.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               );
             })}
           </div>
-
-        {view === 'markets' && <MarketView token={token} user={user} refreshUser={fetchUser} />}
-        {view === 'create' && <CreateMarketView token={token} onMarketCreated={() => setView('markets')} />}
-        {view === 'admin' && user?.is_admin && (
-          <AdminView token={token} loadAnnouncements={loadAnnouncements} />
-        )}
-        {view === 'profile' && <ProfileView token={token} user={user} refreshUser={fetchUser} />}
-      </main>
-    </div>
-  );
 }
 
 export default App;
