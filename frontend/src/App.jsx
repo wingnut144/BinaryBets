@@ -194,14 +194,9 @@ function App() {
               <h3 className="font-semibold text-gray-800">Categories</h3>
             </div>
             
-            {/* Top Level Categories - Horizontal Scroller */}
             <div className="relative group">
-              {/* Left Arrow */}
               <button
-                onClick={() => {
-                  const container = document.getElementById('category-scroll');
-                  container.scrollBy({ left: -200, behavior: 'smooth' });
-                }}
+                onClick={() => document.getElementById('category-scroll').scrollBy({ left: -200, behavior: 'smooth' })}
                 className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white shadow-lg rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -209,18 +204,13 @@ function App() {
                 </svg>
               </button>
               
-              {/* Scrollable Container */}
-              <div 
-                id="category-scroll"
-                className="flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth pb-2"
-              >
+              <div id="category-scroll" className="flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth pb-2">
                 <button 
                   onClick={() => { setSelectedCategory(null); window.history.pushState({ view, selectedCategory: null }, '', `?view=${view}`); }} 
                   className={`flex-shrink-0 px-4 py-2 rounded-lg transition-all whitespace-nowrap ${selectedCategory === null ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
                 >
                   All Markets
                 </button>
-                
                 {categories.filter(cat => !cat.parent_id).map(topLevel => (
                   <button 
                     key={topLevel.id}
@@ -233,12 +223,8 @@ function App() {
                 ))}
               </div>
               
-              {/* Right Arrow */}
               <button
-                onClick={() => {
-                  const container = document.getElementById('category-scroll');
-                  container.scrollBy({ left: 200, behavior: 'smooth' });
-                }}
+                onClick={() => document.getElementById('category-scroll').scrollBy({ left: 200, behavior: 'smooth' })}
                 className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white/90 hover:bg-white shadow-lg rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -246,23 +232,21 @@ function App() {
                 </svg>
               </button>
               
-              {/* Gradient Fades */}
               <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white to-transparent pointer-events-none"></div>
               <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white to-transparent pointer-events-none"></div>
             </div>
             
-            {/* Level 2 Subcategories */}
-            {categories.filter(cat => !cat.parent_id && (selectedCategory === cat.id || categories.some(sub => sub.parent_id === cat.id && selectedCategory === sub.id) || categories.some(sub => sub.parent_id === cat.id && categories.some(subsub => subsub.parent_id === sub.id && selectedCategory === subsub.id)))).map(topLevel => {
+            {categories.filter(cat => !cat.parent_id && (selectedCategory === cat.id || categories.some(sub => sub.parent_id === cat.id && selectedCategory === sub.id))).map(topLevel => {
               const subCats = categories.filter(cat => cat.parent_id === topLevel.id);
               if (subCats.length === 0) return null;
               return (
-                <div key={`sub-${topLevel.id}`} className="mt-3 relative group">
+                <div key={`sub-${topLevel.id}`} className="mt-3">
                   <div className="flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth pb-2 pl-4">
                     {subCats.map(subCat => (
                       <button 
                         key={subCat.id}
                         onClick={() => { setSelectedCategory(subCat.id); window.history.pushState({ view, selectedCategory: subCat.id }, '', `?view=${view}&category=${subCat.id}`); }} 
-                        className={`flex-shrink-0 px-3 py-1 rounded text-sm transition-all whitespace-nowrap ${selectedCategory === subCat.id ? 'bg-purple-200 text-purple-900 font-semibold shadow' : 'bg-gray-50 hover:bg-gray-100 text-gray-600'}`}
+                        className={`flex-shrink-0 px-3 py-1 rounded text-sm transition-all whitespace-nowrap ${selectedCategory === subCat.id ? 'bg-purple-200 text-purple-900 font-semibold' : 'bg-gray-50 hover:bg-gray-100 text-gray-600'}`}
                       >
                         {subCat.icon} {subCat.name}
                       </button>
@@ -271,28 +255,5 @@ function App() {
                 </div>
               );
             })}
-            
-            {/* Level 3 Sub-subcategories */}
-            {categories.filter(cat => cat.parent_id && selectedCategory === cat.id).map(subCat => {
-              const subSubCats = categories.filter(cat => cat.parent_id === subCat.id);
-              if (subSubCats.length === 0) return null;
-              return (
-                <div key={`subsub-${subCat.id}`} className="mt-2">
-                  <div className="flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth pb-2 pl-8">
-                    {subSubCats.map(subSubCat => (
-                      <button 
-                        key={subSubCat.id}
-                        onClick={() => { setSelectedCategory(subSubCat.id); window.history.pushState({ view, selectedCategory: subSubCat.id }, '', `?view=${view}&category=${subSubCat.id}`); }} 
-                        className={`flex-shrink-0 px-3 py-1 rounded text-xs transition-all whitespace-nowrap ${selectedCategory === subSubCat.id ? 'bg-purple-100 text-purple-900 font-semibold shadow' : 'bg-gray-50 hover:bg-gray-100 text-gray-500'}`}
-                      >
-                        {subSubCat.icon} {subSubCat.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
           </div>
-}
 
-export default App;
