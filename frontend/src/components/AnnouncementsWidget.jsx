@@ -14,7 +14,7 @@ function AnnouncementsWidget({ announcements }) {
       </div>
       
       <div className="space-y-4">
-        {announcements.map((announcement) => (
+        {(announcements || []).map((announcement) => (
           <div 
             key={announcement.id}
             className="p-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg border border-blue-200"

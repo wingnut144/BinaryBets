@@ -212,7 +212,7 @@ function App() {
                       All Markets
                     </button>
                     
-                    {categories.filter(cat => !cat.parent_id).map(category => (
+                    {(categories || []).filter(cat => !cat.parent_id).map(category => (
                       <button
                         key={category.id}
                         onClick={() => setSelectedCategory(category.id)}
