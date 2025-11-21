@@ -1009,8 +1009,207 @@ app.get('/api/leaderboard', async (req, res) => {
 });
 
 // BET REPORTS
+app.post('/api/bets/:id/report', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id: betId } = req.params;
+    const { reason } = req.body;
+    const userId = req.user.id;
 
+    if (!reason || reason.trim().length < 10) {
+      return res.status(400).json({ error: 'Please provide a detailed reason (at least 10 characters)' });
+    }
 
+    await client.query('BEGIN');
+
+    const betCheck = await client.query(
+      'SELECT * FROM bets WHERE id = $1',
+      [betId]
+    );
+
+    if (betCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Bet not found' });
+    }
+
+    const existingReport = await client.query(
+      'SELECT id FROM bet_reports WHERE bet_id = $1 AND reported_by = $2',
+      [betId, userId]
+    );
+
+    if (existingReport.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'You have already reported this bet' });
+    }
+
+    const reportResult = await client.query(
+      `INSERT INTO bet_reports (bet_id, reported_by, reason, status)
+       VALUES ($1, $2, $3, 'pending')
+       RETURNING *`,
+      [betId, userId, reason.trim()]
+    );
+
+    await client.query(
+      `INSERT INTO messages (from_user_id, to_user_id, subject, message)
+       VALUES (1, $1, 'Bet Report Received', $2)`,
+      [
+        userId,
+        `Thank you for reporting bet #${betId}. Our moderation team will review your report shortly. You will be notified once action has been taken.
+
+Report Reason: ${reason}
+
+Reference ID: ${reportResult.rows[0].id}`
+      ]
+    );
+
+    const admins = await client.query('SELECT id FROM users WHERE is_admin = true');
+    for (const admin of admins.rows) {
+      await client.query(
+        `INSERT INTO messages (from_user_id, to_user_id, subject, message)
+         VALUES ($1, $2, 'New Bet Report', $3)`,
+        [
+          userId,
+          admin.id,
+          `A bet has been reported and requires review.
+
+Bet ID: #${betId}
+Reported by: User #${userId}
+Reason: ${reason}
+
+Please review this report in the admin dashboard.`
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    res.json({ 
+      success: true, 
+      message: 'Bet reported successfully. You will be notified once reviewed.',
+      report: reportResult.rows[0]
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error reporting bet:', error);
+    res.status(500).json({ error: 'Failed to report bet' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/admin/reports', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { status } = req.query;
+    
+    let query = `
+      SELECT 
+        br.*,
+        b.amount,
+        b.potential_payout,
+        m.question as market_question,
+        o.name as option_name,
+        u.username as reported_by_username,
+        reviewer.username as reviewed_by_username
+      FROM bet_reports br
+      JOIN bets b ON br.bet_id = b.id
+      JOIN users u ON br.reported_by = u.id
+      LEFT JOIN users reviewer ON br.reviewed_by = reviewer.id
+      JOIN options o ON b.option_id = o.id
+      JOIN markets m ON b.market_id = m.id
+    `;
+    
+    const params = [];
+    if (status) {
+      params.push(status);
+      query += ` WHERE br.status = $1`;
+    }
+    
+    query += ` ORDER BY br.created_at DESC`;
+    
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching reports:', error);
+    res.status(500).json({ error: 'Failed to fetch reports' });
+  }
+});
+
+app.post('/api/admin/reports/:id/review', authenticateToken, requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id: reportId } = req.params;
+    const { action, admin_notes } = req.body;
+    const adminId = req.user.id;
+
+    await client.query('BEGIN');
+
+    const reportResult = await client.query(
+      'SELECT * FROM bet_reports WHERE id = $1',
+      [reportId]
+    );
+
+    if (reportResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = reportResult.rows[0];
+
+    if (action === 'approve') {
+      await client.query('DELETE FROM bets WHERE id = $1', [report.bet_id]);
+      
+      await client.query(
+        `UPDATE bet_reports 
+         SET status = 'reviewed', reviewed_by = $1, reviewed_at = NOW(), admin_notes = $2
+         WHERE id = $3`,
+        [adminId, admin_notes, reportId]
+      );
+
+      await client.query(
+        `INSERT INTO messages (from_user_id, to_user_id, subject, message)
+         VALUES (1, $1, 'Report Resolved - Action Taken', $2)`,
+        [
+          report.reported_by,
+          `Your report (ID: ${reportId}) has been reviewed and the bet has been removed.
+
+Admin notes: ${admin_notes || 'No additional notes'}
+
+Thank you for helping keep Binary Bets fair and safe!`
+        ]
+      );
+    } else {
+      await client.query(
+        `UPDATE bet_reports 
+         SET status = 'dismissed', reviewed_by = $1, reviewed_at = NOW(), admin_notes = $2
+         WHERE id = $3`,
+        [adminId, admin_notes, reportId]
+      );
+
+      await client.query(
+        `INSERT INTO messages (from_user_id, to_user_id, subject, message)
+         VALUES (1, $1, 'Report Resolved - No Action Taken', $2)`,
+        [
+          report.reported_by,
+          `Your report (ID: ${reportId}) has been reviewed. After investigation, no action was taken.
+
+Admin notes: ${admin_notes || 'The reported content did not violate our policies.'}
+
+If you have additional concerns, please submit a new report with more details.`
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    res.json({ success: true, message: 'Report reviewed successfully' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error reviewing report:', error);
+    res.status(500).json({ error: 'Failed to review report' });
+  } finally {
+    client.release();
+  }
+});
 
 // ANNOUNCEMENTS
 app.get('/api/announcements', async (req, res) => {
@@ -1027,6 +1226,22 @@ app.get('/api/announcements', async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching announcements:', error);
+    res.status(500).json({ error: 'Failed to fetch announcements' });
+  }
+});
+
+app.post('/api/admin/announcements', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { title, message, expires_at } = req.body;
+    const adminId = req.user.id;
+
+    if (!title || !message) {
+      return res.status(400).json({ error: 'Title and message required' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO announcements (title, message, created_by, expires_at)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
       [title, message, adminId, expires_at || null]
     );
@@ -1271,7 +1486,7 @@ app.post('/api/register', async (req, res) => {
 app.get('/api/user', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, username, email, CAST(balance AS DOUBLE PRECISION) as balance, is_admin FROM users WHERE id = $1',
+      'SELECT id, username, email, balance, is_admin FROM users WHERE id = $1',
       [req.user.id]
     );
     if (result.rows.length === 0) {
@@ -1330,7 +1545,7 @@ app.get('/api/categories/tree', async (req, res) => {
       )
       SELECT * FROM category_tree ORDER BY parent_id NULLS FIRST, name
     `);
-    res.json(result.rows || []);
+    res.json(result.rows);
   } catch (error) {
     console.error('Error fetching category tree:', error);
     res.status(500).json({ error: 'Failed to fetch categories' });
@@ -1368,110 +1583,6 @@ app.post('/api/categories', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error creating category:', error);
     res.status(500).json({ error: 'Failed to create category' });
-  }
-});
-
-
-// Admin resolver logs (alias)
-app.get('/api/admin/resolver-logs', authenticateToken, async (req, res) => {
-  try {
-    if (!req.user.is_admin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-    
-    const result = await pool.query(`
-      SELECT 
-        rl.*,
-        m.question as market_question,
-        m.status as market_status
-      FROM resolver_logs rl
-      LEFT JOIN markets m ON rl.market_id = m.id
-      ORDER BY rl.created_at DESC
-      LIMIT 100
-    `);
-    
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching resolver logs:', error);
-    res.status(500).json({ error: 'Failed to fetch resolver logs' });
-  }
-});
-
-// Admin reports endpoint
-app.get('/api/admin/reports', authenticateToken, async (req, res) => {
-  try {
-    if (!req.user.is_admin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-    
-    // Return basic stats for now
-    const stats = {
-      total_users: await pool.query('SELECT COUNT(*) as count FROM users'),
-      total_markets: await pool.query('SELECT COUNT(*) as count FROM markets'),
-      total_bets: await pool.query('SELECT COUNT(*) as count FROM bets'),
-      active_markets: await pool.query("SELECT COUNT(*) as count FROM markets WHERE status = 'active'"),
-      resolved_markets: await pool.query("SELECT COUNT(*) as count FROM markets WHERE status = 'resolved'")
-    };
-    
-    res.json({
-      total_users: parseInt(stats.total_users.rows[0].count),
-      total_markets: parseInt(stats.total_markets.rows[0].count),
-      total_bets: parseInt(stats.total_bets.rows[0].count),
-      active_markets: parseInt(stats.active_markets.rows[0].count),
-      resolved_markets: parseInt(stats.resolved_markets.rows[0].count)
-    });
-  } catch (error) {
-    console.error('Error fetching reports:', error);
-    res.status(500).json({ error: 'Failed to fetch reports' });
-  }
-});
-
-
-
-// Get announcements
-app.get('/api/announcements', async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT * FROM announcements ORDER BY created_at DESC LIMIT 10'
-    );
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching announcements:', error);
-    res.json([]);
-  }
-});
-
-// Create announcement (admin only)
-app.post('/api/announcements', authenticateToken, async (req, res) => {
-  try {
-    if (!req.user.is_admin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-    
-    const { title, message } = req.body;
-    const result = await pool.query(
-      'INSERT INTO announcements (title, message) VALUES ($1, $2) RETURNING *',
-      [title, message]
-    );
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error('Error creating announcement:', error);
-    res.status(500).json({ error: 'Failed to create announcement' });
-  }
-});
-
-// Delete announcement (admin only)
-app.delete('/api/announcements/:id', authenticateToken, async (req, res) => {
-  try {
-    if (!req.user.is_admin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-    
-    await pool.query('DELETE FROM announcements WHERE id = $1', [req.params.id]);
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error deleting announcement:', error);
-    res.status(500).json({ error: 'Failed to delete announcement' });
   }
 });
 
